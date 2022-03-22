@@ -1,0 +1,380 @@
+---
+title: "Some exploration of ProQuest data quality"
+author: "Flavio & Christoph"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  pdf_document:
+    toc: true
+    toc_depth: 3
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(1234)
+```
+
+```{r, echo = FALSE, include = FALSE}
+packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "ggplot2", "data.table")
+
+lapply(packages, library, character.only = TRUE)
+
+datapath <- "/mnt/ssd/"
+db_file  <- paste0(datapath, "AcademicGraph/AcademicGraph.sqlite")
+
+# ## db connection
+con <- DBI::dbConnect(RSQLite::SQLite(), db_file)
+cat("The database connection is: \n")
+src_dbi(con)
+```
+
+
+```{r}
+
+q <- "select * from pq_authors 
+        left join (
+                select university_id, location
+                from pq_unis
+        ) using (university_id)
+        "
+
+authors <- tbl(con, sql(q)) %>%
+    collect() %>% # focus only on U.S. institutions
+    filter(grepl("United States", location))
+
+advisors <- tbl(con, "pq_advisors") %>%
+    collect()
+
+fields <- tbl(con, "pq_fields") %>%
+    collect()
+
+q <- "select * from pq_fields_mag a
+        inner join (select FieldOfStudyId, NormalizedName as fieldname_mag 
+                    from FieldsOfStudy) b on (a.mag_field0 = b.FieldOfStudyId)"
+fields_mag <- tbl(con, sql(q)) %>%
+    collect()
+
+
+```
+
+
+```{r}
+
+path_nces <- paste0(datapath, "NCES_NSF/processed/") 
+
+data_graduates <- fread(paste0(path_nces, "graduate_counts.csv"), data.table = FALSE)
+fields_nces <- fread(paste0(path_nces, "fields.csv"), data.table = FALSE)
+
+data_graduates <- data_graduates %>%
+  left_join(fields_nces %>%
+              select(field_id, fld = shortname),
+            by = "field_id") %>%
+  select(-field_id)
+
+```
+
+
+```{r}
+
+# # correspond the fields to the mag_field0
+#     ## this does not work b/c correspondence to fields is not very good 
+
+# direct_detailed <- c("economics", "psychology",
+#                      "sociology", "history", "chemistry")
+# data_graduates <- data_graduates %>%
+#     filter(det_fld != "total" 
+#             & broad_fld != "total"
+#             & se_fld != "total") %>%
+#     mutate(mag_field0 = case_when(
+#         det_fld %in% direct_detailed ~ det_fld, # detailed fields with exact match
+#         det_fld == "political science and government" ~ "political science",
+#         det_fld == "computer and information sciences" ~ "computer science",
+#         det_fld == "biological and biomedical sciences" ~ "biology",
+#         det_fld == "mathematics and statistics" ~ "mathematics",
+#         det_fld == "physics and astronomy" ~ "physics",
+#         det_fld == "business management and administration" ~ "business",
+#         det_fld == "materials science engineering" ~ "materials science",
+#         det_fld == "health sciences" ~ "medicine", # unsure!
+#         broad_fld == "engineering" & det_fld != "materials science engineering" ~ "engineering",
+#         broad_fld == "humanities and arts" & det_fld != "history" ~ "art",
+#         # assign geology, geography, environmental science to geosciences in mag
+#         det_fld == "geosciences, atmospheric sciences, and ocean sciences" ~ "geosciences",
+#         det_fld == "agricultural sciences and natural resources" ~ "geosciences",
+#         TRUE ~ "unknown"
+#     ))
+
+# # ## adjust the one geosciences 
+# geo_fields <- c("geology", "geography", "environmental science")
+# fields_mag <- fields_mag %>%
+#     mutate(fieldname_mag = ifelse(fieldname_mag %in% geo_fields, "geosciences", fieldname_mag))
+
+```
+
+```{r}
+d_main <- authors %>%
+    mutate(has_advisor = ifelse(goid %in% advisors$goid, 1, 0),
+           has_field = ifelse(goid %in% fields$goid, 1, 0),
+           has_field_mag = ifelse(goid %in% fields_mag$goid, 1, 0))
+
+fields_perauthor <- fields_mag %>%
+    group_by(goid) %>%
+    summarise(n_field0 = n(), .groups = "drop")
+
+d_main <- d_main %>%
+    left_join(fields_perauthor, by = "goid")
+
+```
+
+
+### Number of authors 
+
+```{r,echo=FALSE}
+author_year <- d_main %>%
+    group_by(degree_year) %>%
+    summarise(nb = n(), .groups = "drop")
+
+author_year %>%
+    ggplot(aes(x = degree_year, y = nb)) +
+    geom_line() +
+    labs(y = "Number of authors") +
+    geom_vline(xintercept = 2018, linetype = "dashed")
+```
+
+
+### Number of fields per author 
+
+```{r, echo=FALSE}
+d_main %>%
+    group_by(degree_year, has_field) %>%
+    summarise(nb = n(), .groups = "drop") %>%
+    group_by(degree_year) %>%
+    mutate(s = nb / sum(nb)) %>%
+    ungroup() %>%
+    filter(has_field == 1) %>%
+    ggplot(aes(x = degree_year, y = s)) +
+    geom_line() +
+    labs(y = "Fraction of authors with at least 1 field") +
+    geom_vline(xintercept = 2018, linetype = "dashed")
+
+```
+
+
+
+### Advisor present per author 
+
+- advisors are only present since 1986
+
+
+```{r, echo=FALSE}
+d_main %>%
+    group_by(degree_year, has_advisor) %>%
+    summarise(nb = n(), .groups = "drop") %>%
+    group_by(degree_year) %>%
+    mutate(s = nb / sum(nb)) %>%
+    ungroup() %>%
+    filter(has_advisor == 1) %>%
+    ggplot(aes(x = degree_year, y = s)) +
+    geom_line() +
+    labs(y = "Fraction of authors with at least 1 advisor") +
+    geom_vline(xintercept = 2018, linetype = "dashed") +
+    geom_vline(xintercept = 1986, linetype = "dashed")
+
+```
+
+
+### Fraction of authors with field in MAG (overall)
+
+```{r, echo=FALSE}
+d_main %>%
+    group_by(degree_year, has_field_mag) %>%
+    summarise(nb = n(), .groups = "drop") %>%
+    group_by(degree_year) %>%
+    mutate(s = nb / sum(nb)) %>%
+    ungroup() %>%
+    filter(has_field_mag == 1) %>%
+    ggplot(aes(x = degree_year, y = s)) +
+    geom_line() +
+    labs(y = "Fraction of all authors with link to MAG FoS") +
+    geom_vline(xintercept = 2018, linetype = "dashed")
+```
+
+### Fraction of authors with field in MAG (as of those with at least one field)
+
+```{r}
+d_main %>%
+    filter(has_field == 1) %>%
+    group_by(degree_year, has_field_mag) %>%
+    summarise(nb = n(), .groups = "drop") %>%
+    group_by(degree_year) %>%
+    mutate(s = nb / sum(nb)) %>%
+    ungroup() %>%
+    filter(has_field_mag == 1) %>%
+    ggplot(aes(x = degree_year, y = s)) +
+    geom_line() +
+    labs(y = "Fraction of authors with field having link to MAG FoS") +
+    geom_vline(xintercept = 2018, linetype = "dashed")
+```
+
+
+### Number of fields MAG level 0 per author
+
+```{r}
+d_main %>%
+    filter(has_field_mag == 1 & degree_year > 1950) %>%
+    mutate(n_field0 = case_when(
+        n_field0 <= 3 ~ as.character(n_field0),
+        n_field0 > 3 ~ "more than 3"
+    )) %>%
+    mutate(n_field0 = factor(n_field0)) %>%
+    group_by(degree_year, n_field0) %>%
+    summarise(nb = n(), .groups = "drop") %>%
+    group_by(degree_year) %>%
+    mutate(s = nb / sum(nb)) %>%
+    ungroup() %>%
+    ggplot(aes(x = degree_year, y = s, color = n_field0)) +
+    geom_line() +
+    labs(y = "Share") +
+    theme(legend.position = "bottom")
+```
+
+
+### Graduates in MAG and in SED 
+
+```{r}
+# Prepare the proquest data 
+nb_pq <- authors %>%
+    filter(grepl("United States", location)) %>%
+    inner_join(fields_mag %>% # NOTE: drops graduates w/o field in mag, most of them "education"
+                filter(position == 0) %>% # there can be multiple fields per goid, need to take one
+                select(goid, fieldname_mag),
+            by = "goid") %>%
+    rename(year = degree_year) %>%
+    group_by(year, fieldname_mag) %>%
+    summarise(nb = n(),
+             .groups = "drop")
+
+# assign to broad field
+humanities <- c("art", "history", "philosophy")
+math_compsc <- c("mathematics", "computer science")
+socsci <- c("economics", "political science", "psychology", 
+            "sociology")
+phys_earth <- c("chemistry",
+                "geography", "geology", "physics")
+life_sc <- c("biology", "medicine")
+engn <- c("engineering", "materials science")
+unclassified <- c("environmental science", "business") # business is classified as "other social science" (see nces_graduates_field_gender.csv)
+nb_pq <- nb_pq %>%
+    mutate(fld = case_when(
+        fieldname_mag %in% humanities ~ "humanities",
+        fieldname_mag %in% math_compsc ~ "math_compsc",
+        fieldname_mag %in% socsci ~ "socsci",
+        fieldname_mag %in% life_sc ~ "life_sc",
+        fieldname_mag %in% phys_earth ~ "phys_earth",
+        fieldname_mag %in% engn ~ "engn",
+        fieldname_mag %in% unclassified ~ "unclassified"
+    ))
+
+nb_pq <- nb_pq %>%
+    group_by(year, fld) %>%
+    summarise(nb = sum(nb),
+              .groups = "drop")
+
+```
+
+```{r}
+nb_sed <- data_graduates %>%
+    group_by(year, fld) %>%
+    summarise(nb = sum(nb),
+              .groups = "drop")
+
+s_theses <- nb_pq %>%
+    rename(nb_pq = nb) %>%
+    left_join(nb_sed %>%
+                rename(nb_sed = nb),
+              by = c("fld", "year")) %>%
+    filter(year >= 1980) %>%
+    mutate(s_pq = nb_pq / nb_sed)
+
+n_theses <- s_theses %>%
+    select(-s_pq) %>%
+    gather(key = src, value = nb, nb_sed:nb_pq) %>%
+    mutate(src = ifelse(src == "nb_pq", "ProQuest", "NSF")) %>%
+    group_by(year, src) %>%
+    summarise(nb = sum(nb, na.rm = TRUE), # nb_sed missing for unclassified
+              .groups = "drop")
+
+```
+
+#### Totals over time
+
+- Note: proquest has some theses classified as post-2020, they are missing from here
+- In both counts, the field "education" is missing
+```{r}
+n_theses %>%
+    filter(year <= 2019) %>%
+    ggplot(aes(x = year, y = nb, linetype = src)) +
+    geom_line() +
+    theme(legend.position = "bottom") +
+    labs(y = "Number of graduates")
+```
+
+#### Fraction ProQuest of NSF by field and year 
+
+```{r}
+s_theses %>%
+    filter(!(fld %in% c("unclassified")) & year < 2020) %>%
+    ggplot(aes(x = year, y = s_pq, color = fld)) +
+    geom_line() +
+    theme(legend.position = "bottom") +
+    labs(y = "Share ProQuest of NSF") +
+    geom_hline(yintercept = 1)
+
+```
+
+
+Notes:
+
+- if an author has multiple fields, the first one is used.
+- life_sc includes medicine.
+- missing is the interdisciplinary field "environmental science" from ProQuest.
+- Todo: repeat this with more aggregate fields: e.g. GEEMP and LPS (to the extent possible). does this get rid of the over-representation of the math/computer science fields? (for instance because of engineering?). 
+
+
+### Distribution of how the links to the field were made
+
+- Note: this is the fraction of total links per degree_year; if an author has two links, she enters twice here
+```{r}
+fields_mag %>%
+    left_join(d_main %>%
+        select(goid, degree_year),
+        by = "goid") %>%
+    group_by(degree_year, flag) %>%
+    summarise(nb = n(), .groups = "drop") %>%
+    group_by(degree_year) %>%
+    mutate(s = nb / sum(nb)) %>%
+    ungroup() %>%
+    ggplot(aes(x = degree_year, y = s, color = flag)) +
+    geom_line() +
+    labs(y = "Share") +
+    theme(legend.position = "bottom")
+```    
+    
+
+
+### Questions and thoughts
+
+- What happens around 2018? Why more information on advisor but not on field?
+    - seems to be driven by non-US institutions; see comparison ProQuest-NSF
+- Things of interest
+    - Counts country of the institution
+    - Compare counts of graduates in the US with the official US statistics
+- Comparing NSF and ProQuest 
+    - presumably, ProQuest covers top institutions more while NSF covers all? can we get some stats by institution as well?
+    - why does the coverage seem to drop after 2010?
+        - lag in data collection 
+        - change in publication process?
+        - change in data quality in proquest/do we drop more theses in the data cleaning process after 2010? 
+        - change in reporting of university names ("United States" not in name anymore?)
+
+```{r, include = FALSE}
+DBI::dbDisconnect(con)
+```
