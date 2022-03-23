@@ -1,0 +1,271 @@
+---
+title: "Publication dynamics"
+author: "Flavio Hafner, Christoph Hedtrich"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  pdf_document:
+    toc: true 
+    toc_depth: 4
+---
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+if (interactive()) {
+  # https://stackoverflow.com/questions/48684595/source-nested-r-files-within-rmarkdown-document. For calling files from subdir. This needs to be done only when called from within RStudio!!
+  knitr_rootdir <- rprojroot::find_rstudio_root_file()
+  knitr_rootdir <- paste0(knitr_rootdir, "analysis/")
+  knitr::opts_knit$set(root.dir = knitr_rootdir)
+}
+
+select_quantiles <- c(0.5, 0.75, 0.9) # focus on these quantiles for the publication dynamics 
+
+
+```
+
+
+
+## Preliminaries 
+
+```{r, include = FALSE}
+source("setup.R")
+source("helpers/db_queries.R")
+```
+
+
+## Prepare data
+
+```{r}
+source("helpers/data_dynamics.R") 
+```
+
+
+## Simple stats: quality, quantity, survival at gender-experience-cohort level
+
+### Aggregate
+
+```{r, include=FALSE}
+
+keep_authors <- author_career %>%
+  filter(career_length >= min_careerlength) %>%
+  pull(AuthorId) %>% 
+  unique()
+
+author_careerbins <- author_careerbins %>%
+  filter(AuthorId %in% keep_authors & cohort %in% select_cohorts) 
+
+# summarise at multiple quantiles
+quibble <- function(x, q = c(0.25, 0.5, 0.75), na_action = FALSE, return_qvar = FALSE) {
+  if (return_qvar) {
+    tibble("{{ x }}" := quantile(x, q, na.rm = na_action), "{{ x }}_q" := q)
+  }
+  else {
+    tibble("{{ x }}" := quantile(x, q, na.rm = na_action))
+  }
+}
+
+
+d_quantiles <- author_careerbins %>%
+  filter(AuthorId %in% keep_authors) %>%
+  filter(YearsExperience <= 25) %>%
+  group_by(cohort, gender, field_group, YearsExperience) %>%
+  summarise(quibble(PaperCount_intensive,
+                    select_quantiles,
+                    na_action = T,
+                    return_qvar = T),
+            quibble(PaperCount, 
+                    select_quantiles),
+            quibble(TotalForwardCitations_intensive, 
+                    select_quantiles,
+                    na_action = T),
+            quibble(TotalForwardCitations, 
+                    select_quantiles),
+            quibble(CitationsPerPaper, 
+                    select_quantiles,
+                    na_action = T),
+            .groups = "drop"
+            ) %>%
+  rename(qntl = PaperCount_intensive_q) %>%
+  mutate(qntl = factor(qntl)) %>%
+  gather(key = var, value = val,
+         -cohort, -gender, -field_group, -YearsExperience, -qntl)
+
+
+d_avg <- author_careerbins %>%
+  filter(AuthorId %in% keep_authors) %>%
+  filter(YearsExperience <= 25) %>%
+  group_by(cohort, gender, field_group, YearsExperience) %>%
+  summarise(AnyPaper = mean(PaperCount > 0),
+            AuthorCount = n(),
+            .groups = "drop"
+            ) 
+
+
+
+```
+
+
+
+
+```{r, echo=FALSE}
+
+d_avg %>%
+  ggplot(aes(x = YearsExperience, y = AnyPaper, color = gender)) +
+  geom_line() + 
+  geom_point() + 
+  theme(legend.position = "bottom") +
+  facet_wrap(~field_group) +
+  geom_vline(xintercept = min_careerlength, linetype = "dotted") 
+
+```
+
+
+
+```{r, echo=FALSE}
+
+plot_quantiles <- function(d, yvar) {
+  p <- d %>%
+    filter(var == yvar) %>%
+    ggplot(aes(x = YearsExperience, y = val, color = gender, linetype = qntl)) +
+    geom_line() +
+    geom_point() +
+    facet_wrap(~field_group) +
+    theme(legend.position = "bottom") +
+    labs(y = yvar, 
+         title = paste0("Outcome: ", yvar)
+         ) +
+    guides(linetype = guide_legend("Quantile")) +
+    geom_vline(xintercept = min_careerlength, linetype = "dotted")
+
+  return(p)
+}
+
+vars_quantile <- unique(d_quantiles$var)
+
+
+map(.x = vars_quantile,
+    .f = ~plot_quantiles(d = d_quantiles, yvar = .x)
+    )
+
+
+
+```
+
+
+
+## Regressions: differential outcomes over the career 
+
+```{r, include=FALSE}
+
+binsize <- 5
+d_est <- author_careerbins %>%
+  filter(YearsExperience >= 0) %>%
+  mutate(female = ifelse(gender == "Female", 1, 0)) %>%
+  left_join(info_proquest, by = "AuthorId") %>%
+  left_join(author_fields %>%
+              select(AuthorId, first_field_id),
+            by = c("AuthorId")) %>%
+  filter(degree_year %in% 1990:2000) %>%
+  # left_join(author_careerend, by = "AuthorId") %>%
+  # for annual data
+  mutate(exper = binsize * floor(YearsExperience / binsize),
+         exper_f = factor(exper),
+         experience_field = factor(paste0(exper, "_", field_group)),
+         field_group = factor(field_group))
+
+# ## average gap 
+
+# replicate the figures (average of gap across all experience year bins)
+m_avg <- fepois(TotalForwardCitations  ~ female*field_group - field_group
+                          | experience_field,
+                   nthreads = 1,
+                   cluster = c("first_field_id"),
+                   data = d_est)
+
+m_avg_firstfield <- fepois(TotalForwardCitations  ~ female*field_group - field_group
+                          | experience_field + factor(first_field_id)  ,
+                   nthreads = 1,
+                   cluster = c("first_field_id"),
+                   data = d_est)
+
+m_avg_fullctrl <- fepois(TotalForwardCitations  ~ female*field_group - field_group
+                          | experience_field + factor(first_field_id)  + factor(university_id) + factor(degree_year) ,
+                   nthreads = 1,
+                   cluster = c("first_field_id"),
+                   data = d_est)
+
+# ## gap by years of experience 
+m_exper <- fepois(TotalForwardCitations ~ female*field_group*exper_f - field_group
+                        | experience_field  ,
+                   nthreads = 1,
+                   cluster = c("first_field_id"),
+                   data = d_est)
+
+
+m_exper_ctrl <- fepois(TotalForwardCitations  ~ female*field_group*exper_f - field_group
+                        | experience_field + factor(first_field_id)  + factor(university_id) + factor(degree_year)  ,
+                   nthreads = 1,
+                   cluster = c("first_field_id"),
+                   data = d_est)
+
+
+# ## replace dummies with a linear trend 
+m_exper_linear <- fepois(TotalForwardCitations  ~ female*field_group*exper - field_group
+                                  | experience_field  + factor(first_field_id)  + factor(university_id) + factor(degree_year) ,
+                             nthreads = 1,
+                             cluster = c("first_field_id"),
+                             data = d_est)
+
+m_exper_linear_within <- fepois(TotalForwardCitations ~ female*field_group*exper - field_group
+                                  | experience_field + factor(AuthorId) ,
+                               nthreads = 1,
+                               cluster = c("first_field_id"),
+                               data = d_est)
+
+```
+
+
+```{r, echo=FALSE}
+
+est_avg <- list(m_avg, m_avg_firstfield, m_avg_fullctrl)
+est_exper <- list(
+  m_exper,
+  m_exper_ctrl
+)
+est_exper_linear <- list(
+  m_exper_linear,
+  m_exper_linear_within
+)
+
+
+etable(est_avg,
+       drop = c("BIC"),
+       sdBelow = T,
+       convergence = TRUE,
+       fitstat = c("n", "pr2")
+  )
+
+etable(est_exper,
+       drop = c("BIC"),
+       sdBelow = T,
+       convergence = TRUE,
+       fitstat = c("n", "pr2")
+  )
+
+etable(est_exper_linear,
+       drop = c("BIC"),
+       sdBelow = T,
+       convergence = TRUE,
+       fitstat = c("n", "pr2")
+  )
+
+
+```
+
+
+
+```{r}
+DBI::dbDisconnect(con)
+```
