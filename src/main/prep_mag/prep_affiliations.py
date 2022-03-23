@@ -16,7 +16,7 @@ Generate tables:
 import sqlite3 as sqlite
 import warnings
 import time 
-from helpers.functions import print_elapsed_time, analyze_db
+from helpers.functions import analyze_db
 from helpers.variables import db_file, insert_questionmark_doctypes, keep_doctypes
 
 

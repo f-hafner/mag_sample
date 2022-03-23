@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-genderize.py. Source gender for table of first names
+genderize_unclear_names.py. Source gender parts of names where first name is not clearly assigned.
 
 Timing: One request for 10 names takes around 0.5 seconds, so that 
     8.x Mio names would take roughly 5 days
@@ -16,7 +16,7 @@ import requests
 from helpers.variables import db_file, datapath
 
 # ## Arguments & local variables
-parser = argparse.ArgumentParser(description = 'Source gender from first names')
+parser = argparse.ArgumentParser(description = 'Source gender from name elements that are unclear')
 parser.add_argument("--outfile", type = str, default = 'gender_test.csv',
                     help="The file to which to save the output from genderize. (Default = gender_test.csv, in which case only 30 names are genderized.)")
 parser.add_argument("--apikey", type = str, default = None, 
@@ -31,7 +31,20 @@ genderize_chunk_size = 10
 # ### Set up connections to db, set up db cursor
 db_con = sqlite.connect(database = db_file,
                      isolation_level = None)
-sql_select = "SELECT FirstName FROM FirstNames"
+
+# ### Create temporary table with the counts per name 
+create_table = """CREATE TEMPORARY TABLE UnclearNames AS 
+                SELECT Name, COUNT(DISTINCT AuthorId) AS AuthorCount
+                FROM AuthorNameSplits 
+                WHERE Position > 0 
+                    AND length(Name) > 1
+                GROUP BY Name  
+"""
+
+db_con.execute(create_table)
+
+# ### Cursor
+sql_select = "SELECT Name FROM UnclearNames"
 
 if args.apikey is None:
     sql_select = f"{sql_select} LIMIT 25"

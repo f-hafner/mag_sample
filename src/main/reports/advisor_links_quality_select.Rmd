@@ -1,0 +1,286 @@
+---
+title: "Performance of linking researchers to theses"
+author: "Flavio & Christoph"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  pdf_document:
+    toc: true
+    toc_depth: 3
+---
+
+This script makes some plots of the advisor links and saves the most plausible links to a table in the database. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(1234)
+```
+
+```{r, echo = FALSE, include = FALSE}
+packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "ggplot2", "stringdist")
+
+lapply(packages, library, character.only = TRUE)
+
+datapath <- "/mnt/ssd/"
+db_file  <- paste0(datapath, "AcademicGraph/AcademicGraph.sqlite")
+select_fields <- c("physics", "biology", "chemistry", "sociology",
+                    "economics", "political science", "psychology", 
+                    "mathematics", "geography", "geology", "engineering",
+                    "computer science", "environmental science") # fields currently matched 
+
+
+# ## db connection
+con <- DBI::dbConnect(RSQLite::SQLite(), db_file)
+cat("The database connection is: \n")
+src_dbi(con)
+```
+
+
+
+```{r}
+# parameters for selecting links 
+min_score_advisors <- 0.7 # minimum score from dedupe 
+max_year_diff <- 5 # maximum difference between advisory and own publication at institution. 5 is arbitrary but perhaps makes sense: I publish something at Aalto, start advising a first-year student, then move elsewhere. then I would still figure as advisor at Aalto
+max_uniname_distance <- 0.02 # keep only links where the jarowinkler distance between the institution naems is below that threshold. 0.02 is conservative
+
+
+```
+
+
+## Overview
+
+```{r, include = FALSE}
+
+current_links <- tbl(con, sql("
+                              select * 
+                              from current_links 
+                              inner join (
+                                select authorid, normalizedname as author_name
+                                from authors 
+                              ) using(authorid)
+                              inner join (
+                                select AuthorId, institutions_career
+                                from author_info_linking
+                              ) using(authorId)
+                              "))
+linking_info <- tbl(con,
+                    sql("select iteration_id, field
+                          from (
+                              select *, max(iteration_id) OVER(partition by field) as max_iter
+                              from linking_info_advisors
+                              where recall = 0.9 
+                                  and testing = 0
+                                  and institution = 'True'
+                                  and fieldofstudy_cat = 'False'
+                                  and fieldofstudy_str = 'False' 
+                                  and keywords = 'False' 
+                                  and mergemode = 'm:1'
+                          )
+                          where iteration_id = max_iter "))
+linked_advisors <- tbl(con, sql("select * 
+                                from linked_ids_advisors
+                                ")) %>%
+  inner_join(linking_info %>% 
+               select(iteration_id),
+             by = "iteration_id")
+
+
+
+theses <- tbl(con, sql("
+                       select * from pq_advisors 
+                       inner join (
+                         select goid, degree_year, uni_name 
+                         from pq_authors
+                         inner join (
+                          select university_id, normalizedname as uni_name 
+                          from pq_unis
+                         ) using(university_id)
+                       ) using(goid)")
+              )
+
+authors_affiliation <- tbl(con, 
+                           sql("
+                               select authorid, year, affil_name
+                               from AuthorAffiliation
+                               inner join (
+                                select affiliationid, normalizedname as affil_name
+                                from affiliations
+                               ) using(affiliationid)
+                               inner join (
+                                select authorid
+                                from current_links
+                               ) using(authorid)
+                               "))
+
+```
+
+
+```{r}
+
+current_links <- collect(current_links)
+linked_advisors <- collect(linked_advisors)
+theses <- collect(theses)
+authors_affiliation <- collect(authors_affiliation)
+linking_info <- collect(linking_info)
+```
+
+
+## Linking scores 
+
+- conditioning on link score > 0.7 is fine 
+
+```{r}
+
+linked_advisors %>%
+  left_join(linking_info, by = "iteration_id") %>%
+  ggplot(aes(x = link_score)) +
+  geom_histogram(bins = 100, aes( y = ..density..)) +
+  facet_wrap(~field)
+
+```
+
+## Check overlap of institution names and years 
+
+```{r}
+
+d_main <- linked_advisors %>%
+  filter(link_score > min_score_advisors) %>%
+  left_join(theses %>%
+              mutate(fullname = paste0(firstname, " ", lastname)) %>%
+              select(relationship_id, degree_year, uni_name, fullname),
+            by = "relationship_id") %>%
+  inner_join(current_links %>%
+               select(author_name, AuthorId),
+             by = "AuthorId") %>%
+  # join on year; filter on max similarity within relationship_id; still need to examine multiple matches (relationship_id) later; compare the years (they may not match if the author moves on but still has advisees at the old place )
+  left_join(authors_affiliation, 
+            by = c("AuthorId")) %>%
+  mutate(dist_uni_name = stringdist(uni_name, affil_name, method = "jw"),
+         dist_year = abs(degree_year - Year)) %>%
+  group_by(relationship_id) %>%
+  filter(dist_uni_name == min(dist_uni_name)) %>%
+  filter(dist_year == min(dist_year)) %>%
+  mutate(nb = n()) %>% # can still have multiple links if e.g. the dissertation is in x, but the affiliation is in x-1 and x+1 at the same institution
+  ungroup() 
+
+d_main <- d_main %>% 
+  filter(!duplicated(relationship_id))
+
+cat("Split of links by whether years are >/<", max_year_diff, "apart")
+table(d_main$dist_year <= max_year_diff)
+
+
+d_main <- d_main %>%
+  filter(dist_year <= max_year_diff & dist_uni_name <= max_uniname_distance)
+
+
+```
+
+
+
+### Save the "usable" links to database 
+
+```{r}
+
+d_out <- d_main %>%
+  select(relationship_id, AuthorId)
+
+
+dbWriteTable(conn = con,
+             name = "current_links_advisors",
+             value = d_out,
+             overwrite = T)
+
+q <- dbSendQuery(con, "CREATE UNIQUE INDEX idx_cla_relAuthorId ON current_links_advisors (relationship_id, AuthorId ASC)")
+dbClearResult(q)
+q <- dbSendQuery(con, "CREATE INDEX idx_cla_AuthorId ON current_links_advisors (AuthorId ASC)")
+dbClearResult(q)
+
+```
+
+
+
+## Fraction with matched advisor status by cohort of own graduation 
+
+```{r}
+pq_authors <- tbl(con, "pq_authors") %>% collect()
+
+```
+
+
+```{r}
+
+dk <- d_main %>%
+  select(AuthorId, relationship_id, degree_year) %>%
+  group_by(AuthorId) %>%
+  filter(degree_year == min(degree_year)) %>%
+  ungroup() %>%
+  rename(year_firstadvisee = degree_year) %>%
+  filter(!duplicated(AuthorId))
+
+```
+
+
+```{r}
+
+# TODO: is this the right selection? what do we drop in addition in duration? only the ones with missing gender? 
+dkk <- current_links %>%
+  left_join(pq_authors %>%
+              select(goid, year_phd = degree_year),
+            by = "goid") %>%
+  left_join(dk, by = "AuthorId")
+
+
+```
+
+
+Fraction of authors that eventually becomes advisor
+```{r}
+
+dkk %>%
+  mutate(advisor = ifelse(is.na(year_firstadvisee), 0, 1)) %>%
+  group_by(year_phd) %>%
+  summarise(advisor = mean(advisor),
+            .groups = "drop") %>%
+  ggplot(aes(x = year_phd, y = advisor)) +
+  geom_point() + 
+  geom_line()
+
+```
+
+Duration to advisor
+
+```{r}
+
+dkk %>%
+  filter(!is.na(year_firstadvisee)) %>%
+  mutate(duration = year_firstadvisee - year_phd) %>%
+  group_by(year_phd) %>%
+  summarise(duration = mean(duration),
+            .groups = "drop") %>%
+  ggplot(aes(x = year_phd, y = duration)) +
+  geom_point() + 
+  geom_line()
+
+
+```
+
+
+
+```{r}
+
+
+# fraction links by cohort/field?
+# do we disproportionately miss chinese students?
+# do we want career progression in the us or not anywhere? -- will be simple to condition on US institutions afterwards 
+
+
+```
+
+
+
+
+
+
+```{r, include = FALSE}
+DBI::dbDisconnect(con)
+```

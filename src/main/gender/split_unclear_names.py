@@ -23,9 +23,8 @@ import time
 import os 
 import subprocess
 
-from helpers.variables import db_file
+from helpers.variables import db_file, datapath
 from helpers.functions import analyze_db
-from helpers.variables import datapath
 
 # ## Variables; connect to db
 start_time = time.time()

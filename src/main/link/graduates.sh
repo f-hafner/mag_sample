@@ -1,5 +1,6 @@
 #!/bin/bash
 
+logfile_path=$1
 RECALL=0.9
 train_name="flavio_baseline"
 keywords=False
@@ -16,6 +17,6 @@ fields=("geology" "geography" "chemistry"
 for i in "${!fields[@]}"; do 
     field=${fields[$i]} 
 
-    sh link_onefield_graduates.sh $RECALL "$field" $train_name $institution $fieldofstudy_cat $fieldofstudy_str $keywords
+    sh link_onefield_graduates.sh $RECALL "$field" $train_name $institution $fieldofstudy_cat $fieldofstudy_str $keywords $logfile_path
 done 
 

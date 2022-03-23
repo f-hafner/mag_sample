@@ -8,7 +8,7 @@ Generate tables:
 - PaperAuthorUnique: unique paper-author combinations
 - author_sample: select authors that satisfy sample restrictions
 - author_fields: extract research fields of authors
-    - Two FieldClasses
+    - Three FieldClasses
         - "first", field at level 1 over publications in first `years_first_field`
         - "last", field at level 1 over publicaitons in last `years_last_field`
         - "main", field at level 0 over all publications
