@@ -1,0 +1,259 @@
+---
+title: "Some stats on how well current links perform"
+author: "Flavio Hafner, Christoph Hedtrich"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  pdf_document:
+    toc: true 
+    toc_depth: 4
+---
+
+
+Note: This could possibly be merged with /src/quality_linking.Rmd. But for now, I have left the two separate. Here we have some more sample restrictions and only use one sample of links. 
+This is not yet recorded in MAG. 
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+if (interactive()) {
+  # https://stackoverflow.com/questions/48684595/source-nested-r-files-within-rmarkdown-document. For calling files from subdir. This needs to be done only when called from within RStudio!!
+  knitr_rootdir <- rprojroot::find_rstudio_root_file()
+  knitr_rootdir <- paste0(knitr_rootdir, "analysis/")
+  knitr::opts_knit$set(root.dir = knitr_rootdir)
+}
+
+```
+
+
+
+## Preliminaries 
+
+```{r, include = FALSE}
+source("setup.R")
+source("helpers/functions.R")
+source("helpers/db_queries.R")
+```
+
+
+## Load relevant data 
+```{r}
+
+
+# this is taken from data_duration.R. Need to think how to best combine the calls without redundancies
+d_career <- tbl(con, "pq_authors") %>%
+  select(goid, degree_year, university_id) %>% 
+  inner_join(current_links, by = "goid") %>%
+  inner_join(author_sample %>%
+               select(AuthorId, YearLastPub, YearFirstPub),
+             by = c("AuthorId")) %>%
+  inner_join(author_info %>%
+               select(AuthorId, gender, censored), 
+             by = "AuthorId") %>%
+  filter(degree_year - YearFirstPub >= -5
+         & degree_year - YearFirstPub <= 5)  %>%
+  filter(degree_year >= 1985 & degree_year <= 2005) %>% 
+  collect()
+
+author_fields <- collect(author_fields)
+graduates_fields <- collect(graduates_fields)
+fields_names <- collect(fields_names)
+current_links <- collect(current_links)
+
+
+```
+
+
+## Comparing the links between the graduating and the publishing field
+
+```{r}
+# first_field_id is field1 in MAG. main_field is the major field
+
+compare_field_links <- graduates_fields %>%
+  inner_join(author_fields,
+             by = c("AuthorId", "field_name" = "main_field")) %>%
+  select(goid, position, name_field0 = field_name,
+         field1_pq = fieldname, first_field_id, field_group) %>%
+  inner_join(fields_names %>%
+               rename(field1_mag = NormalizedName),
+             by = c("first_field_id" = "FieldOfStudyId")) %>%
+  filter(goid %in% d_career$goid)
+  
+
+
+```
+
+
+- How to read the figure: darker color = a larger fraction of graduates in graduating field (y-axis) is matched to entities in publishing field on x-axis.
+
+
+```{r}
+
+
+dtemp <- compare_field_links %>%
+    group_by(name_field0, field1_mag, field1_pq) %>%
+    summarise(nb = n(),
+                .groups = "drop") %>%
+    group_by(name_field0, field1_pq) %>%
+    mutate(s = nb / sum(nb))
+
+fields <- unique(dtemp$name_field0)
+plots <- map(.x = fields,
+    .f = ~dtemp %>% 
+      filter(name_field0 == .x) %>%
+      ggplot(aes(x = field1_mag, y = field1_pq)) + 
+      geom_tile(aes(fill = s)) +
+      scale_fill_gradient2(low = "red", mid = "yellow", high = "blue",
+                           midpoint = quantile(dtemp$s, 0.5)) +
+      theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) +
+      labs(title = paste0("Major field: ", .x),
+           y = "Graduating field", x = "Publishing field")
+      )
+names(plots) <- fields
+
+plots
+
+fields_to_save <- c("biology", "physics", "chemistry")
+
+lapply(fields_to_save, function(f) {
+  ggsave(plot = plots[[f]],
+         filename = paste0(figdir, "fieldlink_", f, ".pdf"),
+         device = "pdf")
+})
+
+
+```
+
+
+
+## Fraction linked by year and field 
+
+
+```{r}
+
+pq_authors <- tbl(con, "pq_authors") %>%
+  left_join(tbl(con, "pq_unis") %>%
+              select(location, university_id),
+            by = "university_id") %>%
+  select(goid, fullname, degree_year, location) %>%
+  filter(degree_year >= 1985 & degree_year <= 2005)
+
+
+pq_fields = tbl(con, "pq_fields")  %>%
+  inner_join(pq_authors %>%
+               select(goid),
+             by = "goid")
+pq_fields_mag <- tbl(con, "pq_fields_mag") %>%
+  inner_join(pq_authors %>%
+               select(goid),
+             by = "goid")
+
+
+# note: for the analysis, I used the field in mag, but here this is not possible. see the linking script and/or the other quality file for code 
+
+```
+
+
+
+```{r}
+pq_authors <- collect(pq_authors)
+pq_fields <- collect(pq_fields)
+pq_fields_mag <- collect(pq_fields_mag)
+
+# keep only the first mentioned field per author that maps into MAG
+pq_fields_mag <- pq_fields_mag %>%
+              group_by(goid) %>%
+              filter(position == min(position)) %>%
+              ungroup() 
+
+```
+
+
+```{r}
+d_authors <- pq_authors %>%
+  filter(grepl("United States", location)) %>%
+  left_join(pq_fields_mag %>%
+              select(goid, mag_field0),
+            by = "goid") %>%
+  left_join(fields_names %>%
+              rename(field = NormalizedName), 
+            by = c("mag_field0" = "FieldOfStudyId")) %>%
+  mutate(has_field = ifelse(goid %in% pq_fields$goid, 1, 0))
+
+d_authors %>% 
+  mutate(has_field_mag = ifelse(is.na(mag_field0), 0, 1)) %>%
+  group_by(degree_year, has_field_mag) %>%
+  summarise(nb = n(), .groups = "drop") %>%
+  group_by(degree_year) %>%
+  mutate(s = nb / sum(nb)) %>%
+  ungroup() %>%
+  filter(has_field_mag == 1) %>%
+  ggplot(aes(x = degree_year, y = s)) +
+  geom_line() + 
+  labs(y = "Fraction of graduates with a link to MAG")
+
+
+grad_counts <- d_authors %>%
+  filter(!is.na(field)) %>%
+  group_by(degree_year, field) %>%
+  summarise(nb = n(), .groups = "drop") %>%
+  filter(field %in% c(geemp_fields, lps_fields))
+
+keep_links <- current_links %>%
+  filter(link_score > 0.7)
+
+link_counts <- compare_field_links %>%
+  filter(goid %in% keep_links$goid) %>%
+  left_join(d_authors %>%
+              select(goid, degree_year),
+            by = "goid") %>%
+  rename(field = name_field0) %>%
+  group_by(degree_year, field) %>%
+  summarise(nb = n(), .groups = "drop")
+  
+
+
+map(.x = list(geemp_fields, lps_fields),
+    .f = ~grad_counts %>%
+          filter(field %in% .x) %>%
+          ggplot(aes(x = degree_year, y = nb, color = field)) +
+          geom_line() +
+          labs(y = "Number of graduates")
+  )
+
+
+```
+
+
+
+```{r}
+
+
+map(.x = list(geemp_fields, lps_fields),
+    .f = ~grad_counts %>%
+          filter(field %in% .x) %>%
+          left_join(link_counts %>% 
+                      rename(n_linked = nb), 
+                    by = c("degree_year", "field")) %>%
+          mutate(share_linked = n_linked / nb) %>%
+          ggplot(aes(x = degree_year, y = share_linked, color = field)) +
+          geom_line() +
+          labs(y = "Fraction linked")
+  )
+
+# Note: fraction linked 
+  # the SED data are on the US, not overall. So it is difficult to compare 
+  # perhaps at least compare the total numbers? but that is already in quality_proquest?
+
+```
+
+
+
+```{r, include = FALSE}
+DBI::dbDisconnect(con)
+```
+
+
+
+

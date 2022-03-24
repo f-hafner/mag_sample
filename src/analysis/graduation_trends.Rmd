@@ -1,0 +1,452 @@
+---
+title: "Graduation trends in proquest and official statistics"
+author: "Flavio Hafner, Christoph Hedtrich"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  pdf_document:
+    toc: true 
+    toc_depth: 4
+---
+
+
+Questions:
+
+1. Is gender assignment of graduates stable? 
+2. Does our transition rate from PhD to publishing correlate with the official transition rate?
+
+
+
+To do 
+
+- tidy script below 
+- integrate with `quality_current_links.Rmd`?
+- merge this with quality_current_links? it seems to have mostly the same purpose. not sure what is a good name for it 
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+if (interactive()) {
+  # https://stackoverflow.com/questions/48684595/source-nested-r-files-within-rmarkdown-document. For calling files from subdir. This needs to be done only when called from within RStudio!!
+  knitr_rootdir <- rprojroot::find_rstudio_root_file()
+  knitr_rootdir <- paste0(knitr_rootdir, "analysis/")
+  knitr::opts_knit$set(root.dir = knitr_rootdir)
+}
+
+```
+
+
+## Preliminaries 
+
+```{r, include = FALSE}
+source("setup.R")
+source("helpers/functions.R")
+
+```
+
+
+Notes 
+
+- the identification of links will have some measurement error because some authors are identified in different fields than field0
+
+
+```{r}
+
+# what do I need?
+q_authors <- "
+SELECT * from pq_authors
+INNER JOIN (
+  SELECT university_id, normalizedname AS university_name 
+  FROM pq_unis
+  WHERE location like '%United States%'
+) USING(university_id)
+"
+
+pq_authors <- tbl(con, sql(q_authors))
+
+
+pq_fields_mag <- tbl(con, "pq_fields_mag") %>% # see the quality_proquest file for a correspondence? 
+  filter(position == 0) %>%
+  select(goid, mag_field0) %>%
+  left_join(tbl(con, "FieldsOfStudy") %>%
+              select(FieldOfStudyId, fieldname = NormalizedName),
+            by = c("mag_field0" = "FieldOfStudyId"))
+
+
+firstnames_gender <- tbl(con, "FirstNamesGender") %>%
+  mutate(gender = case_when(
+    ProbabilityFemale <= male_threshold ~ "male",
+    ProbabilityFemale >= 1- male_threshold ~ "female"
+  ))
+current_links <- tbl(con, "current_links")
+
+affiliations <- tbl(con, "Affiliations") %>%
+  select(AffiliationId, NormalizedName, Iso3166Code)
+
+author_affiliation <- tbl(con, "AuthorAffiliation") %>%
+  inner_join(current_links %>%
+               select(AuthorId),
+             by = "AuthorId") %>%
+  left_join(affiliations,
+            by = "AffiliationId") %>%
+  select(AuthorId, Year, AffiliationName = NormalizedName, Iso3166Code)
+
+```
+
+
+
+```{r}
+counts_nces <- read.csv(paste0(path_nces, "graduate_counts.csv"))
+fields_nces <- read.csv(paste0(path_nces, "fields.csv"))
+
+parent_fields_nces <- read.csv(paste0(path_nces, "parent_fields.csv"))
+
+counts_us_nces <- read.csv(paste0(path_nces, "postgrad_us_counts.csv"))
+sectors_us_nces <- read.csv(paste0(path_nces, "postgrad_us_sectors.csv"))
+
+counts_nces <- counts_nces %>%
+  left_join(fields_nces %>%
+              select(field_id, fld = shortname),
+            by = "field_id")
+
+acad_us_nces <- sectors_us_nces %>%
+  filter(sector == "academia") %>%
+  left_join(counts_us_nces, 
+            by = c("gender", "field_id", "year")) %>%
+  mutate(n_acad = share * nb) %>%
+  select(field_id, year, gender, n_acad)
+# aggregate by major field 
+acad_us_nces <- acad_us_nces %>%
+  left_join(parent_fields_nces, by = "field_id") %>%
+  group_by(year, parent_field_id, gender) %>%
+  summarise(n_acad = sum(n_acad), .groups = "drop")
+
+acad_us_nces <- acad_us_nces %>%
+  left_join(counts_nces %>%
+              select(field_id, year, gender, nb),
+            by = c("parent_field_id" = "field_id", "year", "gender")) %>%
+  rename(field_id = parent_field_id, 
+         n_graduates = nb) %>%
+  left_join(fields_nces %>%
+              select(field_id, fld = shortname),
+            by = "field_id")
+
+
+```
+
+
+```{r}
+
+pq_authors <- pq_authors %>%
+  filter(degree_year >= 1980 & degree_year <= 2021) %>%
+  select(goid, degree_year, firstname, degree_year, university_name) %>%
+  left_join(firstnames_gender %>%
+              select(FirstName_g = FirstName, gender),
+            by = c("firstname" = "FirstName_g")) %>%
+  left_join(pq_fields_mag, by = "goid") %>%
+  collect()
+
+```
+
+```{r}
+humanities <- c("art", "history", "philosophy")
+math_compsc <- c("mathematics", "computer science")
+socsci <- c("economics", "political science", "psychology", 
+            "sociology")
+phys_earth <- c("chemistry", "environmental science", # env sc seems to make sense to be put here 
+                "geography", "geology", "physics")
+life_sc <- c("biology", "medicine")
+engn <- c("engineering", "materials science")
+unclassified <- c("environmental science", "business") # business is classified as "other social science" (see nces_graduates_field_gender.csv)
+unclassified <- c("business")
+pq_authors <- pq_authors %>%
+    mutate(fld = case_when(
+        fieldname %in% humanities ~ "humanities",
+        fieldname %in% math_compsc ~ "math_compsc",
+        fieldname %in% socsci ~ "socsci",
+        fieldname %in% life_sc ~ "life_sc",
+        fieldname %in% phys_earth ~ "phys_earth",
+        fieldname %in% engn ~ "engn",
+        fieldname %in% unclassified ~ "unclassified",
+        TRUE ~ "missing"
+    ))
+
+
+```
+
+
+## 1. Is gender assignment stable?
+
+Compare gender trends by field in proquest and in official data
+
+```{r}
+select_fields <- c("engn", "humanities", "life_sc", "math_compsc", "phys_earth",
+                   "socsci")
+
+counts_pq <- pq_authors %>% 
+  group_by(degree_year, gender, fld) %>%
+  summarise(nb = n(), .groups = "drop") %>%
+  group_by(degree_year, fld) %>%
+  mutate(s = nb / sum(nb)) %>%
+  ungroup()
+
+counts_nces <- counts_nces %>%
+  group_by(year, fld) %>%
+  mutate(s = nb / sum(nb)) %>%
+  ungroup()
+
+d_counts <- bind_rows(
+  counts_pq %>% 
+    select(gender, fld, year = degree_year, share = s, nb) %>%
+    mutate(source = "ProQuest"),
+  counts_nces %>%
+    select(gender, fld, year, share = s, nb) %>%
+    mutate(source = "NCES")
+) %>%
+  filter(year <= 2019) %>%
+  filter(fld %in% select_fields) %>%
+  mutate(gender = ifelse(is.na(gender), "missing", gender)) 
+
+
+```
+
+
+
+```{r}
+
+p <- d_counts %>% 
+  filter(fld != "humanities") %>%
+  group_by(fld, year, source) %>%
+  summarise(nb = sum(nb),
+            .groups = "drop") %>%
+  ggplot(aes(x = year, y = nb, linetype = source)) +
+  geom_line() +
+  facet_wrap(~fld) + 
+  theme(legend.position = "bottom") +
+  annotate("rect", xmin = 1985, xmax = 2005, ymin = 0, ymax = 16000, 
+           alpha = .2) +
+  scale_x_continuous(breaks = c(1980, 1990, 2000, 2010))
+
+p 
+
+ggsave(plot = p,
+       filename = paste0(figdir, "trends_pq_nces.pdf"),
+       device = "pdf")
+
+p <- d_counts %>% 
+  filter(fld != "humanities") %>%
+  filter(gender %in% c("male", "female")) %>%
+  ggplot(aes(x = year, y = nb, color = gender, linetype = source)) +
+  geom_line() +
+  facet_wrap(~fld) + 
+  theme(legend.position = "bottom") +
+  annotate("rect", xmin = 1985, xmax = 2005, ymin = 0, ymax = 8000, 
+           alpha = .2) +
+  scale_x_continuous(breaks = c(1980, 1990, 2000, 2010))
+
+p 
+
+ggsave(plot = p,
+       filename = paste0(figdir, "trends_pq_nces_gender.pdf"),
+       device = "pdf")
+
+```
+
+
+## 2. Does our transition rate from PhD to publishing correlate with the official transition rate?
+
+Transitions to US academia in NCES
+
+```{r}
+author_affiliation <- collect(author_affiliation)
+current_links <- collect(current_links)
+
+```
+
+
+```{r}
+first_affil_us <- author_affiliation %>%
+  # drop affiliations pre-Phd
+  left_join(current_links %>%
+              select(goid, AuthorId),
+            by = "AuthorId") %>%
+  left_join(pq_authors %>%
+              select(goid, degree_year, university_name ),
+            by = "goid") %>%
+  filter(Year > degree_year) %>%
+  group_by(AuthorId) %>%
+  filter(Year == min(Year)) %>%
+  ungroup() %>%
+  filter(Iso3166Code == "US") %>%
+  filter(!duplicated(AuthorId)) %>%
+  mutate(dist_uni_names = stringdist(
+    AffiliationName, university_name, method = "jw"
+  )) %>%
+  mutate(same_uni = ifelse(dist_uni_names > 0, "no", "yes"))
+#NOTE: unclear where to cut, even with distance of 0.05 it is still possible to be the same uni ("at")
+  # but also univ california system will have such small distances
+```
+
+
+```{r}
+
+pq_to_us_acad <- pq_authors %>%
+  inner_join(current_links %>%
+               select(AuthorId, goid),
+             by = "goid") %>%
+  inner_join(first_affil_us %>%
+               select(AuthorId, AffiliationName, affil_year = Year, same_uni),
+             by = "AuthorId") %>%
+  mutate(ydiff = affil_year - degree_year) %>%
+  filter(abs(ydiff) <= 5) 
+
+uni_sector <- "university|college|institute"
+affils_fld <- pq_to_us_acad %>%
+  filter(degree_year %in% 1985:2005) %>%
+  mutate(institution = case_when(
+    same_uni == "yes" ~ "same as graduation",
+    grepl(uni_sector, AffiliationName) ~ "other than graduation",
+    TRUE ~ "non-academic"
+  )) %>%
+  group_by(fld, institution) %>%
+  summarise(nb = n(), .groups = "drop")
+
+```
+
+
+
+Destinations of identified links in Proquest
+
+```{r}
+
+affils_fld %>%
+  filter(!(fld %in% c("unclassified", "humanities", "missing"))) %>%
+  ggplot(aes(x = fld, y = nb, fill = institution)) +
+  geom_bar(stat = "identity") + 
+  coord_flip() +
+  theme(legend.position = "bottom")
+
+```
+
+Transitions to academic sector: total
+
+```{r}
+
+pq_to_us_acad_total <- pq_to_us_acad %>%
+  filter(grepl(uni_sector, AffiliationName)) %>%
+  group_by(degree_year, gender, fld) %>%
+  summarise(n_acad = n(), .groups = "drop")
+
+acad_us <- bind_rows(
+  acad_us_nces %>%
+    select(-field_id, -n_graduates) %>%
+    mutate(source = "NCES"),
+  pq_to_us_acad_total %>%
+    rename(year = degree_year) %>%
+    mutate(source = "ProQuest")
+) %>%
+  filter(year <= 2019) %>%
+  filter(fld %in% select_fields) %>%
+  mutate(gender = ifelse(is.na(gender), "missing", gender)) 
+
+
+```
+
+
+```{r}
+p <- acad_us %>% 
+  filter(fld != "humanities" & year %in% select_years) %>%
+  filter(gender %in% c("male", "female")) %>%
+  ggplot(aes(x = year, y = n_acad, color = gender, linetype = source)) +
+  geom_line() +
+  facet_wrap(~fld) + 
+  theme(legend.position = "bottom") +
+  scale_x_continuous(breaks = c(1990, 2000))
+
+ggsave(plot = p,
+       filename = paste0(figdir, "transitions_pq_nces.pdf"),
+       device = "pdf")
+p
+```
+
+```{r}
+p <- acad_us_nces %>%
+  filter(fld != "humanities" & fld != "other" & year %in% select_years) %>%
+    ggplot(aes(x = year, y = n_acad / n_graduates, color = gender)) + 
+  geom_line() + 
+  facet_wrap(~fld)  +
+  scale_x_continuous(breaks = c(1990, 2000)) + 
+  theme(legend.position = "bottom") + 
+  labs(y = "Transition rate to US academia")
+
+ggsave(plot = p,
+       filename = paste0(figdir, "transition_rates_nces.pdf"),
+       device = "pdf")
+p
+
+```
+
+
+
+Transitions to academic sector: by same/different institution than PhD institution
+
+```{r}
+
+pq_to_us_acad_inst <- pq_to_us_acad %>%
+  filter(grepl(uni_sector, AffiliationName)) %>%
+  group_by(degree_year, gender, fld, same_uni) %>%
+  summarise(n_acad = n(), .groups = "drop") %>% 
+  rename(year = degree_year) %>%
+  filter(fld %in% select_fields & fld != "humanities") %>%
+  filter(!is.na(gender)) %>%
+  mutate(institution = ifelse(same_uni == "yes", "same as PhD", "other than PhD"),
+         institution = factor(institution, levels = c("same as PhD", "other than PhD"))
+         )
+
+acad_us_nces <- acad_us_nces %>%
+  filter(year <= 2019 & fld != "humanities" ) %>%
+  filter(fld %in% select_fields) %>%
+  mutate(gender = ifelse(is.na(gender), "missing", gender)) 
+
+```
+
+
+
+```{r}
+
+p <- ggplot() + 
+  geom_line(data = acad_us_nces %>% 
+              filter(year %in% 1985:2005),
+            aes(x = year, y = n_acad)) + 
+  geom_bar(data = pq_to_us_acad_inst,
+           aes(x = year, 
+               y = n_acad, 
+               fill = institution),
+           alpha = 0.5,
+           stat = "identity") +
+  facet_grid(gender~fld) +
+  theme(legend.position = "bottom") + 
+  scale_x_continuous(breaks = c(1990, 2000))
+
+
+ggsave(plot = p,
+       filename = paste0(figdir, "transitions_pq_detailed.pdf"))
+
+p
+
+```
+
+
+
+### Comments 
+
+- black line is the NCES count (add legend?)
+- the red bars are people whose first affiliation after PhD is their graduating institution. consists of
+  - stayers that do postdocs at their home institution
+  - stayers that publish PhD papers with a lag
+  - quitters that publish PhD papers with a lag
+
+
+```{r}
+DBI::dbDisconnect(con)
+```

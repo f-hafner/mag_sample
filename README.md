@@ -1,16 +1,16 @@
 # mag_sample
-This is some sample code of my research projects. I have worked on two main projects in the past.
-The first uses data from Microsoft Academic Graph (MAG) and ProQuest. The present repo is an extract of this project.
-The second project uses confidential data and everything is stored on a separate server which I can access only with a vpn. There I use more R code for data analysis than in the present repo.
+This is some sample code of my research projects. The present repository is an extract from a project that uses data from Microsoft Academic Graph (MAG) and ProQuest. 
+
+In another I use confidential data and everything is stored on a separate server that is not connected to the general internet. There I use more R code for data analysis than in the present repository.
 
 
 ## Directory structure
-- `src/`: data preparation and linking.
-- `analysis/`: analyze the publication careers of scientists.
+- `src/`: data preparation and linking; analyze the publication careers of scientists.
+- `output/`: destination for tables and figures generated in `src/`. 
 
 ## Contents
 
-### directory `src` 
+### directory `src/dataprep` 
 The `pipeline.sh` script calls consecutively the scripts for 
 - setting up the sqlite database with MAG data
 - preparing additional tables for analysis
@@ -19,7 +19,7 @@ The `pipeline.sh` script calls consecutively the scripts for
 - making some reports about the data and linking quality
 
 
-### directory `analysis` 
+### directory `src/analysis` 
 The `pipeline.sh` script calls consecutively the scripts for
 - comparing graduation trends in ProQuest data and official statistics
 - assess the quality of current links 
