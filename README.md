@@ -1,8 +1,7 @@
 # mag_sample
 This is some sample code of my research projects. I have worked on two main projects in the past.
-The first uses uses data from Microsoft Academic Graph (MAG) and ProQuest. The present repo is an extract of this project.
-The second project uses confidential data and everything is stored on a separate server which I can access only with a vpn.
-I use more R code for data analysis than in the present repo.
+The first uses data from Microsoft Academic Graph (MAG) and ProQuest. The present repo is an extract of this project.
+The second project uses confidential data and everything is stored on a separate server which I can access only with a vpn. There I use more R code for data analysis than in the present repo.
 
 
 ## Directory structure
