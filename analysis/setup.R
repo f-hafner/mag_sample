@@ -17,11 +17,18 @@ min_careerlength <- 5 # focus on authors with at least this career length
 degree_year_start <- 1985
 degree_year_end <- 2005
 
+select_years <- degree_year_start:degree_year_end
+male_threshold <- 0.2 # for assigning gender probabilistically 
+
 
 geemp_fields <- c("geology", "geography", "environmental science",
                   "mathematics", "computer science", "engineering",
                   "chemistry", "physics", "economics") 
 lps_fields <- c("biology", "psychology", "sociology", "political science")
+
+figdir <- "../output/img/duration_advisor/"
+tabledir <- "../output/tables/duration_advisor/"
+path_nces <- "/mnt/ssd/NCES_NSF/processed/"
 
 
 ### For duration

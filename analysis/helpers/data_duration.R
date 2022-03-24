@@ -1,11 +1,4 @@
 
-# Note: some links are dropped when the following holds for an AuthorId: no paper within first 5 years of publication that has non-missing DocType and non-missing Field1
-  # as of 7/3/22, this drops 49 authors
-
-# TODO
-  # what explains the difference between n_papers (in author_output_adjusted) and PaperCount (in output_careerstart)?
-    # Should be fixed now; run again prep_linked_data.py when db is free. Had to keep only certain doctypes for the table author_output
-
 # data_duration
 # Load data for duration analysis, prepare main data frames 
 
@@ -23,32 +16,6 @@ d_career <- tbl(con, "pq_authors") %>%
              by = "AuthorId") %>%
   filter(degree_year >= degree_year_start & degree_year <= degree_year_end) # this reduces the sample by almost half... should we omit the restriction?
 
-
-# Not sure this is still needed?
-# output_careerstart <- author_output %>%
-#   inner_join(d_career %>%
-#                select(AuthorId, degree_year),
-#              by = "AuthorId") %>%
-#   filter(Year <= degree_year + 5) %>%
-#   mutate(YearsExperience = degree_year - Year) %>%
-#   select(AuthorId, PaperCount, TotalForwardCitations, YearsExperience)
-
-
-# papers_careerstart <- tbl(con, "PaperAuthorUnique") %>%
-#   inner_join(tbl(con, "Papers") %>%
-#                select(PaperId, Year, DocType, CitationCount),
-#              by = "PaperId") %>%
-#   inner_join(tbl(con, "paper_outcomes") %>%
-#                select(PaperId, CitationCount_y5),
-#              by = "PaperId") %>% 
-#   inner_join(d_career %>%
-#                select(AuthorId, degree_year),
-#              by = "AuthorId") %>%
-#   filter(Year <= degree_year + 5) %>%
-#   filter(DocType %in% c("Journal", "Conference", "Book", "BookChapter")) %>%
-#   inner_join(tbl(con, "PaperMainFieldsOfStudy") %>%
-#                select(PaperId, Field1, Field0),
-#              by = "PaperId")
 
 papers_career <- tbl(con, "PaperAuthorUnique") %>%
   inner_join(tbl(con, "Papers") %>%
@@ -73,15 +40,6 @@ d_career <- d_career %>%
 
 advisor_links <- collect(advisor_links)
 
-# output_careerstart <- output_careerstart %>%
-#   collect() %>%
-#   # filter(YearsExperience >= 0) %>% # omit pre-PhD publications?--does not make a difference to the result below
-#   group_by(AuthorId) %>%
-#   summarise(PaperCount = sum(PaperCount),
-#             TotalForwardCitations = sum(TotalForwardCitations),
-#             .groups = "drop")
-
-# papers_careerstart <- collect(papers_careerstart)
 papers_career <- collect(papers_career)
 
 
@@ -121,7 +79,7 @@ papers_career <- papers_career %>%
   filter(!is.na(Field1)) %>%
   # filter(DocType == "Journal") %>%
   mutate(cit_measure = CitationCount_y5) %>%
-  mutate(cit_measure = cit_measure) # the only way to get rid of the excess mass at low values in the replication plots of Heckman and others is to add 1 to the citation measure
+  mutate(cit_measure = cit_measure) 
 
 # normalize by year-field and by year 
 agg_year_field <- papers_career %>%
@@ -176,9 +134,7 @@ author_output_adjusted <- map(.x = unique(author_output_adjusted$exper),
       ) %>%
   bind_rows()
 
-# TODO: unclear why here are some authors have not exper = 5 but exper = 11 and some authors are in here that are not in d_career
-
-# ## Sample definitions
+# ## 3. Sample definitions
 
 cat("Defining samples... \n")
 
@@ -196,7 +152,6 @@ analysis_samples <- list(
 )
 
 # for decomposition: do not take logs, do not rescale 
-  # NOTE: there are a few graduates (49 as of 7/3/22) without any paper in the first 5 years of graduation
 analysis_samples_decomp <- map(
   .x = analysis_samples,
   .f = ~.x %>%
@@ -239,10 +194,7 @@ analysis_samples <- map(
               by = c("AuthorId", "exper"))
 )
 
-# TODO: should this be done within field-exper or field-exper-graduation cohort? e.g. if there are time trends in the citation distribution that we are not getting rid of with the rescaling
-  # maybe as robustness, group also by 5-year graduation year bins?
-
-## Make data frames for analysis
+## 4. Make data frames for analysis
 
 cat("Data frames for analysis... \n")
 
@@ -288,7 +240,6 @@ df_duration <- dk %>%
   # only need the observations at the end of each period
   filter(experience == exper)
 
-# for people staying > 5 years, this drop the spell 5-8! 
 
 # join output: contemporaneous for exper = 5 (no one drops out there), 1-period lagged for exper >=8
 df_duration <- bind_rows(
@@ -326,10 +277,6 @@ df_duration <- df_duration %>%
   ungroup() %>%
   mutate(exper = ifelse(exper == last_exper, career_length, exper)) %>%
   select(-last_exper, -experience)
-
-# note: exper denotes the end of the period. see https://www.stata.com/manuals/ststset.pdf, p. 15
-#df_duration %>% filter(AuthorId == 609642) 
-
 
 
 # df for decomposition
@@ -409,6 +356,5 @@ df_decomp <- df_decomp %>%
 
 
 
-## End 
 
 

@@ -29,12 +29,6 @@ author_career <- author_career %>%
   mutate(career_start = degree_year,
          YearsExperience = Year - career_start)
 
-# condition on maximum length of experience so that also the late starters (graduated in 2000) have the potential to be present in the full data 
-# author_career <- author_career %>%
-#   filter(YearsExperience <= 14)
-
-
-
 ### Aggregate at author-experience level 
 author_careerbins <- author_career %>%
   mutate(YearsExperience = size_careerbin * floor(YearsExperience / size_careerbin),
@@ -53,16 +47,6 @@ author_careerbins <- author_career %>%
     across(.cols = c("PaperCount", "TotalForwardCitations"),
            .fns = ~ifelse(is.na(.x), 0, .x))
   )
-
-
-# define the end stage for each career
-# author_careerend <- author_career %>%
-#   group_by(AuthorId) %>%
-#   filter(YearsExperience == max(YearsExperience)) %>%
-#   ungroup() %>%
-#   mutate(censored = ifelse(Year >= end_year_duration, 1, 0)) %>%
-#   select(AuthorId, career_end = YearsExperience, censored)
-# 
 
 
 ### Add field info

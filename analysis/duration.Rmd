@@ -1,0 +1,749 @@
+---
+title: "Duration analysis"
+author: "Flavio Hafner, Christoph Hedtrich"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  pdf_document:
+    toc: true 
+    toc_depth: 4
+---
+
+Notes
+
+- the output measures are re-scaled within experience cell. When using for duration analysis with time-varying covariates, check if that makes sense
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+if (interactive()) {
+  # https://stackoverflow.com/questions/48684595/source-nested-r-files-within-rmarkdown-document. For calling files from subdir. This needs to be done only when called from within RStudio!!
+  knitr_rootdir <- rprojroot::find_rstudio_root_file()
+  knitr_rootdir <- paste0(knitr_rootdir, "analysis/")
+  knitr::opts_knit$set(root.dir = knitr_rootdir)
+}
+
+```
+
+
+
+## Preliminaries 
+
+```{r, include = FALSE}
+source("setup.R")
+source("helpers/functions.R")
+source("helpers/db_queries.R")
+
+# Inputs for regressions
+fe_controls <- c("field_f", "gradyear_f", "uni_f")
+fe_controls <- paste0(fe_controls, collapse = " + ")
+x_female <- "female_geemp + female_lps"
+clustervar <- "field_f"
+
+```
+
+
+## Prepare data
+```{r}
+source("helpers/data_duration.R")
+```
+
+
+## Some summary stats from the data 
+
+Rescaling the output measures 
+
+
+```{r, echo = FALSE}
+
+# is this good enough? how would we know? 
+d_var <- bind_rows(
+  papers_career %>% 
+    mutate(y = cit_measure / ci_year_field) %>%
+    group_by(Field0, Year) %>%
+    summarise(v = var(y), .groups = "drop") %>%
+    mutate(type = "rescale"),
+  papers_career %>%
+    mutate(y = cit_measure / ci_year) %>%
+    group_by(Field0, Year) %>%
+    summarise(v = var(y), .groups = "drop") %>%
+    mutate(type = "noscale")
+) 
+
+
+d_var %>%
+      ggplot(aes(x = log(v), group = type, color = type, fill = type)) + 
+      geom_histogram(aes(y=..density..),
+                     position = "identity", alpha = 0.2, bins = 60) +
+      geom_density(alpha = 0.01) +
+      labs(x = "Log variance within Field0-year") 
+
+
+# the figure shows the plot of the field-year specific variance of citations
+  # the variance slightly increases on average, but the dispersion gets much lower
+  # this means that citation counts within field1 become more homogenous within field0 across years and across field1
+
+# get similar figure for IQR 
+  
+```
+
+
+\newpage
+Career length when using Huang and exact year of graduation (for censored = 0)
+
+
+```{r, echo=FALSE}
+d_career %>%
+  filter(censored == 0) %>%
+  select(AuthorId, starts_with("career_length"), gender) %>%
+  gather(key = var, value = val, career_length:career_length_huang) %>%
+  ggplot(aes(val, color = gender, group = gender)) +
+  geom_density() +
+  facet_wrap(~var)
+
+
+```
+
+
+
+\newpage
+Compare output of graduates with >= 5 and <5 years of career length
+
+
+```{r, echo=FALSE}
+df_kaplanmeier %>%
+  select(AuthorId, eucl_idx, n_papers, gender, career_length) %>%
+  mutate(sampled = ifelse(career_length >= min_careerlength, "in sample", "not in sample"),
+         v_norm = pmin(career_length, min_careerlength)) %>% 
+  ggplot(aes(eucl_idx, color = gender, group = gender)) +
+  # geom_density() +
+  stat_ecdf(geom = "step") +
+  facet_wrap(~sampled)
+
+
+```
+
+
+
+## Duration analysis: Kaplan-Meier
+
+
+```{r, echo=FALSE}
+
+m_all <- survfit(Surv(career_length, status, type = "right") ~ gender, 
+             ctype = 2,
+             cluster = df_kaplanmeier$field_f, 
+             robust = T,
+             data = df_kaplanmeier)
+m_lps <- survfit(Surv(career_length, status, type = "right") ~ gender, 
+                 subset = df_kaplanmeier$fld == "LPS" ,
+                 ctype = 2,
+                 cluster = df_kaplanmeier$field_f,
+                 robust = T,
+                 data = df_kaplanmeier)
+m_geemp <- survfit(Surv(career_length, status, type = "right") ~ gender,
+                   subset = df_kaplanmeier$fld == "GEEMP",
+                   ctype = 2,
+                   cluster = df_kaplanmeier$field_f, 
+                   robust = T,
+                   data = df_kaplanmeier)
+
+
+p <- autoplot(m_all) + 
+  theme(legend.position = "bottom") + 
+  labs(title = "All fields")
+
+p 
+
+ggsave(plot = p, 
+       filename = paste0(figdir, "career_kaplanmeier.pdf"),
+       device = "pdf")
+
+
+autoplot(m_lps) + 
+  theme(legend.position = "bottom") + 
+  labs(title = "Field: LPS")
+
+autoplot(m_geemp) + 
+  theme(legend.position = "bottom") + 
+  labs(title = "Field: GEEMP") 
+
+
+```
+
+
+
+
+## Gender differences in output and citations
+
+### Figures: euclidean index of citations
+
+
+CDF
+
+```{r}
+p <- df_returns %>%
+  ggplot(aes(x = eucl_idx, group = gender, color = gender)) +
+  stat_ecdf() +
+  theme(legend.position = "bottom") + 
+  labs(y = "Percentile", x = "Euclidean citation index")
+
+ggsave(plot = p, 
+       filename = paste0(figdir, "eucl_idx_ecdf.pdf"),
+       device = "pdf")
+
+p
+
+```
+
+\newpage
+Average index along percentiles of paper count 
+
+```{r}
+probs_q <- c(0, 0.25, 0.5, 0.6, 0.7, 0.8, 0.9, 1)
+# probs_q <- seq(0, 1, 0.25)
+df_returns %>% 
+  mutate(grp = cut(n_papers, 
+                   breaks = quantile(n_papers, probs = probs_q), 
+                   labels = probs_q[2:length(probs_q)],
+                   include.lowest = T)
+         ) %>%
+  mutate(grp = as.numeric(as.character(grp))) %>%
+  group_by(grp, gender) %>%
+  summarise(y_qual = mean(eucl_idx),
+            .groups = "drop") %>%
+  ggplot(aes(x = grp, y = y_qual, color = gender, group = gender)) +
+  geom_line() +
+  geom_point() +
+  labs(x = "Percentile(#Papers)", y = "Average Euclidean index") 
+
+# no big differences between fields. 
+```
+
+
+Paper count by field 
+
+```{r}
+
+df_returns %>%
+  group_by(gender, main_field_f) %>%
+  summarise(n_papers = mean(n_papers_lvl),
+            .groups = "drop") %>%
+  spread(key = gender, value = n_papers) %>%
+  mutate(y = (Female - Male) / Male) %>%
+  ggplot(aes(x = main_field_f, y = y)) + 
+  geom_bar(stat = "identity", position = position_dodge()) +
+  coord_flip()
+
+```
+
+
+
+### Regressions: average 
+
+- number of obs may change b/c all outcomes are 0 within a group.
+
+```{r}
+
+df_returns <- df_returns %>%
+  mutate(post95 = ifelse(degree_year >= 1995, 1, 0),
+         time_trend = degree_year - 1995,
+         n_papers2 = n_papers * n_papers,
+         eucl_idx2 = eucl_idx * eucl_idx,
+         eucl_idx_papers = eucl_idx * n_papers,
+         avg_cites_lvl = n_cites_lvl / n_papers_lvl
+         ) %>%
+  mutate(female_geemp = ifelse(fld == "GEEMP" & female == 1, 1, 0),
+         female_lps = ifelse(fld == "LPS" & female == 1, 1, 0))
+
+ls_specs <- list(
+  papers = paste0("n_papers_lvl ~ ", x_female),
+  cites = paste0("n_cites_lvl ~ ", x_female),
+  cites_p = paste0("n_cites_lvl ~ ", x_female, "+ n_papers_lvl"),
+  avg_cites = paste0("avg_cites_lvl ~ ", x_female)
+)
+
+
+
+ls_models <- map(
+  .x = ls_specs,
+  .f = ~fepois(
+    fml = as.formula(paste0(.x,
+                            "| ",
+                            fe_controls
+                            )
+                     ),
+    nthreads = 1,
+    cluster = clustervar,
+    data = df_returns
+  )
+)
+
+ls_specs_idx <- list(
+  idx = paste0("eucl_idx ~ ", x_female),
+  idx_p = paste0("eucl_idx ~ ", x_female, "+ n_papers")
+)
+
+ls_models_idx <- map(
+  .x = ls_specs_idx,
+  .f = ~feols(
+    fml = as.formula(paste0(.x,
+                            "| ",
+                            fe_controls
+                            )
+                     ),
+    nthreads = 1,
+    cluster = clustervar,
+    data = df_returns
+  )
+)
+
+
+ls_out<- c(ls_models, ls_models_idx)
+
+
+etable(ls_out,
+     drop = c("BIC"),
+     sdBelow = T,
+     convergence = TRUE,
+     fitstat = c("n", "pr2")
+)
+
+etable(ls_out,
+     drop = c("BIC"),
+     sdBelow = T,
+     convergence = FALSE,
+     file = paste0(tabledir, "gap_pub_avg.tex"),
+     digits = 2,
+     replace = TRUE,
+     signifCode=NULL,
+     fitstat = c("n", "pr2")
+)
+
+
+
+```
+
+
+### Regressions: quartiles. use multinomial model instead? 
+
+```{r}
+
+lapply(c("qnt_papers", "qnt_idx"), function(yvar) {
+  
+  d_temp <- df_returns %>%
+    mutate(y_q4 = ifelse(.data[[yvar]] == 4, 1, 0),
+           y_q3 = ifelse(.data[[yvar]] == 3, 1, 0),
+           y_q2 = ifelse(.data[[yvar]] == 2, 1, 0),
+           y_q1 = ifelse(.data[[yvar]] == 1, 1, 0))
+
+  ls_specs <- paste0("y_q", 1:4)
+  ls_specs <- map(.x = ls_specs,
+                  .f = ~paste0(.x, "~ ", x_female))
+  
+  ls_models <- map(
+    .x = ls_specs,
+    .f = ~feglm(
+      fml = as.formula(paste0(.x,
+                              "| ", 
+                              fe_controls
+                              )
+                       ),
+      nthreads = 1,
+      family = "binomial",
+      cluster = clustervar,
+      data = d_temp
+    )
+  )
+  
+  
+  etable(ls_models,
+     drop = c("BIC"),
+     sdBelow = T,
+     convergence = FALSE,
+     file = paste0(tabledir, "gap_", yvar, ".tex"),
+     replace = TRUE,
+     digits = 2,
+     signifCode=NULL,
+     fitstat = c("n", "pr2")
+  )
+  
+  etable(ls_models,
+         title = yvar,
+         drop = c("BIC"),
+         sdBelow = T,
+         convergence = TRUE,
+         fitstat = c("n", "pr2")
+  )
+
+
+})
+
+```
+
+
+
+## Covariance quality-quantity?
+
+
+### Decomposition
+
+- the size of the diamonds is the number of graduates in the field in our sample 
+
+
+```{r}
+sel_measures <- c("CitationPerPaper", "CovQualQuant", "PaperCount")
+
+plot_decomp <- df_decomp %>% 
+  filter(measure %in% sel_measures) %>%
+  mutate(main_field_f = fct_reorder(main_field_f, gap_total)) %>%
+  filter(exper <= 14)
+
+
+ggplot() +
+  geom_bar(data = plot_decomp,
+           aes(x = main_field_f, 
+               y = gap, 
+               fill = measure),
+           stat = "identity") +
+  geom_line(data = plot_decomp,
+            aes(x = main_field_f,
+                y = gap_total)) +
+  geom_point(data = plot_decomp,
+             aes(x = main_field_f,
+                 y = gap_total, 
+                 size = AuthorCount_Total),
+             shape = 18) +
+  theme(legend.position = "bottom") +
+  coord_flip() +
+  facet_wrap(~exper) +
+  labs(y = "Gap", x = "Field") +
+  guides(size = "none", color = "none")
+
+
+```
+
+
+## Link to PhD supervision data 
+
+
+```{r}
+
+
+d_advisor <- advisor_links %>%
+  group_by(AuthorId) %>%
+  filter(advisee_degree_year == min(advisee_degree_year)) %>%
+  ungroup()
+
+n_students <- advisor_links %>%
+  group_by(AuthorId) %>%
+  summarise(nb = n(),
+            .groups = "drop")
+
+
+d_advisor_all <- df_kaplanmeier %>%
+  left_join(d_advisor %>%
+              select(AuthorId, first_advisor_year = advisee_degree_year),
+            by = "AuthorId") %>%
+  mutate(advisor = ifelse(is.na(first_advisor_year), 0, 1),
+         dur_advisor = ifelse(
+           advisor == 1, first_advisor_year - degree_year,
+           2015 - degree_year
+         )) %>%
+  filter(dur_advisor > 0)
+  
+d_advisor <- df_returns %>%
+  left_join(d_advisor %>%
+              select(AuthorId, first_advisor_year = advisee_degree_year),
+            by = "AuthorId")  %>%
+  mutate(advisor = ifelse(is.na(first_advisor_year), 0, 1),
+         dur_advisor = ifelse(
+           advisor == 1, first_advisor_year - degree_year,
+           2015 - degree_year
+         )) %>%
+  filter(dur_advisor > 0) %>%
+  left_join(n_students %>%
+              rename(n_students = nb),
+            by = "AuthorId") %>%
+  mutate(n_students = ifelse(is.na(n_students), 0, n_students))
+  
+d_advisor_all <- d_advisor_all %>%
+  filter(dur_advisor < (2015-1985))
+d_advisor <- d_advisor %>%
+  filter(dur_advisor < (2015-1985))
+
+```
+
+
+### Descriptives: what does advisor measure? Add: average publication tenure at the (first?) advising institution! for censored and not censored?
+
+
+```{r}
+m0 <- feols(career_length ~ advisor,
+           data = dk,
+           cluster = clustervar)
+
+m1 <- feols(career_length ~ advisor | gradyear_f + uni_f + field_f,
+           data = dk,
+           cluster = clustervar)
+
+etable(list(m0, m1),
+     drop = c("BIC"),
+     sdBelow = T,
+     convergence = TRUE,
+     fitstat = c("n", "pr2")
+)
+
+```
+
+
+
+### Outcome: becoming an advisor
+
+
+Figure 
+
+```{r}
+
+d_advisor_all %>% 
+  mutate(degree_year = 5 * floor(degree_year / 5)) %>%
+  group_by(fld, gender, degree_year) %>%
+  summarise(advisor = mean(advisor), .groups = "drop") %>%
+  ggplot(aes(x = degree_year, y = advisor, group = gender, color = gender)) +
+  geom_line() + 
+  facet_wrap(~fld)
+
+p <- d_advisor_all %>% 
+  mutate(year = ifelse(degree_year < 1995, "1985-1994", "1995-2005")) %>%
+  group_by(year, fld, gender) %>%
+  summarise(advisor_mn = mean(advisor), 
+            advisor_var = var(advisor),
+            N = n(),
+            .groups = "drop") %>%
+  mutate(se = sqrt(advisor_var / N),
+         ci_ub = advisor_mn + 1.96 * se,
+         ci_lb = advisor_mn - 1.96 * se) %>%
+  ggplot(aes(x = year, y = advisor_mn, group = gender, fill = gender)) +
+  geom_bar(stat = "identity", position = position_dodge(0.9)) +
+  geom_errorbar(position = position_dodge(0.9),
+                aes(ymin = ci_lb, ymax = ci_ub),
+                width = 0.2) +
+  facet_wrap(~fld) +
+  theme(legend.position = "bottom") + 
+  labs(y = "P(becomes advisor)")
+
+p 
+
+ggsave(plot = p, filename = paste0(figdir, "prob_advisor.pdf"),
+       device = "pdf")
+
+
+```
+
+Summary statistics
+
+```{r}
+
+vars_sumstat <- c("degree_year", "link_score", "female", "career_length", 
+                  "n_cites_lvl", "n_papers_lvl", "eucl_idx_lvl", "advisor")
+sum_stats <- c("mean", "median", "sd", "min", "max")
+
+tb <- capture.output(
+  stargazer(as.data.frame(d_advisor[ , vars_sumstat]), 
+          summary = T, digits = 2, digit.separator = "",
+          summary.stat = sum_stats)
+)
+
+
+tb <- tb[!grepl("table", tb)]
+writeLines(tb, paste0(tabledir, "sumstat_returns.tex"))
+
+
+```
+
+
+```{r}
+
+p <- d_advisor %>%
+  group_by(main_field_f, gender) %>%
+  summarise(nb = n(), .groups = "drop") %>%
+  group_by(main_field_f) %>%
+  mutate(tot = sum(nb)) %>%
+  ungroup() %>%
+  mutate(main_field_f = fct_reorder(main_field_f, tot)) %>%
+  ggplot(aes(x = main_field_f, y = nb, fill = gender, group = gender)) +
+  geom_bar(stat = "identity") +
+  theme(legend.position = "bottom") + 
+  labs(y = "Count", x = "Field") +
+  coord_flip()
+
+ggsave(plot = p,
+       filename = paste0(figdir, "sample_count_fields.pdf"),
+       device = "pdf")
+
+p
+
+```
+
+
+
+
+Regressions: Gap in prob(advisor)
+
+```{r}
+
+
+ls_specs <- list(
+  base =  paste0(x_female, "| gradyear_f"),
+  fld =  paste0(x_female, "| gradyear_f + field_f"),
+  ctrl = paste0(x_female, "|", fe_controls),
+  papers = paste0(x_female, " + n_papers", "|", fe_controls),
+  cites = paste0(x_female, " + n_cites", "|", fe_controls),
+  idx = paste0(x_female, " + eucl_idx", "|", fe_controls),
+  idx_p = paste0(x_female, " + eucl_idx + n_papers", "|", fe_controls)
+)
+
+
+ls_models <- map(
+  .x = ls_specs,
+  .f = ~feglm(
+    fml = as.formula(paste0("advisor ~ ", .x
+                            )
+                     ),
+    nthreads = 1,
+    cluster = clustervar,
+    family = "binomial",
+    data = d_advisor
+  )
+)
+
+
+etable(ls_models,
+     drop = c("BIC", "Intercept"),
+     sdBelow = T,
+     convergence = TRUE,
+     fitstat = c("n", "pr2")
+)
+
+etable(ls_models,
+     drop = c("BIC", "Intercept"),
+     sdBelow = T,
+     convergence = FALSE,
+     digits = 2,
+     signifCode=NULL,
+     file = paste0(tabledir, "gap_advisor.tex"),
+     replace = TRUE,
+     fitstat = c("n", "pr2")
+)
+
+
+```
+
+
+```{r}
+
+x_female_time <- "female_geemp*post95 + female_lps*post95"
+
+ls_specs <- list(
+  base = x_female_time,
+  ctrl = paste0(x_female_time, "|", fe_controls),
+  papers = paste0(x_female_time, " + n_papers*post95", "|", fe_controls),
+  papers_qrt = paste0(x_female_time, " + factor(qnt_papers)*post95", "|", fe_controls)
+)
+
+
+ls_models <- map(
+  .x = ls_specs,
+  .f = ~feglm(
+    fml = as.formula(paste0("advisor ~ ", .x
+                            )
+                     ),
+    nthreads = 1,
+    cluster = clustervar,
+    family = "binomial",
+    data = d_advisor
+  )
+)
+
+
+etable(ls_models,
+     drop = c("BIC", "Intercept", "n_papers", "qnt_papers"),
+     sdBelow = T,
+     convergence = TRUE,
+     fitstat = c("n", "pr2")
+)
+
+etable(ls_models,
+     drop = c("BIC", "Intercept", "n_papers", "qnt_papers"),
+     sdBelow = T,
+     convergence = FALSE,
+     digits = 2,
+     signifCode=NULL,
+     file = paste0(tabledir, "gap_advisor_time.tex"),
+     replace = TRUE,
+     fitstat = c("n", "pr2")
+)
+
+
+```
+
+
+
+### Returns to producing more output for becoming an advisor 
+
+```{r}
+x_female_all <- "female"
+
+
+ls_specs <- list(
+  papers = paste0(x_female_all, " + n_papers * female ", "|", fe_controls),
+  idx = paste0(x_female_all, " + eucl_idx * female ", "|", fe_controls),
+  avg_cites = paste0(x_female_all, " + avg_cites * female ", "|", fe_controls),
+  idx_p = paste0(x_female_all, " + eucl_idx * female  + n_papers * female ", "|", fe_controls),
+  avg_cites_p = paste0(x_female_all, " + avg_cites * female  + n_papers * female ", "|", fe_controls)
+)
+
+
+lapply(c("LPS", "GEEMP"), function(fld) {
+  ls_models <- map(
+  .x = ls_specs,
+  .f = ~feglm(
+    fml = as.formula(paste0("advisor ~ ", .x
+                            )
+                     ),
+    nthreads = 1,
+    cluster = clustervar,
+    family = "binomial",
+    data = d_advisor[d_advisor$fld == fld, ]
+  )
+  )
+  
+  etable(ls_models,
+       drop = c("BIC", "Intercept"),
+       sdBelow = T,
+       convergence = FALSE,
+       digits = 2,
+       signifCode=NULL,
+       file = paste0(tabledir, "gap_returns_", tolower(fld), ".tex"),
+       replace = TRUE,
+       fitstat = c("n", "pr2")
+  )
+  
+  etable(ls_models,
+       drop = c("BIC", "Intercept"),
+       sdBelow = T,
+       convergence = TRUE,
+       fitstat = c("n", "pr2")
+  )
+    
+  
+})
+
+```
+
+
+
+```{r}
+DBI::dbDisconnect(con)
+```
