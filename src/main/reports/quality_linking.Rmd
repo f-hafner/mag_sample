@@ -33,14 +33,6 @@ src_dbi(con)
 
 ## Overview
 
-### To do
-- Add validation: compare co-authors/advisors and affiliations of ids in MAG and PQ
-  - but what are we going to compare? not a matching link in co-author/advisor may be either because the link is wrong or because the person did not co-author with the advisor. So we will need to be cautious here in the interpretation.
-  - maybe it is better to use some measure of text similarity between the dissertation title and the papers? this does not depend on whether the person co-authored with advisor or not 
-- Do some robustness checks based on the Abramitzky et al JEL paper
-- plot share linked by gender? 
-
-
 ### SQL example for sourcing number of authors with same name 
 
 ```sql 
@@ -171,22 +163,6 @@ linking_info <- tbl(con, "linking_info") %>%
 pq_authors <- tbl(con, sql(query_proquest))
 mag_authors <- tbl(con, sql(query_mag))
 
-# pq_fields_mag <- tbl(con, "pq_fields_mag")
-# mag_fields <- tbl(con, "FieldsOfStudy") %>%
-#     filter(Level <= 1) %>%
-#     select(FieldOfStudyId, NormalizedName)
-
-
-# authors <- tbl(con, sql(q)) %>%
-#     left_join(mag_fields %>%
-#                 rename(name_main_field = NormalizedName),
-#                 by = c("main_field" = "FieldOfStudyId")) %>%
-#     left_join(mag_fields %>%
-#                 rename(name_first_field = NormalizedName),
-#                 by = c("first_field" = "FieldOfStudyId")) %>%
-#     select(-first_field, -main_field) %>%
-#     filter(name_main_field %in% select_fields)
-
 ```
 
 ```{r, include = FALSE}
@@ -251,7 +227,6 @@ d_links <- d_links %>%
 ```{r, echo = FALSE}
 d_links %>%
     mutate(cohort = 10 * floor(year_pq / 10)) %>%
-    # ggplot(aes(x = link_score, fill = main_field, group = main_field)) +
     ggplot(aes(x = link_score)) +
     geom_histogram(aes(y = ..density..),
                     position = position_dodge()) +
@@ -264,9 +239,7 @@ d_links %>%
 d_links %>%
     mutate(cohort = 10 * floor(year_pq / 10)) %>%
     ggplot(aes(x = year_diff, fill = main_field, group = main_field)) +
-    # ggplot(aes(x = year_diff)) +
     geom_histogram(aes(y = ..density..), position = position_dodge()) +
-    # geom_density(alpha = 0.3) +
     theme(legend.position = "bottom") +
     facet_wrap(~cohort) +
     geom_vline(xintercept = 0, linetype = "dashed", color = "grey30") +
@@ -352,60 +325,4 @@ d_matched %>%
 ```{r, include = FALSE}
 DBI::dbDisconnect(con)
 ```
-
-
-## Old comments; perhaps some of the are helpful when writing the paper 
-
-- Fraction matched 
-    - what explains the difference between biology and history? 
-        - need to compare to transition rates to academia also!
-        - could we somehow find a measure of "potential" links? i.e. to assess the option that we cannot match more?
-    - brainstorming: other differences? 
-        - distribution of names
-        - distribution of duplicates
-        - book field vs paper field
-- The linking seems to work ok (probably we should increase precision a bit to reduce false positives)
-- Duplicates in MAG are a problem because they may not find the right match 
-    - Need more data 
-        - how common / how likely are duplicates in MAG?
-        - are they more common in earlier years? 
-        - *Idea*: count the number of authors per name and major field (maybe as fraction of all authors to correct for size and thus mechanically more distinct authors with the same name) - this could give a rough indication of duplicates 
-            - see sql code example below
-    - deduplication with authors based on self-citation may not work if the  random papers have no citations, 
-    e.g. [this](https://academic.microsoft.com/author/2582794880/publication/search?q=Lawrence%20B.%20Slobodkin&qe=Composite(AA.AuId%253D2582794880)&f=&orderBy=0&paperId=2070392587) 
-    is a duplicate of an ecologist with the same name. The papers there have not references (and are not co-authored I think),
-    making it hard to deduplicate with the approach of that information science paper that uses co-authors and self-references.
-    - As a result of this, we may adjust the data in two ways 
-        1. drop authors that only publish papers without any references (could this be problematic)
-        2. do the deduplication of authors following the other paper 
-    - #1 is perhaps less relevant if the MAG does not assign the correct field to the entity (as happened in the case above)
-    - Deduplication is even more important because duplicates can create *negative* sample selection 
-        - famous authors publish more, and are more likely to have a duplicate. They may also publish more "opinion" pieces / pieces for general public which MAG may not rightly assign (for instance because of missing references)
-        - if we then just drop those where the distance is large, we drop the best graduates
-        - a quadratic in year difference may help selecting the entity closer to the actual graduation date, but there is no guarantee we'll pick the right entity 
-    - What are potential problems of the deduplication, and how long should it take?
-        - Should we use dedupe by field, or the approach of that other paper? 
-- What is going on with the average difference between year first pub and year graduation across cohorts? Is it a problem at all?
-- Implications for the algorithm 
-     - check the F-score in dedupe -- where can we set it?
-     - change other parameters?
-     - should we use a quadratic in the difference between year first pub and year graduation? would this help? does dedupe have this already?
-- Implications for paper 
-    - Manually check some links for false positives 
-    - Manually check some authors in MAG/proquest for false negatives?
-
-#### Other questions
-
-- what is going on with year_diff over cohorts? 
-    - are there more duplicates for older authors --> makes it harder to find the "right" match?
-    - what does the algo do there? should we change it? 
-    - sampling
-        - are early years underrepresented?
-        - can we stratify the sampling somehow?
-    - modeling
-        - should we interact the variables with decade FEs? how can we do this?
-    - idea: use the same labeled training set and try out different specs
-        - they should all be saved with a special name in the db 
-    - missing publications in MAG in early years? 
-- are short names more common in proquest early on? there seem to be many authors with only 2 letters: "br", "je", ...
 

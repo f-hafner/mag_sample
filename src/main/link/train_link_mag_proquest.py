@@ -63,14 +63,6 @@ if __name__ == "__main__":
     # https://stackoverflow.com/questions/3300464/how-can-i-get-dict-from-sqlite-query
     # https://docs.python.org/3/library/sqlite3.html#sqlite3.Connection.row_factory
 
-    # ## Alternatives 
-        # this works now, but I think it still loads the data into memory?? how can I prevent this?
-        # also, will need a third connection for the dict_factory (otherwise fail below for the areas)
-        # compare to their example -- what makes the difference? the context handler? the fetchall()? also read up on server-side cursors in postgre sql and 
-            # what is the equivalent for sqlite 
-        # how can I know whether something is in memory or not? 
-        # see the examples -- it seems that they DO load all the data for the training? double check what Chris understands here. then do it by 10-year intervals
-    
     with read_dict_con as con:
         cur = con.cursor()
         cur.execute(query_mag, tuple(id_field))
@@ -142,7 +134,6 @@ if __name__ == "__main__":
             if args.linking_type == "graduates": # should we also ignore uni for graduates?
                 fields.append({"field": "institution", "variable name": "institution", "type": "Custom", "comparator": max_set_similarity, "has missing": True})
             elif args.linking_type == "advisors":
-                # NOTE: For spelling mistakes in university names, this does not work well. But my impression is that they are rare.
                 fields.append({"field": "institution", "variable name": "institution", "type": "Custom", "comparator": max_set_similarity_ignoreuni, "has missing": True})
                 fields.append({"type": "Interaction", "interaction variables": ["institution", "same_firstname"] })
                 fields.append({"type": "Interaction", "interaction variables": ["institution", "same_lastname"] })

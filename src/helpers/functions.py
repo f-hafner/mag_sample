@@ -6,8 +6,10 @@ def print_elapsed_time(start_time):
     print(f"Time elapsed: {(time.time()-start_time)/60} minutes \n", flush = True)
 
 
-# Analyze and optimize the sqlite db 
 def analyze_db(con):
+    """
+    Run `analyze` commands on `con` according to sqlite recommendations.
+    """
     print("Running ANALYZE... \n")
     cursor = con.cursor()
     cursor.execute("PRAGMA analysis_limit = 1000")
@@ -16,9 +18,10 @@ def analyze_db(con):
 
 
 
-# ## Function to normalize names 
 def normalize_string(s, replace_hyphen = ""): 
-    """Normalize the character strings in a pd.Series"""
+    """
+    Normalize the character strings in a pd.Series
+    """
     letters_to_replace = {
         "ä": "a",
         "ü": "u",
@@ -45,17 +48,20 @@ def normalize_string(s, replace_hyphen = ""):
 
 
 # ## Functions for linking 
-# def tupelize_links(links, created_date, start = args.startyear, end = args.endyear):
-#     for i in links:
-#         id0, id1, score = i[0][0], i[0][1], i[1]
-#         yield id0, id1, score, start, end, created_date
+
 def tupelize_links(links, iteration_id):
+    """
+    Return a tuple from the list `links`; add `iteration_id` as the last element of the tuple.
+    """
     for i in links:
         id0, id1, score = i[0][0], i[0][1], i[1]
         yield id0, id1, score, iteration_id
 
 
 def jw_comparator(field_1, field_2):
+    """
+    Return the jaro-winkler string similarity between `field 1` and `field_2`.
+    """
     try:
         jw = jaro_winkler_similarity(field_1, field_2)
         return(jw)
@@ -64,7 +70,10 @@ def jw_comparator(field_1, field_2):
 
 
 def string_set_similarity(string, set):
-    """Return the string similarity of the one element in `set` with the highest similarity to `string`"""
+    """
+    Return the jaro-winkler string similarity of the one element in `set` 
+    with the highest similarity to `string`.
+    """
     try:
         similarities = (jaro_winkler_similarity(string, x) for x in set)
         return(max(similarities))
@@ -72,7 +81,9 @@ def string_set_similarity(string, set):
         return(None)
 
 def max_set_similarity(set_1, set_2):
-    """Return the string similarity of most similar elements in `set_1` and `set_2` """
+    """
+    Return the jaro-winkler string similarity of most similar elements in `set_1` and `set_2` 
+    """
     try:
         similarities = (string_set_similarity(x, set_2) for x in set_1)
         return(max(similarities))
@@ -81,9 +92,11 @@ def max_set_similarity(set_1, set_2):
 
 
 
-
 def max_set_similarity_ignoreuni(set_1, set_2):
-    """Ignore `university` in the strings in the set"""
+    """
+    Return the jaro-winkler string similarity of most similar elements in `set_1` and `set_2`, 
+    but ignore `university` in the strings in the set.
+    """
     def drop_string_from_set(set, string):
         set = [re.sub(string, "", x).strip() for x in set]
         set = [" ".join(x.split()) for x in set]
@@ -110,11 +123,12 @@ def squared_diff(x_1, x_2):
 
 
 def grad_pub_year_comparator(year_firstpub, year_graduation):
-    """Compare year of first publication with year of graduation.
+    """
+    Compare year of first publication with year of graduation.
     Because the function is not symmetric, it's important that the data are in the right order, eg, first the data
-        on publication, then on graduation.
+    on publication, then on graduation.
     This assumes that graduates do not publish yr_threshold years before PhD graduation, eg. as an RA or in a
-        previous job (Fed, ...).
+    previous job (Fed, ...).
     """
     yr_diff = year_firstpub - year_graduation
     yr_threshold = 8
@@ -127,7 +141,9 @@ def grad_pub_year_comparator(year_firstpub, year_graduation):
     return(out)
 
 def year_dummy_noadvisor(year_firstpub, year_graduation):
-    """Return indicator for graduation year pre-1980. """
+    """
+    Return indicator for graduation year pre-1986.
+    """
     # year_firstpub is not used, but should stay there because dedupe compares always two fields with each other
     if year_graduation < 1986:
         return 1
@@ -136,7 +152,9 @@ def year_dummy_noadvisor(year_firstpub, year_graduation):
 
 
 def drop_firstword(s, x):
-    """Drop first word in string `s` if it is `x` """
+    """
+    Drop first word in string `s` if it is `x` 
+    """
     ls = s.split(" ")
     if ls[0] == x:
         ls = ls[1:]
@@ -147,7 +165,9 @@ def drop_firstword(s, x):
 # ### Some functions for reading sqlite data into dict
 
 def dict_factory(cursor, row):
-    """Return row as dict. Keys are column names, values = row entries."""
+    """
+    Return row as dict. Keys are column names, values are row entries.
+    """
     d = {}
     for idx, col in enumerate(cursor.description):
         d[col[0]] = row[idx]
@@ -155,7 +175,9 @@ def dict_factory(cursor, row):
 
 
 def custom_enumerate(s, idx):
-    """Return tuple, with the index `idx` of the record instead the 0-based index of `enumerate`"""
+    """
+    Yield tuple, with the index `idx` of the record instead the 0-based index of `enumerate`.
+    """
     for elem in s:
         yield elem[idx], elem
 

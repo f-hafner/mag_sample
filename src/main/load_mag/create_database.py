@@ -13,9 +13,6 @@ c = column name of the column used
   to the working directory as tempfile, removing '\r', loading into sqlite, and then deleting
 """
 
-# TODO: names
-   # many authors with weird names... condition on a certain number of publications?
-
 # ## Packages 
 # ### general  
 import subprocess
@@ -39,7 +36,9 @@ con = sqlite.connect(database = db_file, isolation_level= None)
 
 # ## Helper functions
 def copy_trim(filename, nlines = args.nlines):
-    """Copy `filename` from `rawdatapath` to `databasepath` and save as `tempfile.txt`. Can then be read into db."""
+    """
+    Copy `filename` from `rawdatapath` to `databasepath` and save as `tempfile.txt`. Can then be read into db.
+    """
     if nlines:
         cat_file = f"head -n {nlines} {rawdatapath}{filename}"
     else:
@@ -54,7 +53,8 @@ def remove_file(filename):
     subprocess.run(f"rm -rf {databasepath}{filename}", shell = True)
 
 def file_to_table(filename, tablename):
-    """Read in `filename` into table `tablename`. 
+    """
+    Read in `filename` into table `tablename`. 
         - Defines separator for fields and lines.
         - Uses the sqlite `.import` utility which is quite fast.
     """
@@ -100,11 +100,7 @@ con.execute("CREATE INDEX idx_fn_FirstName ON FirstNames (FirstName)")
 # ## Some additional indexes for faster queries (not in original MAG)
 con.execute("CREATE INDEX IF NOT EXISTS idx_p_Year ON Papers (Year ASC) ")
 con.execute("CREATE INDEX IF NOT EXISTS idx_p_DocType ON Papers (DocType) ") 
-    # not sure that's necessary; is not very discriminatory but may help when conditioning on doctypes
-    # also, since sqlite can only use one index for any query, it may never be used...
-    # but it may be useful when summarising publications by year for some aggregate stats
 con.execute("CREATE INDEX IF NOT EXISTS idx_pr_PaperReferenceId ON PaperReferences (PaperReferenceId ASC)")
-    # this is for creating authors' citation networks 
 
 
 # ## Run ANALYZE

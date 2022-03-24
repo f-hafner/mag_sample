@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 """
-Read in the gender X first name table 
+Read in the table with calculated gender by firstname.
 """
 
 import subprocess

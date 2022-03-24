@@ -227,7 +227,7 @@ con.execute("""CREATE TEMPORARY TABLE temp2 AS
                 ) USING (AuthorId)
             )
             """)
-#con.execute("CREATE UNIQUE INDEX idx_tt2_AuthorClass ON temp2 (AuthorId ASC, FieldClass ASC) ")
+con.execute("CREATE UNIQUE INDEX idx_tt2_AuthorClass ON temp2 (AuthorId ASC, FieldClass ASC) ")
 
 con.execute("DROP TABLE IF EXISTS author_fields")
 con.execute("""CREATE TABLE author_fields AS 

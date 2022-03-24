@@ -15,12 +15,6 @@ fieldname is always the reported fieldname used for assigning field0.
 mag_field0 is the FieldOfStudyId in MAG at Level 0.
 flag indicates how field0 was defined.
 
-Note
-- There may be some weird correspondences, such as "architecture" belonging to computer science.
-    Manually correcte this in the present script, but it is not corrected in MAG. Maybe we should check
-    how much sense this crosswalk there makes... This should first be addressed in MAG (see github isseue #).
-    Once fixed, we can try to add back level 2 instead of level 1 from MAG for the crosswalk (look for ##**## in the code )
-
 """
 
 # TODO
@@ -63,12 +57,6 @@ fos_mag = fos_mag.loc[fos_mag["nb"] == 1].drop(columns = ["nb"]).copy()
 
 assert fos_wos[fos_wos.duplicated("category")].shape[0] == 0
 assert fos_mag[fos_mag.duplicated("NormalizedName")].shape[0] == 0
-
-
-# NOTE: some theses have a weird combination of fields ("medicine" and "french literature"). In these cases it is difficult 
-    # to assign one field. Either we have to drop these records (how many are there?), or we can try to 
-    # keep the field0 which has a "majority" among the listed subfields. For this, I would need to correspond 
-    # all the reported fields and not just the one at position 0. And then calculate the mode field0 per author
 
 
 # ## Correspond unique fields 
@@ -267,23 +255,6 @@ print(f"50 most common fields among authors not matched to MAG: \n {unmatched_fi
     # want to use all the fields for which a link was found? or all the rest except the one used for matching (as for the fullname/firstname problem)
 
 authors_fields["min_position"] = authors_fields.groupby(["goid", "mag_field0"])["position"].transform("min")
-
-# ### tried to save also the "other" fields reported and linked to the same mag field level 0, but cannot save it properly in sqlite
-# fields_list = (authors_fields
-#                 .groupby(["goid", "mag_field0"])
-#                 .agg({"fieldname": lambda x: x.tolist()})
-#                 .reset_index()
-#                 .rename(columns = {"fieldname": "all_matched_fields"})
-#                 )
-
-# authors_fields = (authors_fields
-#                     .set_index(["goid", "mag_field0"])
-#                     .join(fields_list.set_index(["goid", "mag_field0"]))
-#                     .reset_index()
-#                 )
-# drop the fieldname 
-# authors_fields["other_fields"] = authors_fields.apply(lambda row: [i for i in row["all_matched_fields"] if i not in row["fieldname"]], axis = "columns")
-
 
 # ## Write to db
 authors_fields = authors_fields.loc[authors_fields["position"] == authors_fields["min_position"], 

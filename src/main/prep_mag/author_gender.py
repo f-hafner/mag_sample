@@ -4,9 +4,9 @@
 """
 Script author_gender.py
 Consolidate the gender information per author in author_sample
-    Take Probability from FirstNamesGender
-    Add most likely gender from other names when unclear 
-    Flag the source of the gender variable
+    1. Take Probability from FirstNamesGender
+    2. Add most likely gender from other names when unclear 
+    3. Flag the source of the gender variable
 Output
 - table author_gender with 
     - AuthorId 
