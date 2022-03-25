@@ -93,26 +93,6 @@ graduates_fields <- graduates_fields %>%
              by = "goid")
 
 
-### NOTE
-## this should not drop any ids; it just checks that the field in pq and in MAG overlap, but they should given the linking approach
-# dk <- author_fields %>%
-#   left_join(graduates_fields %>%
-#               select(goid, position, field_name_pq = field_name, AuthorId),
-#             by = c("AuthorId", "main_field" = "field_name_pq"))
-
-
-# why is for instance 14367 linked?? in PQ, she also has sociology, which we have linked
-# but how does she get a link to MAG? -- anthropology is firstfield, and it maps into sociology in MAG
-# the clue is: we use first field in MAG, and crosswalk it to the main field of study. 
-# thus, we should assign field based on (field_name being in lps or geemp, 
-# and then on the field level0 implied by first field (basically replicate what we do for linking)
-
-# this is also important for
-# this is also important for the quality_linking -- need to adjust code 
-# what does it mean for the linking? is it conservative b/c we only pick up persons that publish in the same field they graduate?
-# we probably miss some interdisciplinary persons though.. TODO: think more about this!
-
-
 ### Joins on db
 author_info <- author_sample %>%
   inner_join(names_gender, by = "FirstName") %>%

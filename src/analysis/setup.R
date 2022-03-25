@@ -4,9 +4,22 @@
 set.seed(1234)
 
 
+## Packages
+packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "ggplot2", 
+              "lfe", "fixest", "texreg", "rlist", "oaxaca", "survival", 
+              "ggfortify", "forcats", "stargazer", "stringdist")
+
+lapply(packages, library, character.only = TRUE)
+
 ## Parameters
 
-### Common
+### directories
+figdir <- "../../output/img/duration_advisor/"
+tabledir <- "../../output/tables/duration_advisor/"
+path_nces <- "/mnt/ssd/NCES_NSF/processed/"
+
+
+### Variable definitions
 threshold_prob_female <- 0.8
 select_cohorts <- 1990
 size_careerbin <- 1 # should data be aggregated across multiple years of the career? 
@@ -18,29 +31,15 @@ degree_year_start <- 1985
 degree_year_end <- 2005
 
 select_years <- degree_year_start:degree_year_end
-male_threshold <- 0.2 # for assigning gender probabilistically 
-
 
 geemp_fields <- c("geology", "geography", "environmental science",
                   "mathematics", "computer science", "engineering",
                   "chemistry", "physics", "economics") 
 lps_fields <- c("biology", "psychology", "sociology", "political science")
 
-figdir <- "../output/img/duration_advisor/"
-tabledir <- "../output/tables/duration_advisor/"
-path_nces <- "/mnt/ssd/NCES_NSF/processed/"
-
 
 ### For duration
 probs_quantiles <- c(0.25, 0.5, 0.75)
-
-
-## Packages
-packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "ggplot2", 
-              "lfe", "fixest", "texreg", "rlist", "oaxaca", "survival", 
-              "ggfortify", "forcats", "stargazer", "stringdist")
-
-lapply(packages, library, character.only = TRUE)
 
 
 ## DB 

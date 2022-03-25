@@ -1,5 +1,5 @@
 # mag_sample
-This is some sample code of my research projects. The present repository is an extract from a project that uses data from Microsoft Academic Graph (MAG) and ProQuest. 
+This is some sample code of my research projects. The present repository is an extract from a project that uses data from Microsoft Academic Graph (MAG) and ProQuest. The programs work on a remote computer that has the data stored outside of the repository. The path to the data is defined in `src/analysis/setup.R` and `src/dataprep/helpers/variables.py`. 
 
 In another project I use confidential data and everything is stored on a separate server that is not connected to the general internet. There I use more R code for data analysis than in the present repository.
 
@@ -31,3 +31,5 @@ The `pipeline.sh` script calls consecutively the scripts for
 
 ## Notes 
 See open issues for some features that are currently lacking. 
+- The python helpers are stored in a different location and we need to come up with a clean and simple way to make them accessible across the repository.
+- There are some redudancies between the Rscripts in `analysis` and `dataprep` because the scripts come originally from two different repositories.
