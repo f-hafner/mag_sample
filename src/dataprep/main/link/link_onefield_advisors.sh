@@ -1,6 +1,5 @@
 #!/bin/bash
 
-# TODO: the directory will still be src/main, so this will not work at the moment
 
 RECALL=$1
 field=${2} 
