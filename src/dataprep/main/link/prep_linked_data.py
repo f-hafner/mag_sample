@@ -4,8 +4,11 @@
 """
 Script prep_linked_data.py
 
-For linked graduates, generate tables:
+Generate linking tables:
 - current_links
+- current_links_advisors
+
+For AuthorIds in either of them generate
 - author_panel
 - author_citations
 - author_output
@@ -17,14 +20,14 @@ For linked graduates, generate tables:
 
 """
 
+# ## TODO
+# when using links, it seems that some of the linked ids do not end up in author panel. Why?
+
 import sqlite3 as sqlite
 import time 
 import pandas as pd
-
-
 from helpers.functions import print_elapsed_time, analyze_db
-from helpers.variables import db_file, insert_questionmark_doctypes, keep_doctypes
-
+from helpers.variables import db_file, insert_questionmarks_doctypes, keep_doctypes
 
 # ## Arguments
 # parser = argparse.ArgumentParser()
@@ -35,7 +38,7 @@ from helpers.variables import db_file, insert_questionmark_doctypes, keep_doctyp
 # ## Variables; connect to db
 max_yeardiff = 5
 start_time = time.time()
-print(f"Start time: {start_time} \n")
+print(f"Start time: {start_time} \n", flush = True)
 print(f"Using the following DocTypes for citations: {keep_doctypes}... \n")
 
 
@@ -45,7 +48,8 @@ con = sqlite.connect(database = db_file, isolation_level= None)
     # Necessary b/c not all fields have links, and when links are used, the script does not run through
 print("Deleting existing tables")
 tables_to_delete = ["author_citations", "author_output", "author_panel", 
-                    "current_links", "links_currentfield"] # links_currentfield is from extract_field.py
+                    "current_links", "current_links_advisors",
+                    "links_currentfield"] # links_currentfield is from extract_field.py
 for tbl in tables_to_delete:
     con.execute(f"""DROP TABLE IF EXISTS {tbl}""")
 
@@ -53,6 +57,7 @@ for tbl in tables_to_delete:
 # ## (1) Get linked ids for given specs.
     # NOTE: count(distinct authorid) not possible and not necessary: because each authorid is uniquely in one field0, any goid that has multiple links
         # will be linked to different authorids because they come from different fields.
+print("current_links for graduates", flush = True)
 con.execute("""
 CREATE TEMP TABLE current_links_temp AS 
 SELECT AuthorId, goid, link_score, iteration_id 
@@ -106,6 +111,42 @@ WHERE b.YearFirstPub <= c.degree_year + (?)
 con.execute("CREATE UNIQUE INDEX idx_t_AuthorIdgoid ON current_links (AuthorId ASC, goid ASC)")
 con.execute("CREATE UNIQUE INDEX idx_t_goid ON current_links (goid ASC)") # this is also a way to make sure there are not multiple links per goid
 
+# ## (1) Get linked advisors for given specs.
+print("current_links for advisors", flush = True)
+con.execute("""
+CREATE TABLE current_links_advisors AS 
+SELECT AuthorId, relationship_id, link_score, iteration_id 
+FROM (
+    SELECT a.*, COUNT(AuthorId) OVER(PARTITION BY relationship_id) AS n_links  
+    FROM linked_ids_advisors a
+    INNER JOIN (
+        SELECT iteration_id 
+        FROM (
+            SELECT iteration_id, MAX(iteration_id) AS max_id 
+            FROM linking_info_advisors
+            WHERE  mergemode = 'm:1'
+                AND fieldofstudy_str = 'False'
+                AND fieldofstudy_cat = 'False'
+                AND institution = 'True'
+                AND keywords = 'False'
+                AND testing = 0 
+                AND recall = 0.9
+            GROUP BY field
+        )
+        WHERE iteration_id = max_id 
+    ) b USING(iteration_id)
+    WHERE link_score > 0.7
+)
+WHERE n_links = 1
+""")
+
+# for now, do not condition on certain time distance between 
+# graduation year and whenever the supervisor has a publication. 
+# TODO: do this after gaining some insights in the analysis
+
+con.execute("CREATE UNIQUE INDEX idx_cla_AuthorIdrelid ON current_links_advisors (AuthorId ASC, relationship_id ASC)")
+con.execute("CREATE INDEX idx_cla_relid ON current_links_advisors (relationship_id ASC)") # this is also a way to make sure there are not multiple links per goid
+
 
 # ## (2) Helper table for later operations
 con.execute("DROP TABLE IF EXISTS current_authors")
@@ -116,6 +157,9 @@ FROM author_sample
 INNER JOIN (
     SELECT AuthorId 
     FROM current_links
+    UNION 
+    SELECT AuthorId
+    FROM current_links_advisors
 ) USING (AuthorId)
 """)
 
@@ -170,7 +214,7 @@ INNER JOIN (
     SELECT PaperId, Year AS PublicationYear
     FROM Papers
     WHERE 
-        DocType IN ({insert_questionmark_doctypes}) 
+        DocType IN ({insert_questionmarks_doctypes}) 
         AND 
         DocType IS NOT NULL 
 ) c USING(PaperId)
@@ -178,7 +222,7 @@ INNER JOIN (
     SELECT AuthorId
     FROM current_authors
 ) USING(AuthorId)
-WHERE b.ReferencingDocType IN ({insert_questionmark_doctypes}) 
+WHERE b.ReferencingDocType IN ({insert_questionmarks_doctypes}) 
     AND b.Year <= 10 + c.PublicationYear 
 GROUP BY a.AuthorId, b.Year
 """,
@@ -209,7 +253,7 @@ con.execute(f"""CREATE TABLE author_output AS
                     SELECT PaperId, Year
                     FROM Papers 
                     WHERE 
-                        DocType IN ({insert_questionmark_doctypes}) 
+                        DocType IN ({insert_questionmarks_doctypes}) 
                         AND 
                         DocType IS NOT NULL 
                 ) d USING (PaperId)
@@ -227,7 +271,6 @@ print_elapsed_time(start_time)
 
 # ## (6) Run ANALYZE, finish 
 analyze_db(con)
-
 con.close()
 
 end_time = time.time()

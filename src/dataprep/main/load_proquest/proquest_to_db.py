@@ -202,6 +202,7 @@ db_inputs = {
             , firstname TEXT
             , relationship_id TEXT""",
         "create_idx": ["CREATE INDEX idx_pqadv_idpos ON pq_advisors (goid ASC)",
+                        "CREATE INDEX idx_pqadv_fname ON pq_advisors (firstname ASC)",
                         "CREATE UNIQUE INDEX idx_pqadv_relid ON pq_advisors(relationship_id)"]
     },
     "fields": {
