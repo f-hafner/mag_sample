@@ -32,6 +32,8 @@ python3 $script_path/prep_mag/paper_fields.py &> $logfile_path/paper_fields.log
 python3 $script_path/prep_mag/prep_authors.py --years_first_field 5 \
     --years_last_field 5 &> $logfile_path/prep_authors.log
 
+python3 -m $script_path.prep_mag.prep_collab &> $logfile_path/prep_collab.log
+
 python3 $script_path/prep_mag/prep_affiliations.py &> $logfile_path/prep_affiliations.log
 
 python3 $script_path/prep_mag/prep_citations.py &> $logfile_path/prep_citations.log
