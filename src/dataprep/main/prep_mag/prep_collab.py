@@ -19,6 +19,7 @@ import multiprocessing
 import math 
 import os 
 import sys 
+import pdb
 
 from helpers.functions import print_elapsed_time, analyze_db
 from helpers.variables import db_file 
@@ -55,9 +56,12 @@ def proc_grp(write_dir, proc_id, authors):
 
 # ## Arguments
 parser = argparse.ArgumentParser(description = 'Inputs for author_collab')
-parser.add_argument("--nauthors", dest="n_authors", default = 1_000_000) # todo: how to use "all" here? just pass "all". "LIMIT NULL" -> sqlite reads all
-parser.add_argument("--chunksize", dest="chunk_size", default = 100_000) # this seems like a good default 
-parser.add_argument("--ncores", dest = "n_cores", default = int(multiprocessing.cpu_count() / 2))
+parser.add_argument("--nauthors", dest="n_authors", default = 1_000_000, type = int,
+                    help = "number of authors process") # todo: how to use "all" here? just pass "all". "LIMIT NULL" -> sqlite reads all
+parser.add_argument("--chunksize", dest="chunk_size", default = 100_000, type = int,
+                    help = "number of authors to process in one chunk") # this seems like a good default 
+parser.add_argument("--ncores", dest = "n_cores", default = int(multiprocessing.cpu_count() / 2),
+                    type = int, help = "number of cores to use")
 parser.add_argument("--write_dir", dest="write_dir", default = "collab_temp/")
 
 
@@ -67,6 +71,8 @@ n_cores = args.n_cores
 chunk_size = args.chunk_size
 n_authors = args.n_authors
 write_dir = args.write_dir
+
+# pdb.set_trace()
 
 print("write_dir is", write_dir)
 
@@ -84,8 +90,8 @@ if n_cores > multiprocessing.cpu_count():
 start_time = time.time()
 print(f"Start time: {start_time} \n")
 
-con = sqlite.connect(database = "file:" + db_file + "?mode=ro", 
-                     isolation_level = None, uri = True) # read-only connection 
+con = sqlite.connect(database = "file:" + db_file, 
+                     isolation_level = None, uri = True) # read-only connection (?) + "?mode=ro" seems to still create wal and shm files
 
 
 # extract relevant authors 
