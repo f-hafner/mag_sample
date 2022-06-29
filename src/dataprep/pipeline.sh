@@ -38,6 +38,8 @@ python3 -m $script_path.prep_mag.read_collab &> $logfile_path/read_collab.log
 
 python3 $script_path/prep_mag/prep_affiliations.py &> $logfile_path/prep_affiliations.log
 
+python3 -m $script_path.prep_mag.affiliation_outcomes &> $logfile_path/affiliation_outcomes.log #note: script_path should omit the / at the end
+
 python3 $script_path/prep_mag/prep_citations.py &> $logfile_path/prep_citations.log
 
 python3 $script_path/prep_mag/paper_outcomes.py &> $logfile_path/paper_outcomes.log

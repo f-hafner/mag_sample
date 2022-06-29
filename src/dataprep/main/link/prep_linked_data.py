@@ -145,8 +145,7 @@ WHERE n_links = 1
 # TODO: do this after gaining some insights in the analysis
 
 con.execute("CREATE UNIQUE INDEX idx_cla_AuthorIdrelid ON current_links_advisors (AuthorId ASC, relationship_id ASC)")
-con.execute("CREATE INDEX idx_cla_relid ON current_links_advisors (relationship_id ASC)") # this is also a way to make sure there are not multiple links per goid
-
+con.execute("CREATE UNIQUE INDEX idx_cla_relid ON current_links_advisors (relationship_id ASC)") # this is also a way to make sure there are not multiple links per goid
 
 # ## (2) Helper table for later operations
 con.execute("DROP TABLE IF EXISTS current_authors")
