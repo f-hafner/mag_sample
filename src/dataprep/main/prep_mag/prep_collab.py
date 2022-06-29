@@ -3,28 +3,37 @@
 
 """
 Script prep_collab.py
-
-Generate tables:
-- author_collab: a table with each unique co-author pairs for each year 
-
+    Use multiprocessing to extract unique 
+    author-coauthor-year combinations and save 
+    as csv files
 """
 
-import multiprocessing
+import multiprocessing as mp
 import sqlite3 as sqlite
 import time 
 import argparse
 import pandas as pd 
 from multiprocessing import Pool
-import multiprocessing
 import math 
 import os 
 import sys 
-import pdb
 
 from helpers.functions import print_elapsed_time, analyze_db
-from helpers.variables import db_file 
+from helpers.variables import db_file, keep_doctypes, insert_questionmark_doctypes
 
-def proc_grp(write_dir, proc_id, authors):
+def get_coauthors(write_dir, chunk_id, authors):
+    """
+    For a set of authors, extract coauthors for each year.
+
+    Parameters
+    ----------
+    write_dir: str
+        Directory to write the file to.
+    chunk_id: int
+        Identifier of the chunk.
+    authors: list
+        Authors to process.
+    """
     qmarks = ",".join(["?" for i in range(len(authors))])
     sql = f"""
     SELECT a.AuthorId, d.AuthorId AS CoAuthorId, d.Year 
@@ -35,6 +44,7 @@ def proc_grp(write_dir, proc_id, authors):
             INNER JOIN (
                 SELECT PaperId, Year 
                 FROM Papers
+                WHERE DocType IN ({insert_questionmark_doctypes})
             ) AS c
             USING (PaperId)
         ) AS d
@@ -50,88 +60,86 @@ def proc_grp(write_dir, proc_id, authors):
             FROM author_sample
         ) AS f on (CoAuthorId = f.AuthorId)
     """
-    df = pd.read_sql(con = con, sql = sql, params = authors)
+    df = pd.read_sql(con = con, sql = sql, params = (list(keep_doctypes) + authors))
     df = df.drop_duplicates()
-    df.to_csv(f"{write_dir}/part-{proc_id}.csv", index = False)
+    df.to_csv(f"{write_dir}/part-{chunk_id}.csv", index = False)
 
 # ## Arguments
 parser = argparse.ArgumentParser(description = 'Inputs for author_collab')
-parser.add_argument("--nauthors", dest="n_authors", default = 1_000_000, type = int,
-                    help = "number of authors process") # todo: how to use "all" here? just pass "all". "LIMIT NULL" -> sqlite reads all
-parser.add_argument("--chunksize", dest="chunk_size", default = 100_000, type = int,
-                    help = "number of authors to process in one chunk") # this seems like a good default 
-parser.add_argument("--ncores", dest = "n_cores", default = int(multiprocessing.cpu_count() / 2),
-                    type = int, help = "number of cores to use")
-parser.add_argument("--write_dir", dest="write_dir", default = "collab_temp/")
-
+parser.add_argument("--nauthors", 
+                    dest = "n_authors", 
+                    default = 100_000, 
+                    help = "Number of authors process. 'all' or an integer.") 
+parser.add_argument("--chunksize", 
+                    dest = "chunk_size",
+                    default = 10_000,
+                    type = int,
+                    help = "Number of authors to process in one chunk")  
+parser.add_argument("--ncores", 
+                    dest = "n_cores", 
+                    default = int(mp.cpu_count() / 2),
+                    type = int, help = "Number of cores to use")
+parser.add_argument("--write_dir", 
+                    dest = "write_dir", 
+                    default = "collab_temp/")
 
 args = parser.parse_args()
 
-n_cores = args.n_cores
-chunk_size = args.chunk_size
-n_authors = args.n_authors
-write_dir = args.write_dir
-
-# pdb.set_trace()
-
-print("write_dir is", write_dir)
-
-if os.path.isdir(write_dir):
+if os.path.isdir(args.write_dir):
     sys.exit("You specified an existing directory.")
 
-os.mkdir(write_dir)
+if args.n_cores > mp.cpu_count():
+    print("Specified too many cpu cores.")
+    print(f"Using max available, which is {mp.cpu_count()}.")
+    args.n_cores = mp.cpu_count()
 
-if n_cores > multiprocessing.cpu_count():
-    print(f"Specified too many cpu cores. Using max available, which is {multiprocessing.cpu_count()}.")
-    n_cores = multiprocessing.cpu_count()
-
-
-# ## Variables; connect to db
+# ## Setup
 start_time = time.time()
 print(f"Start time: {start_time} \n")
+os.mkdir(args.write_dir)
 
-con = sqlite.connect(database = "file:" + db_file, 
-                     isolation_level = None, uri = True) # read-only connection (?) + "?mode=ro" seems to still create wal and shm files
+con = sqlite.connect(database = "file:" + db_file + "?mode=ro", 
+                     isolation_level = None, uri = True) # read-only connection 
 
+# ## Prepare inputs for map
+if args.n_authors == "all":
+    args.n_authors = con.execute("SELECT COUNT(AuthorId) FROM author_sample").fetchall()[0][0]
+else:
+    args.n_authors = int(args.n_authors)
 
-# extract relevant authors 
-query = "SELECT DISTINCT AuthorId from author_sample LIMIT ?" # TODO: how to do this when querying all authors?
-authors = pd.read_sql(sql = query, con = con, params = (n_authors,))
+query = "SELECT DISTINCT AuthorId from author_sample LIMIT ?" 
+authors = pd.read_sql(sql = query, con = con, params = (args.n_authors,))
 
-# TODO
-    # clear the directory with all the temp files 
-    # coordinate args.n_authors with the code below also 
-    # add argument for directory in fct; make sure directory is clean and exists before running the pooled stuff 
-    # seems hard to predict whether a given chunk is large or small and needs a lot of filtering. but I guess this is not knowable ex-ante? 
-    # fix the file description 
-    # test with few authors -- does it run through?  then test with more, but not in a "live" session 
-    # check imap? chunksize seems like it could make it faster? https://docs.python.org/3/library/multiprocessing.html#multiprocessing.pool.Pool.imap_unordered
+# n_authors = authors.shape[0] 
+n_groups = math.ceil(args.n_authors / args.chunk_size)
+list_in = ([(args.write_dir, 
+             i, 
+             (authors.AuthorId
+                .iloc[range(i * args.chunk_size, 
+                            min(i * args.chunk_size + args.chunk_size,
+                                args.n_authors))
+                     ]
+                .tolist())
+            ) 
+             for i in range(n_groups)]
+          )
 
-# input for map
-n_authors = authors.shape[0] 
-n_groups = math.ceil(n_authors / chunk_size)
-list_in = ([(write_dir, i, authors.AuthorId.iloc[range(i * chunk_size, min(i * chunk_size + chunk_size, n_authors) )].tolist()) for i in range(n_groups)])
-
-# map 
+# ## Map 
 print("Running queries...", flush = True)
 if __name__ == "__main__":
-    with Pool(processes = n_cores) as pool:
-        results = pool.starmap(proc_grp, list_in)
+    with Pool(processes = args.n_cores) as pool:
+        results = pool.starmap(get_coauthors, list_in)
     print("--queries finished.")
 
 
+# ## Finish
 con.close()
-
-
 end_time = time.time()
 
 print(f"Done in {(end_time - start_time)/60} minutes.")
 
 
-
-# sequentially
+# ## To do it sequentially:
 # from itertools import starmap
-# d = starmap(proc_grp, list_in)
+# d = starmap(get_coauthors, list_in)
 # [print(i) for i in d]
-
-

@@ -2,11 +2,12 @@
 # -*- coding: utf-8 -*-
 
 """
-Script prep_collab.py
-
-Generate tables:
-- author_collab: a table with each unique co-author pairs for each year 
-
+Script read_collab.py
+Read the files, outputted in prep_collab.py, into the database with the following steps:
+    - delete existing table if necessary
+    - using subprocess, collect files into one
+    - using subprocess and sqlite command line, read into db
+    - put indexes on table
 """
 
 

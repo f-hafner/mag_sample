@@ -4,7 +4,7 @@ output_path="../../../output/"
 script_path="main"
 logfile_path="temp/"
 
-python3 -m $script_path.prep_mag.prep_collab --nauthors 30e6 --chunksize 10000 --ncores 10  &> $logfile_path/prep_collab.log
+python3 -m $script_path.prep_mag.prep_collab --nauthors "all" --chunksize 10000 --ncores 10  &> $logfile_path/prep_collab.log
 python3 -m $script_path.prep_mag.read_collab &> $logfile_path/read_collab.log
 
 
@@ -18,7 +18,7 @@ python3 -m $script_path.prep_mag.read_collab &> $logfile_path/read_collab.log
 # why do they not take the same time?
 # 200_000 authors, 20_000 chunk size, 10 cores -> 10 steps: 0.93 minutes -- but should this not take the same time? is there such a high overhead of making more cores?
 # 100_000 authors, 20_000 chunk size, 5 cores -> 10 steps: 0.39 minutes -- but should this not take the same time?
-
+ 
 # 200_000 authors, 40_000 chunk size, 5 cores -> 5 steps: 0.78 minutes 
 # 200_000 authors, 50_000 chunk size, 4 cores -> 4 steps: 0.92 minutes
 # 200_000 authors, 30_000 chunk size, 6 cores -> 4 steps: 0.86  minutes --> NOTE: some inefficiency here b/c the last core is not used to the same amount as the previous ones
