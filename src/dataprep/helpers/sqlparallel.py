@@ -8,12 +8,13 @@ import sys
 from shutil import rmtree
 import pandas as pd
 import math
+import pdb
 
 class SQLParallel: 
     """
     A class to use aggregate/window functions in sqlite with parallel in-memory operations.
     """
-    def __init__(self, db_file, tbl, filedir, fn_parts, fn_full, tbl_schema):
+    def __init__(self, db_file, tbl, filedir, fn_parts, fn_full, tbl_schema, indexes = None):
         self.db_file = db_file
         # TODO: add option for read-only? how is best? make connection as a function with the argument . AND CHECK IF EXISTS!
             # note: when using all in one, there is no point in having a read-only connection b/c we will write to it later
@@ -24,13 +25,14 @@ class SQLParallel:
         self.fn_parts = fn_parts
         self.fn_full = fn_full
         self.tbl_schema = tbl_schema # example: "(AuthorId INTEGER, CoAuthorId INTEGER, Year INTEGER)" -- or other format? like json, jaml, dict, ...? 
+        self.indexes = indexes
     
     def __repr__(self): # TODO: how to make this easy with many args?
         return f"""connection {self.conn!r}, filedir {self.filedir}, filename parts {self.fn_parts}, filename full {self.fn_full}"""
 
     def db_dump(self):
         print("Combining files into one", flush = True)
-        subprocess.run(f"tail -n +2 -q {self.filedir}/{self.fn_parts}-*.csv >> {self.fn_full}", shell = True)
+        subprocess.run(f"tail -n +2 -q {self.filedir}/{self.fn_parts}-*.csv >> {self.filedir}/{self.fn_full}", shell = True)
 
         print("Dropping existing table and creating new empty one", flush = True)
         with self.conn as con:
@@ -41,13 +43,17 @@ class SQLParallel:
         subprocess.run(
             ["sqlite3", self.db_file,
             ".mode csv",
-            f".import {self.fn_full} {self.tbl}"]
+            f".import {self.filedir}/{self.fn_full} {self.tbl}"]
         )
 
     def create_indexes(self):
-        # TODO: check that they do not exist already?
-        # TODO: make it amenable to multiple indexes
-        self.conn.execute(self.index)
+        print("Creating indexes", flush = True)
+        if self.indexes is not None:
+            with self.conn as write_con:
+                for i in self.indexes:
+                    # print(i)
+                    write_con.execute(i)
+            # TODO: check that they do not exist already? does it throw an exception or not if it does not work?
 
     def close(self):
         # TODO: add analyze_db -- internal fct. o
@@ -55,6 +61,7 @@ class SQLParallel:
         self.conn.close()
         print("Removing temporay files and directories")
         rmtree(self.filedir)
+
 
     def open(self): 
         print("Opening sqlite connection...", flush = True)
@@ -68,9 +75,11 @@ class SQLParallel:
         # TODO: delete the self.conn attribute when closed? or how to show that it is closed?
         # TODO: does it matter (for speed?) whether the connection is open or not during the reading of the children?
 
-    def make_iterator(self, sql, n_groups, chunk_size): # TODO: this would be an alternative to get the columns -- which one is better to the below?
-            # TODO: should these things be set up when the class is initiated? not necessarily.
-        "Make an iterator from a sql query for a single query over which to iterate "
+    def create_inputs(self, sql, chunk_size): 
+        """
+        Make an iterator from a sql query for a single query over which to iterate 
+        """
+
         with self.conn as con:
             col_list = con.execute(sql).fetchall()
         
@@ -78,7 +87,7 @@ class SQLParallel:
         n = len(col_list)
 
         n_groups = math.ceil(n / chunk_size)
-        it = (i, col_list[range(i * chunk_size), min(i * chunk_size + chunk_size, n)].tolist() for i in range(n_groups))
+        it = [(i, col_list[i * chunk_size:(min(i*chunk_size + chunk_size, n))]) for i in range(n_groups)]
 
         return(it)
 

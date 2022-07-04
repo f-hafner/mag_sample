@@ -18,13 +18,12 @@ class SQLChunk(SQLParallel):
     Can read tables from a database and save processed files.
     """
 
-    _inherited = ["db_file", "fn_part", "filedir"]
+    _inherited = ["db_file", "fn_parts", "filedir"]
         # TODO: if these children could open/close their own connections -- this may further speed up? since one read does not have to wait for another?
             # check this
 
     def __init__(self, parent):
         self._parent = parent
-        self.iteration_id = "specific to me" # TODO: to be defined
 
     def __getattr__(self, name, default=_marker):
         if name in self._inherited:
@@ -38,9 +37,8 @@ class SQLChunk(SQLParallel):
             raise AttributeError(name)
         return self.__dict__[name]
 
-    def write_part(self):
-        iteration_id = 2 # TODO: define where??
-        self.dataframe.to_csv(f"{self.filedir}/{self.fn_parts}-{iteration_id}.csv")
+    def write_part(self, df, iteration_id):
+        df.to_csv(f"{self.filedir}/{self.fn_parts}-{iteration_id}.csv", index = False)
 
     
     def read_sql(self, query, params): 
@@ -84,7 +82,4 @@ class SQLChunk(SQLParallel):
 
 
 
-   
-    
-    # TODO: add method for querying (including qmarks), method for generating question marks given an input, move the write_part method to here(?), 
 
