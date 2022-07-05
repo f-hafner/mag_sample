@@ -1,5 +1,13 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
+"""
+SQLParallel
+----------
+
+A container for data and methods to for 
+parallel in-memory data processing from a sqlite database 
+with pandas.
+"""
 
 import sqlite3 as sqlite 
 import subprocess
@@ -12,27 +20,67 @@ import pdb
 
 class SQLParallel: 
     """
-    A class to use aggregate/window functions in sqlite with parallel in-memory operations.
+    A class to use aggregate/window functions in sqlite with parallel 
+        in-memory operations.
+
+    Parameters
+    ---------
+    db_file : String with the relative or absolute path to the database. 
+
+    tbl : A string; the name of the table to be created on the database.
+
+    tbl_schema: The schema of `tbl` as a SQLite string.
+
+    filedir : String with the path to the temporary file directory where  
+        temporary files are stored during processing.
+
+    fn_chunks : Name of the temporary files to be created for each chunk.
+
+    fn_full : Name of the temporary file that is collected from the single chunks.
+
+    indexes : A list of strings with Sqlite commands for creating indexes.
+
+    Example
+    --------
+    >>> A = SQLParallel(
+            db_file = "path/to/database.sqlite", tbl = "mytable", 
+            filedir = "tempdir/", fn_chunks = "chunk",
+            fn_full = "all_collected", 
+            tbl_schema = "(AuthorId INT, YearLastPub INT, FirstName TEXT)",
+            indexes = ["create unique index idx_t_AuthorId ON mytable (AuthorId ASC)",
+                       "create index idx_t_Year ON mytable (YearLastPub)"]
+            )
+    
     """
-    def __init__(self, db_file, tbl, filedir, fn_parts, fn_full, tbl_schema, indexes = None):
+    def __init__(self, db_file, tbl, tbl_schema, filedir, fn_chunks = "chunk", 
+                 fn_full = "all_collected", indexes = None):
         self.db_file = db_file
         # TODO: add option for read-only? how is best? make connection as a function with the argument . AND CHECK IF EXISTS!
             # note: when using all in one, there is no point in having a read-only connection b/c we will write to it later
             # perhaps add a separate method for initiating the db connection? think if this is worth!
-        # TODO: how to add optional args? ie indexes?
         self.tbl = tbl 
+        self.tbl_schema = tbl_schema  
         self.filedir = filedir
-        self.fn_parts = fn_parts
+        self.fn_chunks = fn_chunks
         self.fn_full = fn_full
-        self.tbl_schema = tbl_schema # example: "(AuthorId INTEGER, CoAuthorId INTEGER, Year INTEGER)" -- or other format? like json, jaml, dict, ...? 
         self.indexes = indexes
     
     def __repr__(self): # TODO: how to make this easy with many args?
-        return f"""connection {self.conn!r}, filedir {self.filedir}, filename parts {self.fn_parts}, filename full {self.fn_full}"""
+        return f"""connection {self.conn!r}, 
+                    filedir {self.filedir}, 
+                    filename parts {self.fn_chunks}, 
+                    filename full {self.fn_full}
+                """
 
     def db_dump(self):
+        """
+        Dump the temporary files into the database. 
+        """
+
         print("Combining files into one", flush = True)
-        subprocess.run(f"tail -n +2 -q {self.filedir}/{self.fn_parts}-*.csv >> {self.filedir}/{self.fn_full}", shell = True)
+        chunks = f"{self.filedir}/{self.fn_chunks}"
+        full = f"{self.filedir}/{self.fn_full}"
+        subprocess.run(f"tail -n +2 -q {chunks}-*.csv >> {full}", shell = True)
 
         print("Dropping existing table and creating new empty one", flush = True)
         with self.conn as con:
@@ -47,6 +95,9 @@ class SQLParallel:
         )
 
     def create_indexes(self):
+        """
+        Create indexes on the table `tbl`. 
+        """
         print("Creating indexes", flush = True)
         if self.indexes is not None:
             with self.conn as write_con:
@@ -56,6 +107,7 @@ class SQLParallel:
             # TODO: check that they do not exist already? does it throw an exception or not if it does not work?
 
     def close(self):
+        """Close the SQLParallel object."""
         # TODO: add analyze_db -- internal fct. o
         print("Closing sqlite connection", flush = True)
         self.conn.close()
@@ -64,6 +116,7 @@ class SQLParallel:
 
 
     def open(self): 
+        """Open the SQLParallel object"""
         print("Opening sqlite connection...", flush = True)
         self.conn = sqlite.connect(database = self.db_file, isolation_level= None)  # Q: how to make this inherit from sqlite?
         print(f"Generating temporary file directory {self.filedir}", flush = True)
@@ -77,7 +130,33 @@ class SQLParallel:
 
     def create_inputs(self, sql, chunk_size): 
         """
-        Make an iterator from a sql query for a single query over which to iterate 
+        Make an iterator from a sql query for a single query 
+            over which to iterate. Th
+
+        Parameters
+        ----------
+        sql : SQLite query to extract the unique entries from a 
+            column in a table. 
+
+        chunk_size : Number of units to process in one chunk in 
+            the parallel routine.
+
+        Returns
+        -------
+        A list of tuples: For each tuple, the first entry is the 
+            chunk identifier; the second entry is the units
+            to be processed.
+
+        Example
+        -------
+        >>> ## create inputs
+        >>> query = "select distinct authorid from author_sample limit 100"
+        >>> inputs = A.create_inputs(sql = query, chunk_size = 10)
+        >>> f = some_function(iteration_id, units)
+
+        >>> # can use for iterating:
+        >>> with Pool(processes = n_cores) as pool:
+                results = pool.starmap(f, inputs)
         """
 
         with self.conn as con:
@@ -87,7 +166,8 @@ class SQLParallel:
         n = len(col_list)
 
         n_groups = math.ceil(n / chunk_size)
-        it = [(i, col_list[i * chunk_size:(min(i*chunk_size + chunk_size, n))]) for i in range(n_groups)]
+        it = [(i, col_list[i * chunk_size:(min(i*chunk_size + chunk_size, n))]) 
+                for i in range(n_groups)]
 
         return(it)
 

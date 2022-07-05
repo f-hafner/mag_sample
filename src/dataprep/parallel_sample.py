@@ -17,6 +17,7 @@ from multiprocessing import Pool
     # processing of the separate files. 
     # tradeoffs: the longer it takes to delete the table (and indexes), relative to the mapreduce process, the more worth is it to run it in parallel.
     # https://stackoverflow.com/questions/19080792/run-separate-processes-in-parallel-python
+# TODO: make the timing! also in the object? why (not)? 
 
 from helpers.sqlparallel import SQLParallel
 from helpers.sqlchunk import SQLChunk
@@ -35,13 +36,13 @@ def f(iteration_id, authors):
     # ... more calculations on df here ...  -> get df_out at the end
     df_out = df
     # save 
-    B.write_part(df = df_out, iteration_id = iteration_id)
+    B.write_chunk(df = df_out, iteration_id = iteration_id)
 
 
 if __name__ == "__main__":
     # 1. Initiate 
     A = SQLParallel(db_file = db_file, tbl = "test", 
-                    filedir = "flaviotest/", fn_parts = "parts",
+                    filedir = "flaviotest/", fn_chunks = "parts",
                     fn_full = "all_collected", tbl_schema = "(AuthorId INT, YearLastPub INT, FirstName TEXT)",
                     indexes = ["create unique index idx_t_AuthorId ON test (AuthorId ASC)",
                                 "create index idx_t_Year ON test (YearLastPub)"])
