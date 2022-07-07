@@ -40,11 +40,31 @@ def normalize_string(s, replace_hyphen = ""):
     s = s.replace("\\.", "", regex = True) # for dots followed by non-whitespace
     s = s.replace(letters_to_replace, regex = True)
     # this is mostly for titles, but I guess it does not hurt for the names either
-    s = s.replace("[^\w\d]", " ", regex = True)
-    s = s.replace("\s+", " ", regex = True)
+    s = s.replace("[^\\w\\d]", " ", regex = True) # fixed to double escape: https://bugs.python.org/issue32912
+    s = s.replace("\\s+", " ", regex = True) # ditto above
     s = s.str.strip()
     return s
 
+
+def ntimes_in_string(s, x):
+    "Count how often word x occurs in string s."
+    return(sum([x in i for i in s.split(" ")]))
+
+def all_tuple_or_list(l):
+    "Check whether all elements in a list are tuples or lists."
+    check = [isinstance(i, list) | isinstance(i, tuple) for i in l]
+    if sum(check) != len(l):
+        raise TypeError("Not all elements are a list or a tuple.")
+    else:
+        return True
+
+def wordlist_is_unique(s, l):
+    "Check whether each word of a list is unique in a string"
+    n_words_in_l = [ntimes_in_string(s, i) for i in l]
+    if max(n_words_in_l) > 1:
+        raise ValueError("some words in string are duplicated.")
+    else:
+        return True
 
 
 # ## Functions for linking 
@@ -160,6 +180,51 @@ def drop_firstword(s, x):
         ls = ls[1:]
     out = " ".join(ls)
     return out
+
+def prep_sql_query(query, params): 
+        """
+        Prepare a SQLite query from a statement and a dictionary 
+            with conditions. The result can be passed as a query
+            and parameters to sqlite3 or pandas.
+            If multiple params are given, they are compounded into
+            one list in the order they appear in the query.
+
+        Parameters
+        ----------
+        query : A SQLite query from the database. Conditions 
+            have to be marked by a unique string, which is
+            referred to in `params`.
+
+        params : A dictionary. The keys are strings that identify the 
+            location in the query where the parameters should go. 
+            The values is a list or a tuple of values
+            that are to be kept.
+
+        Returns
+        ------
+        A dictionary with two items: the `query` in qmark format, 
+            and the `parameters` as a list.
+
+        Example
+        -------
+        >>> prep_sql_query("select * from a where x in cond1", 
+                {"cond1": [1, 2]}) 
+        >>> # returns {"query": "select * from a where x in (?, )", "parameters": [1, 2]}
+        """
+        all_tuple_or_list(params.values())
+        wordlist_is_unique(query, params.keys())
+
+        value_dict = {k: ",".join(["?" for i in range(len(v))]) for k, v in params.items() }
+        position_dict = {k: query.find(k) for k in params.keys()}
+        
+        for k in value_dict.keys():
+            query = query.replace(k, f"({value_dict[k]})")
+        
+        value_order = sorted(position_dict)
+        arguments = [list(params[k]) for k in value_order]
+        arguments = sum(arguments, [])
+        out = {"query": query, "parameters": arguments}
+        return(out)
 
 
 # ### Some functions for reading sqlite data into dict

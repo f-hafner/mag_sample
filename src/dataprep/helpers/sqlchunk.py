@@ -15,6 +15,7 @@ methods for loading and writing tables.
 import pandas as pd
 import sqlite3 as sqlite
 from .sqlparallel import SQLParallel
+from .functions import prep_sql_query
 import pdb
 
 _marker = object()
@@ -97,7 +98,7 @@ class SQLChunk(SQLParallel):
 
         """
         # TODO: it should also accept further optional argument to pass to pd.read_sql
-        query_dict = self._prep_query(query = query, params = params)
+        query_dict = prep_sql_query(query = query, params = params)
 
         # print(query) # TODO: handle exceptions eg if the query does not work would sqlalchemy work better here? 
         read_conn = sqlite.connect(database = f"file:{self.db_file}?mode=ro", 
@@ -108,35 +109,6 @@ class SQLChunk(SQLParallel):
         read_conn.close()
         return(df)
 
-
-    def _prep_query(self, query, params): # TODO: this could go out of the class I guess? but where?
-        """
-        Prepare a SQLite query from a statement and a dictionary 
-            with conditions.
-
-        Parameters
-        ----------
-        query : A SQLite query from the database. Conditions 
-            have to be marked by a unique string, which is
-            referred to in `params`.
-
-        params : A dictionary. The keys are the same strings
-            used in query. The values is a list of values
-            that are to be kept.
-        """
-        value_dict = {k: ",".join(["?" for i in range(len(v))]) for k, v in params.items() }
-        position_dict = {k: query.find(k) for k in params.keys()}
-        # TODO: check that each string in dict only occurs once -- otherwise impossible
-
-        for k in value_dict.keys():
-            query = query.replace(k, f"({value_dict[k]})")
-            # note: still need to know the order for the input to sql query!
-        
-        value_order = sorted(position_dict)
-        arguments = [list(params[k]) for k in value_order]
-        arguments = sum(arguments, [])
-        out = {"query": query, "parameters": arguments}
-        return(out)
 
 
 
