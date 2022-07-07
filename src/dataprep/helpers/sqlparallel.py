@@ -17,6 +17,7 @@ from shutil import rmtree
 import pandas as pd
 import math
 import pdb
+import inspect
 
 class SQLParallel: 
     """
@@ -65,13 +66,39 @@ class SQLParallel:
         self.fn_full = fn_full
         self.indexes = indexes
     
-    def __repr__(self): # TODO: how to make this easy with many args?
-        return f"""connection {self.conn!r}, 
-                    filedir {self.filedir}, 
-                    filename parts {self.fn_chunks}, 
-                    filename full {self.fn_full}
-                """
+    def __repr__(self):
+        args = self._current_init_args()
+        return f"{self.__class__.__name__}({args})"
+    
+    def _current_init_args(self):
+        """
+        Get the current arguments for __repr__.
 
+        Note
+        ----
+        For child classes that inherit arguments from SQLParallel *instances*,
+            the following is important:
+            1. The parent needs to be assigned to self._parent. 
+            2. The __init__ call needs to have the parameter `parent` that refers to 
+                to the parent object. 
+        """
+        init_params = inspect.signature(self.__init__).parameters
+        all_args = vars(self)
+        # pdb.set_trace()
+        # return only the parameters used at instantiation
+            # if we later add an arbitrary arguments, we could
+            # not use it to re-create the object later if there are no **kwargs
+        init_args = [all_args[k] for k in init_params.keys() if k != "parent"] 
+        init_args = ", ".join([f"{i!r}" for i in init_args])
+        if "_parent" in all_args.keys():
+            parent_arg = all_args["_parent"]
+            if len(init_args) > 0:
+                init_args = f"{parent_arg!r}, {init_args}"
+            else:
+                init_args = f"{parent_arg!r}"
+        return init_args
+
+    
     def db_dump(self):
         """
         Dump the temporary files into the database. 
@@ -109,16 +136,27 @@ class SQLParallel:
     def close(self):
         """Close the SQLParallel object."""
         # TODO: add analyze_db -- internal fct. o
+        self._analyze_db()
         print("Closing sqlite connection", flush = True)
         self.conn.close()
         print("Removing temporay files and directories")
         rmtree(self.filedir)
 
 
+    def _analyze_db(self):
+        """
+        Run `analyze` commands on `con` according to sqlite recommendations.
+        """
+        print("Running ANALYZE... \n", flush = True)
+        with self.conn.cursor() as cur:
+            cur.execute("PRAGMA analysis_limit = 1000")
+            cur.execute("PRAGMA optimize")
+        
+
     def open(self): 
         """Open the SQLParallel object"""
         print("Opening sqlite connection...", flush = True)
-        self.conn = sqlite.connect(database = self.db_file, isolation_level= None)  # Q: how to make this inherit from sqlite?
+        self.conn = sqlite.connect(database = self.db_file, isolation_level = None)  # Q: how to make this inherit from sqlite?
         print(f"Generating temporary file directory {self.filedir}", flush = True)
         if os.path.isdir(self.filedir):
             sys.exit("You specified an existing directory.") #  TODO: raise exeptions here instead -- directory already exists 

@@ -46,7 +46,7 @@ class SQLChunk(SQLParallel):
     def __init__(self, parent):
         self._parent = parent
 
-    def __getattr__(self, name, default=_marker):
+    def __getattr__(self, name, default = _marker):
         if name in self._inherited:
             try:
                 return getattr(self._parent, name)

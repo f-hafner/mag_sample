@@ -8,11 +8,10 @@ from multiprocessing import Pool
 
 
 # TODO: follow book pp. 99 for some further improvements
-# TODO: give better names to class methods?
+    # context manager
 # TODO: review attributes -- which ones do I really need in the class? many could also just be passed on when
     # the function is executed? what are the "rules" here?
 # TODO: allow here for limits? ie transform the query as for the parts?
-# TODO: Q: does the child instance also open a new connection? why (not)? -- probably depends on what it inherits?
 # In principle one can also run the deletion of the main table in the db in parallel to the 
     # processing of the separate files. 
     # tradeoffs: the longer it takes to delete the table (and indexes), relative to the mapreduce process, the more worth is it to run it in parallel.
@@ -26,6 +25,8 @@ from helpers.variables import db_file
 
 
 n_cores = 5
+
+
 
 def f(iteration_id, authors):
     # iterate 
@@ -96,3 +97,5 @@ if __name__ == "__main__":
 # is it obvious that these two things run in paralell? or does one what for another?
 # see also here: https://stackoverflow.com/questions/63306875/combining-multithreading-and-multiprocessing-with-concurrent-futures
 # and here https://stackoverflow.com/questions/49947935/nested-parallelism-in-python-multiprocessing
+
+
