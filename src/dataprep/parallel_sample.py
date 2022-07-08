@@ -99,6 +99,16 @@ if __name__ == "__main__":
 # and here https://stackoverflow.com/questions/49947935/nested-parallelism-in-python-multiprocessing
 
 
+import numpy as np
+import pandas as pd 
 
+id = np.repeat([1,2,3,4], 5)
+value = np.random.rand(id.shape[0])
+df = pd.DataFrame({"id": id, "value": value})
 
+for i in df.id.unique():
+    df.loc[df.id == i, :].to_csv(f"test-{i}.csv", index = False)
 
+# write separately for each id to csv file with chunk names
+# then check that the final output from the query is the same as the original dataframe 
+    # and perhaps in between that the output from combining the files is the same as the original as well 

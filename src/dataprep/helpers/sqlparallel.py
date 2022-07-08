@@ -54,7 +54,7 @@ class SQLParallel:
     
     """
     def __init__(self, db_file, tbl, tbl_schema, filedir, fn_chunks = "chunk", 
-                 fn_full = "all_collected", indexes = None):
+                 fn_full = "all_collected.csv", indexes = None):
         self.db_file = db_file
         # TODO: add option for read-only? how is best? make connection as a function with the argument . AND CHECK IF EXISTS!
             # note: when using all in one, there is no point in having a read-only connection b/c we will write to it later
@@ -148,9 +148,9 @@ class SQLParallel:
         Run `analyze` commands on `con` according to sqlite recommendations.
         """
         print("Running ANALYZE... \n", flush = True)
-        with self.conn.cursor() as cur:
-            cur.execute("PRAGMA analysis_limit = 1000")
-            cur.execute("PRAGMA optimize")
+        with self.conn as con:
+            con.execute("PRAGMA analysis_limit = 1000")
+            con.execute("PRAGMA optimize")
         
 
     def open(self): 
