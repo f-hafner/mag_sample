@@ -17,6 +17,9 @@ from shutil import rmtree
 import math
 import inspect
 
+# TODO: does it matter (for speed?) whether the connection is open or not during the reading of the children?
+# TODO: create_indexes: check that they do not exist already? does it throw an exception or not if it does not work?
+
 class SQLParallel: 
     """
     A class to use aggregate/window functions in sqlite with parallel 
@@ -54,9 +57,6 @@ class SQLParallel:
     def __init__(self, db_file, tbl, tbl_schema, filedir, fn_chunks = "chunk", 
                  fn_full = "all_collected.csv", indexes = None):
         self.db_file = db_file
-        # TODO: add option for read-only? how is best? make connection as a function with the argument . AND CHECK IF EXISTS!
-            # note: when using all in one, there is no point in having a read-only connection b/c we will write to it later
-            # perhaps add a separate method for initiating the db connection? think if this is worth!
         self.tbl = tbl 
         self.tbl_schema = tbl_schema  
         self.filedir = filedir
@@ -82,8 +82,7 @@ class SQLParallel:
         """
         init_params = inspect.signature(self.__init__).parameters
         all_args = vars(self)
-        # pdb.set_trace()
-        # return only the parameters used at instantiation
+        # NOTE: return only the parameters used at instantiation
             # if we later add an arbitrary arguments, we could
             # not use it to re-create the object later if there are no **kwargs
         init_args = [all_args[k] for k in init_params.keys() if k != "parent"] 
@@ -96,7 +95,7 @@ class SQLParallel:
                 init_args = f"{parent_arg!r}"
         return init_args
 
-    
+
     def db_dump(self):
         """
         Dump the temporary files into the database. 
@@ -112,7 +111,7 @@ class SQLParallel:
             con.execute(f"DROP TABLE IF EXISTS {self.tbl}")
             con.execute(f"CREATE TABLE {self.tbl} {self.tbl_schema}")
 
-        print("Reading file into db", flush = True) # TODO: set flush as a global setting in the class?
+        print("Reading file into db", flush = True) 
         subprocess.run(
             ["sqlite3", self.db_file,
             ".mode csv",
@@ -128,11 +127,10 @@ class SQLParallel:
             with self.conn as write_con:
                 for i in self.indexes:
                     write_con.execute(i)
-            # TODO: check that they do not exist already? does it throw an exception or not if it does not work?
+            
 
     def close(self):
         """Close the SQLParallel object."""
-        # TODO: add analyze_db -- internal fct. o
         self._analyze_db()
         print("Closing sqlite connection", flush = True)
         self.conn.close()
@@ -155,13 +153,7 @@ class SQLParallel:
         print("Opening sqlite connection...", flush = True)
         self.conn = sqlite.connect(database = self.db_file, isolation_level = None)  # Q: how to make this inherit from sqlite?
         print(f"Generating temporary file directory {self.filedir}", flush = True)
-        if os.path.isdir(self.filedir):
-            sys.exit("You specified an existing directory.") #  TODO: raise exeptions here instead -- directory already exists 
         os.mkdir(self.filedir)
-
-        # TODO: add other stuff?
-        # TODO: delete the self.conn attribute when closed? or how to show that it is closed?
-        # TODO: does it matter (for speed?) whether the connection is open or not during the reading of the children?
 
     def create_inputs(self, sql, chunk_size): 
         """

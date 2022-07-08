@@ -1,22 +1,22 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
+"""
+This is a file where I am trying out things. 
+It is to be deleted in the long run.
+"""
 
 # need: subprocess, etc! how to import them here?
 import pandas as pd
 from multiprocessing import Pool
 
 
-# TODO: follow book pp. 99 for some further improvements
-    # context manager
-# TODO: review attributes -- which ones do I really need in the class? many could also just be passed on when
-    # the function is executed? what are the "rules" here?
-# TODO: allow here for limits? ie transform the query as for the parts?
 # In principle one can also run the deletion of the main table in the db in parallel to the 
     # processing of the separate files. 
     # tradeoffs: the longer it takes to delete the table (and indexes), relative to the mapreduce process, the more worth is it to run it in parallel.
     # https://stackoverflow.com/questions/19080792/run-separate-processes-in-parallel-python
-# TODO: make the timing! also in the object? why (not)? 
+    # see end of file 
+# TODO: how to time the execution time? store at initiation? why (not)? better alternatives? 
 
 from helpers.sqlparallel import SQLParallel
 from helpers.sqlchunk import SQLChunk
@@ -97,18 +97,3 @@ if __name__ == "__main__":
 # is it obvious that these two things run in paralell? or does one what for another?
 # see also here: https://stackoverflow.com/questions/63306875/combining-multithreading-and-multiprocessing-with-concurrent-futures
 # and here https://stackoverflow.com/questions/49947935/nested-parallelism-in-python-multiprocessing
-
-
-import numpy as np
-import pandas as pd 
-
-id = np.repeat([1,2,3,4], 5)
-value = np.random.rand(id.shape[0])
-df = pd.DataFrame({"id": id, "value": value})
-
-for i in df.id.unique():
-    df.loc[df.id == i, :].to_csv(f"test-{i}.csv", index = False)
-
-# write separately for each id to csv file with chunk names
-# then check that the final output from the query is the same as the original dataframe 
-    # and perhaps in between that the output from combining the files is the same as the original as well 

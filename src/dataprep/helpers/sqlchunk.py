@@ -7,11 +7,6 @@ methods for loading and writing tables.
 """
 
 
-# what does the subclass need to be able to do?
-    # loading +/- complex queries from the database with the current ids
-    # generate the questionmarks, insert them at the right place
-    # write a dataframe to a file in the specified directory 
-
 import pandas as pd
 import sqlite3 as sqlite
 from .sqlparallel import SQLParallel
@@ -20,6 +15,7 @@ import pdb
 
 _marker = object()
 
+ # TODO: read_sql should also accept further optional argument to pass to pd.read_sql
 
 class SQLChunk(SQLParallel):
     """
@@ -41,8 +37,6 @@ class SQLChunk(SQLParallel):
     """
 
     _inherited = ["db_file", "fn_chunks", "filedir"]
-        # TODO: if these children could open/close their own connections -- this may further speed up? since one read does not have to wait for another?
-            # check this
 
     def __init__(self, parent):
         self._parent = parent
@@ -97,10 +91,8 @@ class SQLChunk(SQLParallel):
         >>> df = B.read_sql(query = q, params = p)
 
         """
-        # TODO: it should also accept further optional argument to pass to pd.read_sql
         query_dict = prep_sql_query(query = query, params = params)
-
-        # print(query) # TODO: handle exceptions eg if the query does not work would sqlalchemy work better here? 
+ 
         read_conn = sqlite.connect(database = f"file:{self.db_file}?mode=ro", 
                                    isolation_level= None, uri = True)
         with read_conn:
