@@ -1,62 +1,41 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-from src.dataprep.helpers.sqlparallel import SQLParallel
-import pytest 
 import os
 import sqlite3 as sqlite
 import pandas as pd
 from pandas.testing import assert_frame_equal
 
-table = "table2"
-schema = "(id INT, value REAL)"
-indexes = "create idx2 ON table2 (id) "
-
-# define location for temporary files
-@pytest.fixture
-def filedir(temp_filedir):
-    dir = temp_filedir / "tempfiles"
-    return dir
-
-
-@pytest.fixture
-def sql_parallel(temp_db_file, filedir):
-    A = SQLParallel(db_file = temp_db_file,
-                    tbl = table, 
-                    tbl_schema = schema,
-                    filedir = filedir,
-                    indexes = indexes)
-    return A
-
-
-def test__current_init_args(sql_parallel, temp_db_file, filedir):
-    init_args = (f"{temp_db_file!r}, {table!r}, {schema!r}, "
-                 f"{filedir!r}, 'chunk', 'all_collected.csv', "
-                 f"{indexes!r}")
+def test__current_init_args(sql_parallel, temp_db_file, parallel_params):
+    params = parallel_params
+    init_args = (f"{temp_db_file!r}, {params['table']!r}, {params['schema']!r}, "
+                 f"{params['filedir']!r}, 'chunk', 'all_collected.csv', "
+                 f"{params['indexes']!r}")
                 
     assert sql_parallel._current_init_args() == init_args, \
              "wrong current init args"
 
     new_index = "newindex"
     sql_parallel.indexes = new_index
-    new_init_args = (f"{temp_db_file!r}, {table!r}, {schema!r}, "
-                     f"{filedir!r}, 'chunk', 'all_collected.csv', "
+    new_init_args = (f"{temp_db_file!r}, {params['table']!r}, {params['schema']!r}, "
+                     f"{params['filedir']!r}, 'chunk', 'all_collected.csv', "
                      f"{new_index!r}")
     assert sql_parallel._current_init_args() == new_init_args, \
             "init args not updated"
 
 
 
-def test_open_close(filedir, sql_parallel):
-    assert not os.path.isdir(filedir), "filedir already exists"
+def test_open_close(parallel_params, sql_parallel):
+    dir = parallel_params["filedir"]
+    assert not os.path.isdir(dir), "filedir already exists"
 
     sql_parallel.open()
-    assert os.path.isdir(filedir), "filedir does not exist"
+    assert os.path.isdir(dir), "filedir does not exist"
     assert isinstance(sql_parallel.conn, sqlite.Connection), \
         "sqlite connection does not exist"
 
     sql_parallel.close()
-    assert not os.path.isdir(filedir), "filedir is deleted"
+    assert not os.path.isdir(dir), "filedir is deleted"
 
 
 def test_create_inputs(sql_parallel):

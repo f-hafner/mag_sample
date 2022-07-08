@@ -14,9 +14,7 @@ import subprocess
 import os
 import sys
 from shutil import rmtree
-import pandas as pd
 import math
-import pdb
 import inspect
 
 class SQLParallel: 
@@ -129,7 +127,6 @@ class SQLParallel:
         if self.indexes is not None:
             with self.conn as write_con:
                 for i in self.indexes:
-                    # print(i)
                     write_con.execute(i)
             # TODO: check that they do not exist already? does it throw an exception or not if it does not work?
 
