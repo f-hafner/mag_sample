@@ -50,6 +50,9 @@ python3 $script_path/prep_mag/author_info_linking.py --years_first_field 5 \
 # ## Consolidate gender per author in author_sample 
 python3 $script_path/prep_mag/author_gender.py &> $logfile_path/author_gender.log
 
+# ## Tidy and correspond US affiliations
+bash $script_path/institutions/clean_link_institutions.sh $logfile_path
+
 # ## Load ProQuest data
 python3 $script_path/load_proquest/proquest_to_db.py &> $logfile_path/proquest_to_db.log
 python3 $script_path/load_proquest/correspond_fieldofstudy.py &> $logfile_path/correspond_fieldofstudy.log
