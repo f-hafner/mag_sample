@@ -78,3 +78,9 @@ bash $script_path/link/advisors.sh $logfile_path
 Rscript -e "rmarkdown::render('$script_path/reports/advisor_links_quality_select.Rmd', output_dir = '$output_path')" \
     &> $logfile_path/advisor_links_quality_select.log
 
+# ## Link NSF grants to MAG advisors
+bash $script_path/link/grants.sh $logfile_path
+
+# TODO: add report on quality of linking here
+
+

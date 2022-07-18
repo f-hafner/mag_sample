@@ -74,7 +74,7 @@ parser.add_argument("--fieldofstudy_str", type=str, help = "use fieldofstudy as 
 parser.add_argument("--keywords", type=str, help = "use keywords for learning?") 
 parser.add_argument("--retrain", type = str, default = "True", help = "force retrain!?")   
 parser.add_argument("--linking_type", type = str, default = "graduates",
-                    help = "Are we linking graduates or advisors?", choices = {"graduates", "advisors"}) 
+                    help = "Are we linking graduates or advisors?", choices = {"graduates", "advisors", "grants"}) 
         
 parser.set_defaults(testing="True")
 parser.set_defaults(institution="False")
@@ -109,8 +109,15 @@ if args.linking_type == "advisors":
                         , AuthorId INT"""
     if not os.path.isdir(path_dedupe_files):
         os.mkdir(path_dedupe_files)
-
-
+elif args.linking_type == "grants":
+    nsf_entity_id = "GrantID"
+    tbl_linking_info = "linking_info_grants"
+    tbl_linked_ids = "linked_ids_grants"
+    path_dedupe_files = path_dedupe_files + "grants/"
+    column_order_links = f"""{nsf_entity_id} TEXT
+                        , AuthorId INT"""
+    if not os.path.isdir(path_dedupe_files):
+        os.mkdir(path_dedupe_files)
 
 # ### check the field here -- choices option in parser does not work straightforwardly with whitespaces
 all_fields = ["history", "geology", "economics", "geography", "chemistry",
@@ -285,53 +292,7 @@ if args.linking_type == "graduates":
     ) AS g USING(AuthorId)
     {where_stmt_mag} 
     """
-elif args.linking_type == "advisors":
-    query_proquest = f"""
-    SELECT relationship_id
-            , year
-            , firstname 
-            , lastname
-            , CASE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
-                WHEN 
-                    "" THEN NULL 
-                    ELSE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
-                END AS middlename
-            , fieldofstudy
-            , keywords
-            , institution
-    FROM (
-        SELECT goid
-            , relationship_id
-            , degree_year AS year 
-            , a.fullname 
-            , SUBSTR(TRIM(a.fullname),1,instr(trim(a.fullname)||' ',' ')-1) AS firstname
-            , REPLACE(a.fullname, RTRIM(a.fullname, REPLACE(a.fullname, " ", "")), "") AS lastname 
-            , TRIM(SUBSTR(a.fullname, length(SUBSTR(TRIM(a.fullname),1,instr(trim(a.fullname)||' ',' ')-1)) + 1)) AS middle_lastname 
-            , length(a.fullname) AS l_fullname 
-            , length(SUBSTR(TRIM(a.fullname),1,instr(trim(a.fullname)||' ',' ')-1) ) AS l_firstname
-            , length(REPLACE(a.fullname, RTRIM(a.fullname, REPLACE(a.fullname, " ", "")), "")) AS l_lastname
-            , fieldname AS fieldofstudy
-            , university_id
-        FROM pq_authors 
-        INNER JOIN (
-            SELECT goid, fieldname 
-            FROM pq_fields_mag
-            WHERE mag_field0 IN ({insert_field_questionmarks})
-        ) USING (goid)
-        INNER JOIN ( --# NOTE: this only keeps the theses where at least one advisor is present
-            SELECT *, firstname || ' ' || lastname AS fullname
-            FROM pq_advisors
-        ) AS a USING(goid)
-    )
-    -- ## NOTE: use left join here as not all graduates have advisor (particularly pre-1980) and possibly also keywords
-    LEFT JOIN pq_keywords USING(goid) 
-    INNER JOIN (
-        SELECT university_id, normalizedname as institution
-        FROM pq_unis --## mark: different from linking graduates. keep advisors outside the U.S
-    ) USING(university_id)
-    {where_stmt}
-    """
-
+elif args.linking_type == "advisors" or args.linking_type == "grants":
     # note: this still sources field of study, but it is level 0 and thus the same for everyone 
     query_mag = f"""
     SELECT f.AuthorId
@@ -390,3 +351,70 @@ elif args.linking_type == "advisors":
     ) AS f USING(AuthorId)
     {where_stmt_mag} 
     """
+
+    if args.linking_type == "advisors":
+        query_proquest = f"""
+        SELECT relationship_id
+                , year
+                , firstname 
+                , lastname
+                , CASE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                    WHEN 
+                        "" THEN NULL 
+                        ELSE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                    END AS middlename
+                , fieldofstudy
+                , keywords
+                , institution
+        FROM (
+            SELECT goid
+                , relationship_id
+                , degree_year AS year 
+                , a.fullname 
+                , SUBSTR(TRIM(a.fullname),1,instr(trim(a.fullname)||' ',' ')-1) AS firstname
+                , REPLACE(a.fullname, RTRIM(a.fullname, REPLACE(a.fullname, " ", "")), "") AS lastname 
+                , TRIM(SUBSTR(a.fullname, length(SUBSTR(TRIM(a.fullname),1,instr(trim(a.fullname)||' ',' ')-1)) + 1)) AS middle_lastname 
+                , length(a.fullname) AS l_fullname 
+                , length(SUBSTR(TRIM(a.fullname),1,instr(trim(a.fullname)||' ',' ')-1) ) AS l_firstname
+                , length(REPLACE(a.fullname, RTRIM(a.fullname, REPLACE(a.fullname, " ", "")), "")) AS l_lastname
+                , fieldname AS fieldofstudy
+                , university_id
+            FROM pq_authors 
+            INNER JOIN (
+                SELECT goid, fieldname 
+                FROM pq_fields_mag
+                WHERE mag_field0 IN ({insert_field_questionmarks})
+            ) USING (goid)
+            INNER JOIN ( --# NOTE: this only keeps the theses where at least one advisor is present
+                SELECT *, firstname || ' ' || lastname AS fullname
+                FROM pq_advisors
+            ) AS a USING(goid)
+        )
+        -- ## NOTE: use left join here as not all graduates have advisor (particularly pre-1980) and possibly also keywords
+        LEFT JOIN pq_keywords USING(goid) 
+        INNER JOIN (
+            SELECT university_id, normalizedname as institution
+            FROM pq_unis --## mark: different from linking graduates. keep advisors outside the U.S
+        ) USING(university_id)
+        {where_stmt}
+        """
+    elif args.linking_type == "grants":
+        query_nsf = """
+        SELECT a.GrantID, a.Position, SUBSTR(a.Award_AwardEffectiveDate, 7, 4) as Year
+            , b.*, c.*
+        FROM NSF_MAIN as a 
+        INNER JOIN (
+            SELECT GrantID, Position, Name 
+            FROM NSF_Institution
+        ) b 
+        USING (GrantID, Position)
+        INNER JOIN (
+            SELECT GrantID, Position, Firstname, LastName, PIFullName
+            FROM NSF_Investigator
+            WHERE RoleCode = 'Principal Investigator'
+        ) c
+        USING (GrantID, Position)
+        WHERE AWARD_TranType = "Grant" AND AWARD_Agency = 'NSF' 
+        """
+
+  

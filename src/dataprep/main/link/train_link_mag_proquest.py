@@ -3,7 +3,7 @@ Step 1 to Link MAG authors to ProQuest graduates:
          Active labelling
 """
 
-from setup_linking import *
+from main.link.setup_linking import *
 
 
 print("finished setup ... ", flush=True)
@@ -23,31 +23,31 @@ if __name__ == "__main__":
     
     training_file = f"{path_dedupe_files}{training_file}_{fld}_{args.startyear}_{args.endyear}_institution{args.institution}_fieldofstudy_cat{args.fieldofstudy_cat}_fieldofstudy_str{args.fieldofstudy_str}_keywords{args.keywords}{args.train_name}.json" 
 
+    if args.linking_type != "grants": # not necessary for grants
+        # ## prepare the keywords from proquest
+        print("Preparing temp tables for info of proquest authors... \n")
+        # ### keywords
+        write_con.execute("DROP TABLE IF EXISTS pq_keywords")
+        write_con.execute("""
+        CREATE TABLE pq_keywords AS 
+        SELECT goid, GROUP_CONCAT(fieldname, ";") as keywords
+        FROM pq_fields 
+        GROUP BY goid
+        """)
+        write_con.execute("CREATE UNIQUE INDEX idx_kw_goid ON pq_keywords(goid ASC)")
 
-    # ## prepare the keywords from proquest
-    print("Preparing temp tables for info of proquest authors... \n")
-    # ### keywords
-    write_con.execute("DROP TABLE IF EXISTS pq_keywords")
-    write_con.execute("""
-    CREATE TABLE pq_keywords AS 
-    SELECT goid, GROUP_CONCAT(fieldname, ";") as keywords
-    FROM pq_fields 
-    GROUP BY goid
-    """)
-    write_con.execute("CREATE UNIQUE INDEX idx_kw_goid ON pq_keywords(goid ASC)")
-
-    ### advisors -> CURRENTLY UNUNSED
-    write_con.execute("DROP TABLE IF EXISTS pq_all_advisors")
-    write_con.execute("""
-    CREATE TABLE pq_all_advisors AS
-    SELECT goid, GROUP_CONCAT(fullname, ";") AS advisors
-    FROM (
-        SELECT goid, firstname || " " || lastname as fullname 
-        FROM pq_advisors
-    )
-    GROUP BY goid
-    """)
-    write_con.execute("CREATE UNIQUE INDEX idx_aa_goid ON pq_all_advisors (goid ASC)")
+        ### advisors -> CURRENTLY UNUNSED
+        write_con.execute("DROP TABLE IF EXISTS pq_all_advisors")
+        write_con.execute("""
+        CREATE TABLE pq_all_advisors AS
+        SELECT goid, GROUP_CONCAT(fullname, ";") AS advisors
+        FROM (
+            SELECT goid, firstname || " " || lastname as fullname 
+            FROM pq_advisors
+        )
+        GROUP BY goid
+        """)
+        write_con.execute("CREATE UNIQUE INDEX idx_aa_goid ON pq_all_advisors (goid ASC)")
 
     # ## Load data 
    
@@ -69,10 +69,13 @@ if __name__ == "__main__":
         magdata = {i: row for i, row in custom_enumerate(cur.fetchall(), "AuthorId")}
         cur = con.cursor()
         cur.execute(query_proquest, tuple(id_field))
-        proquestdata = {i: row for i, row in custom_enumerate(cur.fetchall(), pq_entity_id)} 
+        if args.linkg_type == "grants":
+            otherdata = {i: row for i, row in custom_enumerate(cur.fetchall(), nsf_entity_id)}
+        else:
+            otherdata = {i: row for i, row in custom_enumerate(cur.fetchall(), pq_entity_id)} # TODO: rename proquestdata to otherdata
     
     # transform the strings to hashable sequences
-    for data in [magdata, proquestdata]:
+    for data in [magdata, otherdata]:
         for key in data.keys():
             if data[key]["keywords"] is not None:
                 data[key]["keywords"] = frozenset(data[key]["keywords"].split(";"))
@@ -99,11 +102,12 @@ if __name__ == "__main__":
             linker = dedupe.StaticRecordLink(sf, num_cores = n_cores)
     else:
         # define fields for categorical 
-        query_fields_mag = f"SELECT DISTINCT(fieldofstudy) FROM ( {query_mag} ) WHERE fieldofstudy IS NOT NULL"
-        query_fields_proquest = f"SELECT DISTINCT(fieldofstudy) FROM ( {query_proquest} ) WHERE fieldofstudy IS NOT NULL"
-        mag_areas = [i[0] for i in read_con.execute(query_fields_mag, tuple(id_field)).fetchall()] 
-        proquest_areas = [i[0] for i in read_con.execute(query_fields_proquest, tuple(id_field)).fetchall()] 
-        areas = mag_areas + proquest_areas
+        if args.linking_type != "grants":
+            query_fields_mag = f"SELECT DISTINCT(fieldofstudy) FROM ( {query_mag} ) WHERE fieldofstudy IS NOT NULL"
+            query_fields_proquest = f"SELECT DISTINCT(fieldofstudy) FROM ( {query_proquest} ) WHERE fieldofstudy IS NOT NULL"
+            mag_areas = [i[0] for i in read_con.execute(query_fields_mag, tuple(id_field)).fetchall()] 
+            proquest_areas = [i[0] for i in read_con.execute(query_fields_proquest, tuple(id_field)).fetchall()] 
+            areas = mag_areas + proquest_areas
 
         if args.linking_type == "graduates":
             fields = [
@@ -129,6 +133,15 @@ if __name__ == "__main__":
                 {"field": "lastname", "variable name": "same_lastname", "type": "Custom", "comparator": name_comparator},
                 {"field": "middlename", "variable name": "middlename", "type": "String", "has missing": True},
             ]
+        elif args.linking_type == "grants":
+            fields = [
+                {"field": "firstname", "variable name": "firstname", "type": "String", "has missing": False},
+                {"field": "firstname", "variable name": "same_firstname", "type": "Custom", "comparator": name_comparator},
+                {"field": "lastname", "variable name": "lastname", "type": "String", "has missing": False},
+                {"field": "lastname", "variable name": "same_lastname", "type": "Custom", "comparator": name_comparator},
+                {"field": "middlename", "variable name": "middlename", "type": "String", "has missing": True},
+                {"field": "year", "variable name": "year", "type": "Price"},
+            ] # TODO: rename fields; extract middle name 
      
         if args.institution == "True":
             if args.linking_type == "graduates": # should we also ignore uni for graduates?
@@ -137,6 +150,8 @@ if __name__ == "__main__":
                 fields.append({"field": "institution", "variable name": "institution", "type": "Custom", "comparator": max_set_similarity_ignoreuni, "has missing": True})
                 fields.append({"type": "Interaction", "interaction variables": ["institution", "same_firstname"] })
                 fields.append({"type": "Interaction", "interaction variables": ["institution", "same_lastname"] })
+            elif args.linking_type == "grants":
+                fields.append({"field": "institution", "variable name": "institution", "type": "Custom", "comparator": max_set_similarity_ignoreuni, "has missing": True})
         if args.fieldofstudy_cat == "True": 
             fields.append({"field": "fieldofstudy", "variable name": "fieldofstudy", "type": "Categorical", "categories": areas, "has missing": False})
         if args.fieldofstudy_str == "True": 
@@ -149,12 +164,15 @@ if __name__ == "__main__":
         # Define data_1 and data_2 depending on linking input. This is important when making many-to-one links
         if args.linking_type == "graduates":
             data_1_use = magdata 
-            data_2_use = proquestdata
+            data_2_use = otherdata
         elif args.linking_type == "advisors":
-            data_1_use = proquestdata
+            data_1_use = otherdata
             data_2_use = magdata
+        elif args.linking_type == "grants":
+            data_1_use = magdata
+            data_2_use = otherdata
             
-        del proquestdata 
+        del otherdata 
         del magdata
 
         if os.path.exists(training_file):
