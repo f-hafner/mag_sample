@@ -400,20 +400,24 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
         """
     elif args.linking_type == "grants":
         query_nsf = """
-        SELECT a.GrantID, a.Position, SUBSTR(a.Award_AwardEffectiveDate, 7, 4) as Year
+        SELECT a.GrantID, CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) AS year
             , b.*, c.*
+            , '' AS keywords, '' AS coauthors -- # necessary for current code structure
         FROM NSF_MAIN as a 
         INNER JOIN (
-            SELECT GrantID, Position, Name 
+            SELECT GrantID, Name AS institution
             FROM NSF_Institution
         ) b 
-        USING (GrantID, Position)
+        USING (GrantID)
         INNER JOIN (
-            SELECT GrantID, Position, Firstname, LastName, PIFullName
+            SELECT GrantID
+                , FirstName AS firstname
+                , LastName AS lastname
+                , PIMidInit AS middlename --# NOTE: PISufxName is often "Jr", "Mr", JR, ... 
             FROM NSF_Investigator
             WHERE RoleCode = 'Principal Investigator'
         ) c
-        USING (GrantID, Position)
+        USING (GrantID)
         WHERE AWARD_TranType = "Grant" AND AWARD_Agency = 'NSF' 
         """
 

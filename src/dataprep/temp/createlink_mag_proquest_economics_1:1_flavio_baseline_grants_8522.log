@@ -1,0 +1,95 @@
+Namespace(testing=False, verbose=1, field=['economics'], train_name='flavio_baseline', startyear=1985, endyear=2022, mergemode='1:1', recall=0.9, institution='True', fieldofstudy_cat='False', fieldofstudy_str='False', keywords='False', retrain='True', linking_type='grants')
+Have max 6 cores available
+Testing is False 
+
+Preparing temp tables for info of proquest authors... 
+
+
+        SELECT a.GrantID, CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) AS year
+            , b.*, c.*
+            , '' AS keywords, '' AS coauthors -- # necessary for current code structure
+        FROM NSF_MAIN as a 
+        INNER JOIN (
+            SELECT GrantID, Name AS institution
+            FROM NSF_Institution
+        ) b 
+        USING (GrantID)
+        INNER JOIN (
+            SELECT GrantID
+                , FirstName AS firstname
+                , LastName AS lastname
+                , PIMidInit AS middlename --# NOTE: PISufxName is often "Jr", "Mr", JR, ... 
+            FROM NSF_Investigator
+            WHERE RoleCode = 'Principal Investigator'
+        ) c
+        USING (GrantID)
+        WHERE AWARD_TranType = "Grant" AND AWARD_Agency = 'NSF' 
+         
+
+
+    SELECT f.AuthorId
+        , f.year
+        , f.firstname
+        , f.lastname
+        , CASE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            WHEN 
+                "" THEN NULL 
+                ELSE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            END as middlename 
+            -- ## NOTE this gives "" for middlename when it is missing 
+        , f.fieldofstudy
+        , g.keywords
+        , g.coauthors
+        , g.institution
+    FROM (
+        SELECT a.AuthorId
+            , a.YearFirstPub AS year
+            , a.FirstName AS firstname
+            , REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "") AS lastname 
+                    -- https://stackoverflow.com/questions/21388820/how-to-get-the-last-index-of-a-substring-in-sqlite
+            , TRIM(SUBSTR(b.NormalizedName, length(a.FirstName) + 1)) AS middle_lastname 
+                    -- this gives all except the first name 
+            , length(b.NormalizedName) as l_fullname 
+            , length(a.FirstName) as l_firstname
+            , length(REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "")) as l_lastname
+            , e.NormalizedName AS fieldofstudy
+        FROM author_sample AS a
+        INNER JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM Authors
+        ) AS b USING(AuthorId)
+        INNER JOIN (
+            -- ## mark: different from linking graduates. filter on field0
+            SELECT AuthorId, NormalizedName
+            FROM author_fields c
+            INNER JOIN (
+                SELECT FieldOfStudyId, NormalizedName
+                FROM FieldsOfStudy
+            ) AS d USING(FieldOfStudyId)
+            WHERE FieldClass = 'main'
+                AND FieldOfStudyId IN (?)
+        ) AS e USING(AuthorId)
+    ) f
+    LEFT JOIN (
+        SELECT AuthorId
+                , institutions_career as institution
+                , coauthors
+                , keywords
+        FROM author_info_linking
+    ) AS g USING(AuthorId)
+    INNER JOIN (
+        SELECT AuthorId
+        FROM current_links
+    ) AS f USING(AuthorId)
+    WHERE length(firstname) > 1 AND year >= 1985 - 5 AND year <= 2022 + 5 
+     
+
+reading from:  /mnt/ssd/DedupeFiles/grants/settings_economics_1985_2022_institutionTrue_fieldofstudy_catFalse_fieldofstudy_strFalse_keywordsFalseflavio_baseline
+Link now ... 
+made pairs
+calculated scores
+made 1:1 links
+Writing to database...
+Running ANALYZE... 
+
+Done in 34.26364801327387 minutes.

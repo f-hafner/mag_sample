@@ -50,14 +50,17 @@ if __name__ == "__main__":
         write_con.execute("CREATE UNIQUE INDEX idx_aa_goid ON pq_all_advisors (goid ASC)")
 
     # ## Load data 
-   
+    if args.linking_type == "grants":
+        query_other = query_nsf
+    else:
+        query_other = query_proquest
 
     if args.testing:
         line_limit = 500
-        query_proquest = f"{query_proquest} LIMIT {line_limit}"
+        query_other = f"{query_other} LIMIT {line_limit}"
         query_mag = f"{query_mag} LIMIT {line_limit}"
 
-    for q in [query_proquest, query_mag]:
+    for q in [query_other, query_mag]:
         print(f"{q} \n")
 
     # https://stackoverflow.com/questions/3300464/how-can-i-get-dict-from-sqlite-query
@@ -68,10 +71,11 @@ if __name__ == "__main__":
         cur.execute(query_mag, tuple(id_field))
         magdata = {i: row for i, row in custom_enumerate(cur.fetchall(), "AuthorId")}
         cur = con.cursor()
-        cur.execute(query_proquest, tuple(id_field))
-        if args.linkg_type == "grants":
+        if args.linking_type == "grants":
+            cur.execute(query_other)
             otherdata = {i: row for i, row in custom_enumerate(cur.fetchall(), nsf_entity_id)}
         else:
+            cur.execute(query_other, tuple(id_field))
             otherdata = {i: row for i, row in custom_enumerate(cur.fetchall(), pq_entity_id)} # TODO: rename proquestdata to otherdata
     
     # transform the strings to hashable sequences
@@ -104,7 +108,7 @@ if __name__ == "__main__":
         # define fields for categorical 
         if args.linking_type != "grants":
             query_fields_mag = f"SELECT DISTINCT(fieldofstudy) FROM ( {query_mag} ) WHERE fieldofstudy IS NOT NULL"
-            query_fields_proquest = f"SELECT DISTINCT(fieldofstudy) FROM ( {query_proquest} ) WHERE fieldofstudy IS NOT NULL"
+            query_fields_proquest = f"SELECT DISTINCT(fieldofstudy) FROM ( {query_other} ) WHERE fieldofstudy IS NOT NULL"
             mag_areas = [i[0] for i in read_con.execute(query_fields_mag, tuple(id_field)).fetchall()] 
             proquest_areas = [i[0] for i in read_con.execute(query_fields_proquest, tuple(id_field)).fetchall()] 
             areas = mag_areas + proquest_areas

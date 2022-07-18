@@ -7,7 +7,7 @@ Step 2 to Link MAG authors to ProQuest graduates:
 # TODO: dynamic table names for storing links and linking info
 # TODO: correctly assign the ids from the theses
 
-from setup_linking import *
+from main.link.setup_linking import *
 
 if __name__ == "__main__":
     settings_file = "settings"
@@ -48,13 +48,19 @@ if __name__ == "__main__":
     write_con.execute("CREATE UNIQUE INDEX idx_aa_goid ON pq_all_advisors (goid ASC)")
 
     # ## Load data 
+    if args.linking_type == "grants":
+        query_other = query_nsf
+    else:
+        query_other = query_proquest
+
     if args.testing:
         line_limit = 500
-        query_proquest = f"{query_proquest} LIMIT {line_limit}"
+        query_other = f"{query_other} LIMIT {line_limit}"
         query_mag = f"{query_mag} LIMIT {line_limit}"
 
-    for q in [query_proquest, query_mag]:
+    for q in [query_other, query_mag]:
         print(f"{q} \n")
+
 
     # https://stackoverflow.com/questions/3300464/how-can-i-get-dict-from-sqlite-query
     # https://docs.python.org/3/library/sqlite3.html#sqlite3.Connection.row_factory
@@ -73,11 +79,15 @@ if __name__ == "__main__":
         cur.execute(query_mag, tuple(id_field))
         magdata = {i: row for i, row in custom_enumerate(cur.fetchall(), "AuthorId")}
         cur = con.cursor()
-        cur.execute(query_proquest, tuple(id_field))
-        proquestdata = {i: row for i, row in custom_enumerate(cur.fetchall(), pq_entity_id)}
+        if args.linking_type == "grants":
+            cur.execute(query_other)
+            otherdata = {i: row for i, row in custom_enumerate(cur.fetchall(), nsf_entity_id)}
+        else:
+            cur.execute(query_other, tuple(id_field))
+            otherdata = {i: row for i, row in custom_enumerate(cur.fetchall(), pq_entity_id)} # TODO: rename proquestdata to otherdata
     
     # transform the strings to hashable sequences
-    for data in [magdata, proquestdata]:
+    for data in [magdata, otherdata]:
         for key in data.keys():
             if data[key]["keywords"] is not None:
                 data[key]["keywords"] = frozenset(data[key]["keywords"].split(";"))
@@ -104,9 +114,11 @@ if __name__ == "__main__":
 
     print("Link now ... ", flush=True)
     if args.linking_type == "graduates":
-        pairs = linker.pairs(data_1 = magdata, data_2 = proquestdata)
+        pairs = linker.pairs(data_1 = magdata, data_2 = otherdata)
     elif args.linking_type == "advisors": # this is important: we link many theses in proquest to one record on mag 
-        pairs = linker.pairs(data_1 = proquestdata, data_2 = magdata)
+        pairs = linker.pairs(data_1 = otherdata, data_2 = magdata)
+    elif args.linking_type == "grants":
+        pairs = linker.pairs(data_1 = magdata, data_2 = otherdata)
 
     
     print("made pairs", flush=True)
@@ -120,7 +132,7 @@ if __name__ == "__main__":
         print("made 1:1 links", flush=True)
 
     
-    del proquestdata 
+    del otherdata 
     del magdata
 
     # ## Write everything into two tables
