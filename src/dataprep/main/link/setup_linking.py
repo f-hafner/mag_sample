@@ -415,10 +415,8 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
                 , LastName AS lastname
                 , PIMidInit AS middlename --# NOTE: PISufxName is often "Jr", "Mr", JR, ... 
             FROM NSF_Investigator
-            WHERE RoleCode = 'Principal Investigator'
+            WHERE RoleCode = 'principal investigator'
         ) c
         USING (GrantID)
-        WHERE AWARD_TranType = "Grant" AND AWARD_Agency = 'NSF' 
+        WHERE AWARD_TranType = 'grant' AND AWARD_Agency = 'nsf' 
         """
-
-  

@@ -143,9 +143,8 @@ if __name__ == "__main__":
                 {"field": "firstname", "variable name": "same_firstname", "type": "Custom", "comparator": name_comparator},
                 {"field": "lastname", "variable name": "lastname", "type": "String", "has missing": False},
                 {"field": "lastname", "variable name": "same_lastname", "type": "Custom", "comparator": name_comparator},
-                {"field": "middlename", "variable name": "middlename", "type": "String", "has missing": True},
-                {"field": "year", "variable name": "year", "type": "Price"},
-            ] # TODO: rename fields; extract middle name 
+                {"field": "middlename", "variable name": "middlename", "type": "String", "has missing": True}
+            ] 
      
         if args.institution == "True":
             if args.linking_type == "graduates": # should we also ignore uni for graduates?

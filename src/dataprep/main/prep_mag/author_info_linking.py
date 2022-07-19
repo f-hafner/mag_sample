@@ -125,11 +125,15 @@ print("Creating temp table for affiliation names over the whole career", flush=T
 con.execute("DROP TABLE IF EXISTS institutions_career")
 con.execute(f"""
 CREATE TEMP TABLE institutions_career AS 
-SELECT AuthorId, GROUP_CONCAT(institutions, ";") AS institutions
+SELECT AuthorId
+    , GROUP_CONCAT(institutions, ";") AS institutions
+    , GROUP_CONCAT(us_institutions, ";") AS us_institutions
 FROM (
     SELECT * 
     FROM (
-        SELECT DISTINCT a.AuthorId, c.NormalizedName AS institutions
+        SELECT DISTINCT a.AuthorId
+            , c.NormalizedName AS institutions
+            , d.US_NormalizedName AS us_institutions
         FROM PaperAuthorAffiliations a
         INNER JOIN (
             SELECT PaperId, Year, Date 
@@ -144,6 +148,11 @@ FROM (
             SELECT AffiliationId, NormalizedName
             FROM Affiliations
         ) c USING(AffiliationId)
+        LEFT JOIN ( -- # LEFT JOIN: keep non-us institutions above 
+            SELECT AffiliationId, NormalizedName AS US_NormalizedName
+            FROM Affiliations
+            WHERE Iso3166Code = 'US'
+        ) d USING(AffiliationId)
     )
     ORDER by institutions
 )
@@ -192,7 +201,12 @@ con.execute("DROP TABLE IF EXISTS author_info_linking")
 # NOTE: use left join because some authors may not have an early career institution but have some over the course of the career 
 con.execute("""
 CREATE TABLE author_info_linking AS
-SELECT a.AuthorId, b.keywords, c.institutions, d.coauthors, e.institutions as institutions_career
+SELECT a.AuthorId
+    , b.keywords
+    , c.institutions
+    , d.coauthors
+    , e.institutions as institutions_career
+    , e.us_institutions as us_institutions_career
 FROM author_sample a
 LEFT JOIN keywords b USING(AuthorId)
 LEFT JOIN institutions c USING(AuthorId)
