@@ -405,7 +405,7 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
     elif args.linking_type == "grants":
         query_nsf = """
         SELECT a.GrantID, CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) AS year
-            , b.*, c.*
+            , b.institution, c.firstname, c.lastname, c.middlename
             , '' AS keywords, '' AS coauthors -- # necessary for current code structure
         FROM NSF_MAIN as a 
         INNER JOIN (

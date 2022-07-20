@@ -13,7 +13,7 @@ institution=True
 #         "biology" "computer science" "political science"
 #         "engineering" "psychology" "environmental science"
 #         "physics" "economics")
-fields=("economics")
+fields=("biology")
 
 for i in "${!fields[@]}"; do 
     field=${fields[$i]} 
