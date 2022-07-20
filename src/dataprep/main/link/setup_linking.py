@@ -293,6 +293,10 @@ if args.linking_type == "graduates":
     {where_stmt_mag} 
     """
 elif args.linking_type == "advisors" or args.linking_type == "grants":
+    institutions_to_use = "institutions_career"
+    if args.linking_type == "grants":
+        institutions_to_use = "us_institutions_career"
+
     # note: this still sources field of study, but it is level 0 and thus the same for everyone 
     query_mag = f"""
     SELECT f.AuthorId
@@ -340,7 +344,7 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
     ) f
     LEFT JOIN (
         SELECT AuthorId
-                , institutions_career as institution
+                , {institutions_to_use} as institution
                 , coauthors
                 , keywords
         FROM author_info_linking
