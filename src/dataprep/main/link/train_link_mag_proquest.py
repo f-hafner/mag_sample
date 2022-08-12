@@ -78,18 +78,25 @@ if __name__ == "__main__":
             cur.execute(query_other, tuple(id_field))
             otherdata = {i: row for i, row in custom_enumerate(cur.fetchall(), pq_entity_id)} # TODO: rename proquestdata to otherdata
     
+    
     # transform the strings to hashable sequences
     for data in [magdata, otherdata]:
         for key in data.keys():
             if data[key]["keywords"] is not None:
                 data[key]["keywords"] = frozenset(data[key]["keywords"].split(";"))
 
-            features = ["institution", "coauthors"]
+            features = ["institution", "coauthors", "us_institutions_year"]
             ft_in_data = list(data[list(data.keys())[0]].keys()) # extract all features of the first record in the dict data
             features = [f for f in features if f in ft_in_data]
             for feature in features:
                 if data[key][feature] is not None:
-                    data[key][feature] = tuple(data[key][feature].split(";"))
+                    if feature == "us_institutions_year":
+                        # split, make first entry numeric, convert to tuple
+                        ft = [x.split("//") for x in data[key][feature].split(";")]
+                        ft = [tuple([int(x[0]), x[1]]) for x in ft] 
+                        data[key][feature] = tuple(ft)
+                    else:
+                        data[key][feature] = tuple(data[key][feature].split(";"))
 
     # NOTE
         # need `frozenset` for the set feature; while the documentation says tuples also work, there is a bug 
@@ -99,7 +106,7 @@ if __name__ == "__main__":
 
     n_match = None # this will create null in database when settings were read from settings_file
     n_distinct = None
-
+    
     if os.path.exists(settings_file):
         print('reading from ', settings_file)
         with open(settings_file, 'rb') as sf:
@@ -114,47 +121,56 @@ if __name__ == "__main__":
             areas = mag_areas + proquest_areas
 
         if args.linking_type == "graduates":
+            # TODO: these definitions here should be eventually standardized across cases
             fields = [
                 {"field": "firstname", "variable name": "firstname", "type": "String", "has missing": False},
-                {"field": "firstname", "variable name": "same_firstname", "type": "Custom", "comparator": name_comparator},
+                {"field": "firstname", "variable name": "same_firstname", "type": "Exact"},
                 {"field": "lastname", "variable name": "lastname", "type": "String", "has missing": False},
-                {"field": "lastname", "variable name": "same_lastname", "type": "Custom", "comparator": name_comparator},
+                {"field": "lastname", "variable name": "same_lastname", "type": "Exact"},
                 {"field": "middlename", "variable name": "middlename", "type": "String", "has missing": True},
                 # {"field": "middle_lastname", "variable name": "same_name", "type": "Custom", "comparator": name_comparator},
                 {"field": "year", "variable name": "year", "type": "Price"},
                 # {"field": "year", "variable name": "no_advisor_info", "type": "Custom", "comparator": year_dummy_noadvisor},
                 # {"field": "year", "variable name": "yeardiff_sqrd", "type": "Custom", "comparator": squared_diff},
                 {"type": "Interaction", "interaction variables": ["year", "same_firstname"]},
-                {"type": "Interaction", "interaction variables": ["year", "same_lastname"]},
+                {"type": "Interaction", "interaction variables": ["year", "same_lastname"]}
                 # {"field": "coauthors", "variable name": "coauthors", "type": "Custom", "comparator": max_set_similarity, "has missing": True}, 
                 # {"type": "Interaction", "interaction variables": ["no_advisor_info", "coauthors"], "has missing": True},
             ]
         elif args.linking_type == "advisors":
             fields = [
                 {"field": "firstname", "variable name": "firstname", "type": "String", "has missing": False},
-                {"field": "firstname", "variable name": "same_firstname", "type": "Custom", "comparator": name_comparator},
+                {"field": "firstname", "variable name": "same_firstname", "type": "Exact"},
                 {"field": "lastname", "variable name": "lastname", "type": "String", "has missing": False},
-                {"field": "lastname", "variable name": "same_lastname", "type": "Custom", "comparator": name_comparator},
-                {"field": "middlename", "variable name": "middlename", "type": "String", "has missing": True},
+                {"field": "lastname", "variable name": "same_lastname", "type": "Exact"},
+                {"field": "middlename", "variable name": "middlename", "type": "String", "has missing": True}
             ]
         elif args.linking_type == "grants":
             fields = [
                 {"field": "firstname", "variable name": "firstname", "type": "String", "has missing": False},
-                {"field": "firstname", "variable name": "same_firstname", "type": "Custom", "comparator": name_comparator},
+                {"field": "firstname", "variable name": "same_firstname", "type": "Exact"},
                 {"field": "lastname", "variable name": "lastname", "type": "String", "has missing": False},
-                {"field": "lastname", "variable name": "same_lastname", "type": "Custom", "comparator": name_comparator},
+                {"field": "lastname", "variable name": "same_lastname", "type": "Exact"},
                 {"field": "middlename", "variable name": "middlename", "type": "String", "has missing": True}
             ] 
      
         if args.institution == "True":
             if args.linking_type == "graduates": # should we also ignore uni for graduates?
-                fields.append({"field": "institution", "variable name": "institution", "type": "Custom", "comparator": max_set_similarity, "has missing": True})
+                fields.append({"field": "institution", "variable name": "institution", "type": "Custom", "comparator": cf.tuple_distance, "has missing": True})
             elif args.linking_type == "advisors":
-                fields.append({"field": "institution", "variable name": "institution", "type": "Custom", "comparator": max_set_similarity_ignoreuni, "has missing": True})
+                fields.append({"field": "institution", "variable name": "institution", "type": "Custom", "comparator": cf.tuple_distance, "has missing": True})
                 fields.append({"type": "Interaction", "interaction variables": ["institution", "same_firstname"] })
                 fields.append({"type": "Interaction", "interaction variables": ["institution", "same_lastname"] })
             elif args.linking_type == "grants":
-                fields.append({"field": "institution", "variable name": "institution", "type": "Custom", "comparator": max_set_similarity_ignoreuni, "has missing": True})
+                institution_fields = [
+                    {"field": "us_institutions_year", "variable name": "inst_year", "type": "Custom", "comparator": cf.set_of_tuples_distance_overall, "has missing": True},
+                    {"field": "us_institutions_year", "variable name": "inst_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_string, "has missing": True},
+                    {"field": "us_institutions_year", "variable name": "year_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_number, "has missing": True},
+                    {'type': 'Interaction', 'interaction variables': ['inst_similarity', 'firstname']},
+                    {'type': 'Interaction', 'interaction variables': ['inst_similarity', 'lastname']},
+                    {'type': 'Interaction', 'interaction variables': ['year_similarity', 'firstname']},
+                    {'type': 'Interaction', 'interaction variables': ['year_similarity', 'lastname']}]
+                fields = fields + institution_fields 
         if args.fieldofstudy_cat == "True": 
             fields.append({"field": "fieldofstudy", "variable name": "fieldofstudy", "type": "Categorical", "categories": areas, "has missing": False})
         if args.fieldofstudy_str == "True": 

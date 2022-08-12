@@ -28,13 +28,13 @@ args = parser.parse_args()
 
 # ## Variables; connect to db
 start_time = time.time()
-print(f"Start time: {start_time} \n")
+print(f"Start time: {start_time} \n", flush=True)
 
 con = sqlite.connect(database = db_file, isolation_level= None)
 
 # ## Temp table with papers in first x years 
-print(f"Making temp table with papers in first {args.years_first_field} years.")
-print(f"--Considering papers with DocType {keep_doctypes_citations}.")
+print(f"Making temp table with papers in first {args.years_first_field} years.", flush=True)
+print(f"--Considering papers with DocType {keep_doctypes_citations}.", flush=True)
 con.execute(f"""
 CREATE TEMP TABLE papers_start AS 
 SELECT AuthorId, PaperId 
@@ -163,6 +163,39 @@ keep_doctypes_citations
 
 con.execute("CREATE UNIQUE INDEX idx_inst_career_AuthorId ON institutions_career (AuthorId ASC)")
 
+
+# ### Institution-year combinations over the whole career (for grant linking)
+print("Creating temp table for affiliation-year pairs over career", flush=True)
+con.execute("DROP TABLE IF EXISTS institutions_year_career")
+con.execute("""
+CREATE TEMP TABLE institutions_year_career AS 
+SELECT AuthorId
+    , GROUP_CONCAT(us_institutions_year, ";") AS us_institutions_year
+FROM (
+    SELECT * 
+    FROM (
+        SELECT a.AuthorId
+            , a.Year || '//' || d.NormalizedName AS us_institutions_year
+        FROM AuthorAffiliation a 
+        INNER JOIN (
+            SELECT AuthorId, YearFirstPub
+            FROM author_sample -- ## NOTE: for testing, put `LIMIT 10` in next line
+        ) AS c USING(AuthorId) 
+        INNER JOIN ( 
+            SELECT AffiliationId, NormalizedName 
+            FROM Affiliations
+            WHERE Iso3166Code = 'US'
+        ) d USING(AffiliationId)
+        ORDER BY Year
+    )
+)
+GROUP BY AuthorId 
+"""
+)
+
+con.execute("CREATE UNIQUE INDEX idx_inst_career_year_AuthorId ON institutions_year_career (AuthorId ASC)")
+
+
 # ### Co-authors
 print("Creating temp tables for coauthors at start", flush=True)
 
@@ -207,11 +240,13 @@ SELECT a.AuthorId
     , d.coauthors
     , e.institutions as institutions_career
     , e.us_institutions as us_institutions_career
+    , f.us_institutions_year
 FROM author_sample a
 LEFT JOIN keywords b USING(AuthorId)
 LEFT JOIN institutions c USING(AuthorId)
 LEFT JOIN coauthors d USING(AuthorId)
 LEFT JOIN institutions_career e USING(AuthorId)
+LEFT JOIN institutions_year_career f USING(AuthorId)
 """)
 
 con.execute("CREATE UNIQUE INDEX idx_ail_AuthorId ON author_info_linking (AuthorId ASC)")

@@ -1,4 +1,5 @@
 
+from dataclasses import fields
 import os
 import time
 import logging
@@ -19,7 +20,8 @@ import dedupe.backport
 from collections import OrderedDict
 
 from helpers.variables import db_file, datapath
-from helpers.functions import analyze_db, tupelize_links, max_set_similarity, dict_factory, custom_enumerate, name_comparator, year_dummy_noadvisor, max_set_similarity_ignoreuni
+from helpers.functions import analyze_db, tupelize_links, dict_factory, custom_enumerate
+import helpers.comparator_functions as cf
 
 start_time = time.time()
 
@@ -294,13 +296,22 @@ if args.linking_type == "graduates":
     """
 elif args.linking_type == "advisors" or args.linking_type == "grants":
     institutions_to_use = "institutions_career"
+    join_current_links = """
+        INNER JOIN (
+            SELECT AuthorId
+            FROM current_links
+        ) AS f USING(AuthorId)"""
     if args.linking_type == "grants":
         institutions_to_use = "us_institutions_career"
+        join_current_links = ""
+        # adjust year conditioning -- people need to be active during the sample period 
+        where_stmt_mag = f"WHERE length(firstname) > 1 AND f.YearLastPub >= {args.startyear} - 5 AND year <= {args.endyear} + 5" 
 
     # note: this still sources field of study, but it is level 0 and thus the same for everyone 
     query_mag = f"""
     SELECT f.AuthorId
         , f.year
+        , f.YearLastPub
         , f.firstname
         , f.lastname
         , CASE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
@@ -313,9 +324,11 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
         , g.keywords
         , g.coauthors
         , g.institution
+        , g.us_institutions_year
     FROM (
         SELECT a.AuthorId
             , a.YearFirstPub AS year
+            , a.YearLastPub 
             , a.FirstName AS firstname
             , REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "") AS lastname 
                     -- https://stackoverflow.com/questions/21388820/how-to-get-the-last-index-of-a-substring-in-sqlite
@@ -347,13 +360,11 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
                 , {institutions_to_use} as institution
                 , coauthors
                 , keywords
+                , us_institutions_year
         FROM author_info_linking
     ) AS g USING(AuthorId)
-    INNER JOIN (
-        SELECT AuthorId
-        FROM current_links
-    ) AS f USING(AuthorId)
-    {where_stmt_mag} 
+    {join_current_links}
+    {where_stmt_mag} AND institution is not NULL
     """
 
     if args.linking_type == "advisors":
@@ -403,10 +414,37 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
         {where_stmt}
         """
     elif args.linking_type == "grants":
-        query_nsf = """
+        # condition the nsf data on major directorate
+        fields_to_directorate = {
+            "geology": ["GEOSCIENCES"], 
+            "economics": ["SOCIAL, BEHAV & ECONOMIC SCIE"],
+            "engineering": ["ENGINEERING", "COMPUTER & INFO SCIE & ENGINR"],
+            "physics": ["MATHEMATICAL & PHYSICAL SCIEN"], 
+            "chemistry": ["MATHEMATICAL & PHYSICAL SCIEN"],
+            "mathematics": ["MATHEMATICAL & PHYSICAL SCIEN"],
+            "biology": ["BIOLOGICAL SCIENCES"],
+            "psychology": ["SOCIAL, BEHAV & ECONOMIC SCIE"],
+            "sociology": ["SOCIAL, BEHAV & ECONOMIC SCIE"],
+            "computer science": ["COMPUTER & INFO SCIE & ENGINR"],
+            "environmental science": ["GEOSCIENCES"],
+            "political science": ["SOCIAL, BEHAV & ECONOMIC SCIE"],
+            "geography": ["GEOSCIENCES"]
+        }
+        
+        # check if filed not found in crosswalk -- field may be a list (!)
+        if not any([f in fields_to_directorate.keys() for f in field]):
+            print(f"Exiting: no directorate defined for any of current fields. Current fields are: {field}")
+            exit()
+
+        directorates = [i for f in field for i in fields_to_directorate[f]]
+        directorates = set(directorates)
+        directorates = f"('{', '.join(directorates)}')"
+
+        query_nsf = f"""
         SELECT a.GrantID, CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) AS year
             , b.institution, c.firstname, c.lastname, c.middlename
             , '' AS keywords, '' AS coauthors -- # necessary for current code structure
+            , CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) || "//" || b.institution AS us_institutions_year
         FROM NSF_MAIN as a 
         INNER JOIN (
             SELECT GrantID, Name AS institution
@@ -423,4 +461,7 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
         ) c
         USING (GrantID)
         WHERE AWARD_TranType = 'grant' AND AWARD_Agency = 'nsf' 
+            AND a.AwardInstrument_Value IN ('standard grant', 'continuing grant')
+            AND a.Organization_Directorate_ShortName IN {directorates}
+            AND c.lastname != 'data not available'
         """

@@ -6,14 +6,14 @@ train_name="flavio_baseline"
 keywords=False
 fieldofstudy_cat=False 
 fieldofstudy_str=False 
-institution=True 
+institution=True
 
 # fields=("geology" "geography" "chemistry"
 #         "sociology" "mathematics"
 #         "biology" "computer science" "political science"
 #         "engineering" "psychology" "environmental science"
 #         "physics" "economics")
-fields=("biology")
+fields=("economics")
 
 for i in "${!fields[@]}"; do 
     field=${fields[$i]} 
