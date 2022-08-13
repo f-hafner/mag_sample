@@ -295,17 +295,22 @@ if args.linking_type == "graduates":
     {where_stmt_mag} 
     """
 elif args.linking_type == "advisors" or args.linking_type == "grants":
-    institutions_to_use = "institutions_career"
+    institutions_to_use = "main_institutions_career"
     join_current_links = """
         INNER JOIN (
             SELECT AuthorId
             FROM current_links
         ) AS f USING(AuthorId)"""
+    add_more_vars = ""
     if args.linking_type == "grants":
-        institutions_to_use = "us_institutions_career"
+        institutions_to_use = "main_us_institutions_career"
         join_current_links = ""
         # adjust year conditioning -- people need to be active during the sample period 
         where_stmt_mag = f"WHERE length(firstname) > 1 AND f.YearLastPub >= {args.startyear} - 5 AND year <= {args.endyear} + 5" 
+        add_more_vars = """ 
+            , f.year || ";" || f.YearLastPub AS year_range 
+            , g.all_us_institutions_year
+        """
 
     # note: this still sources field of study, but it is level 0 and thus the same for everyone 
     query_mag = f"""
@@ -324,7 +329,8 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
         , g.keywords
         , g.coauthors
         , g.institution
-        , g.us_institutions_year
+        , g.main_us_institutions_year
+        {add_more_vars}
     FROM (
         SELECT a.AuthorId
             , a.YearFirstPub AS year
@@ -360,7 +366,8 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
                 , {institutions_to_use} as institution
                 , coauthors
                 , keywords
-                , us_institutions_year
+                , main_us_institutions_year
+                , all_us_institutions_year
         FROM author_info_linking
     ) AS g USING(AuthorId)
     {join_current_links}
@@ -441,10 +448,11 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
         directorates = f"('{', '.join(directorates)}')"
 
         query_nsf = f"""
-        SELECT a.GrantID, CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) AS year
+        SELECT a.GrantID, CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) AS year_range
             , b.institution, c.firstname, c.lastname, c.middlename
             , '' AS keywords, '' AS coauthors -- # necessary for current code structure
-            , CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) || "//" || b.institution AS us_institutions_year
+            , CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) || "//" || b.institution AS main_us_institutions_year
+            , CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) || "//" || b.institution AS all_us_institutions_year
         FROM NSF_MAIN as a 
         INNER JOIN (
             SELECT GrantID, Name AS institution

@@ -85,25 +85,35 @@ if __name__ == "__main__":
             if data[key]["keywords"] is not None:
                 data[key]["keywords"] = frozenset(data[key]["keywords"].split(";"))
 
-            features = ["institution", "coauthors", "us_institutions_year"]
+            features = ["institution", "coauthors", "year_range",
+                        "main_us_institutions_year", "all_us_institutions_year"]
             ft_in_data = list(data[list(data.keys())[0]].keys()) # extract all features of the first record in the dict data
             features = [f for f in features if f in ft_in_data]
             for feature in features:
                 if data[key][feature] is not None:
-                    if feature == "us_institutions_year":
+                    if feature in ["main_us_institutions_year", "all_us_institutions_year"]:
                         # split, make first entry numeric, convert to tuple
                         ft = [x.split("//") for x in data[key][feature].split(";")]
                         ft = [tuple([int(x[0]), x[1]]) for x in ft] 
                         data[key][feature] = tuple(ft)
+                    elif feature == "year_range":
+                        ft = data[key][feature]
+                        if isinstance(ft, str):
+                            ft = ft.split(";")
+                            ft = tuple([int(f) for f in ft])
+                        else:
+                            ft = (ft, )
+                        data[key][feature] = ft
                     else:
                         data[key][feature] = tuple(data[key][feature].split(";"))
 
+    
     # NOTE
         # need `frozenset` for the set feature; while the documentation says tuples also work, there is a bug 
         # in dedupe for reading tuples from training data
         # (frozensets are encoded in https://github.com/dedupeio/dedupe/blob/e010ba1790b4b9744a74b32a5f762f8eac41f74f/dedupe/serializer.py#L25,
         # but not tuples). Kept tuples for institution and coauthors as it seems more readable for labelling
-
+    #pdb.set_trace()
     n_match = None # this will create null in database when settings were read from settings_file
     n_distinct = None
     
@@ -151,7 +161,8 @@ if __name__ == "__main__":
                 {"field": "firstname", "variable name": "same_firstname", "type": "Exact"},
                 {"field": "lastname", "variable name": "lastname", "type": "String", "has missing": False},
                 {"field": "lastname", "variable name": "same_lastname", "type": "Exact"},
-                {"field": "middlename", "variable name": "middlename", "type": "String", "has missing": True}
+                {"field": "middlename", "variable name": "middlename", "type": "String", "has missing": True},
+                {"field": "year_range", "variable name": "year_range", "type": "Custom", "comparator": cf.compare_range_from_tuple, "has missing": True}
             ] 
      
         if args.institution == "True":
@@ -163,13 +174,17 @@ if __name__ == "__main__":
                 fields.append({"type": "Interaction", "interaction variables": ["institution", "same_lastname"] })
             elif args.linking_type == "grants":
                 institution_fields = [
-                    {"field": "us_institutions_year", "variable name": "inst_year", "type": "Custom", "comparator": cf.set_of_tuples_distance_overall, "has missing": True},
-                    {"field": "us_institutions_year", "variable name": "inst_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_string, "has missing": True},
-                    {"field": "us_institutions_year", "variable name": "year_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_number, "has missing": True},
-                    {'type': 'Interaction', 'interaction variables': ['inst_similarity', 'firstname']},
-                    {'type': 'Interaction', 'interaction variables': ['inst_similarity', 'lastname']},
-                    {'type': 'Interaction', 'interaction variables': ['year_similarity', 'firstname']},
-                    {'type': 'Interaction', 'interaction variables': ['year_similarity', 'lastname']}]
+                    {"field": "main_us_institutions_year", "variable name": "main_inst_year", "type": "Custom", "comparator": cf.set_of_tuples_distance_overall, "has missing": True},
+                    {"field": "main_us_institutions_year", "variable name": "main_inst_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_string, "has missing": True},
+                    {"field": "main_us_institutions_year", "variable name": "main_inst_year_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_number, "has missing": True},
+                    {'type': 'Interaction', 'interaction variables': ['main_inst_year_similarity', 'firstname']},
+                    {'type': 'Interaction', 'interaction variables': ['main_inst_year_similarity', 'lastname']},
+                    {'type': 'Interaction', 'interaction variables': ['main_inst_year_similarity', 'firstname']},
+                    {'type': 'Interaction', 'interaction variables': ['main_inst_year_similarity', 'lastname']},
+                    {"field": "all_us_institutions_year", "variable name": "all_inst_year", "type": "Custom", "comparator": cf.set_of_tuples_distance_overall, "has missing": True},
+                    {"field": "all_us_institutions_year", "variable name": "all_inst_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_string, "has missing": True},
+                    {"field": "all_us_institutions_year", "variable name": "all_inst_year_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_number, "has missing": True},
+                    ]
                 fields = fields + institution_fields 
         if args.fieldofstudy_cat == "True": 
             fields.append({"field": "fieldofstudy", "variable name": "fieldofstudy", "type": "Categorical", "categories": areas, "has missing": False})

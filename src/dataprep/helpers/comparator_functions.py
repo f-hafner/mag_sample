@@ -147,6 +147,44 @@ def set_of_tuples_distance_overall(a, b):
     return compare_values(a, b)
 
 
+# 3. Check whether a singleton is in a year range defined by another tuple
+def compare_range_from_tuple(a, b):
+    """
+    Check whether the one-element tuple 
+    is in the range formed by the two-element tuple
+
+    Parameters:
+    ----------
+    a, b : tuples of numbers. One needs to be of length 1, the other of length 2.
+    """
+    margin = 4 # extend the range by +/- this 
+    # print("comparing ranges..", flush=True)
+    # print(f"--a is {a}", flush=True)
+    # print(f"--b is {b}", flush=True)
+    if len(a) == 1:
+        value = a
+        range_bounds = b
+    elif len(b) == 1:
+        value = b
+        range_bounds = a
+    else:
+        # raise ValueError("Tuples do not meet conditions for range comparison.")
+            # This is a temp fix. Dedupe sometimes passes two tuples of length 2 
+                # for no reason (and they seem often to be the same).
+                # Uncomment the prints above and run the script to see it.
+                # One test will fail here.
+        return None
+    
+    value = value[0]
+    if (value >= (min(range_bounds) - margin) 
+        and value <= (max(range_bounds) + margin)):
+        return 1
+    else:
+        return 0
+
+
+    
+
 
 
 

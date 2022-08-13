@@ -9,7 +9,7 @@
     # Run this script
 
 # 1. Local variables 
-## for deduping
+## for calling script
 output_path="../../../output/"
 script_path="main"
 logfile_path="temp/"

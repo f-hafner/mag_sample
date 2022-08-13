@@ -64,3 +64,14 @@ def test_set_of_tuples_distance_overall():
     distance = cf.set_of_tuples_distance_overall(set1, set2)
     assert distance == target, "does not return smallest overall distance"
 
+def test_compare_range_from_tuple():
+    short = (1990, )
+    long = (1995, 2005)
+    assert cf.compare_range_from_tuple(short, long) == 0, "wrong output"
+    assert cf.compare_range_from_tuple(short, long) == cf.compare_range_from_tuple(long, short), \
+        "arguments are not interchangeable"
+    short = (1999, )
+    long = (1995, 2005)
+    assert cf.compare_range_from_tuple(short, long) == 1, "wrong output"
+    with pytest.raises(ValueError, match="conditions for range comparison"):
+        cf.compare_range_from_tuple(long, long)
