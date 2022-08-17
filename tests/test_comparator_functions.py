@@ -73,5 +73,9 @@ def test_compare_range_from_tuple():
     short = (1999, )
     long = (1995, 2005)
     assert cf.compare_range_from_tuple(short, long) == 1, "wrong output"
-    with pytest.raises(ValueError, match="conditions for range comparison"):
+    with pytest.raises(ValueError, match="wrong length"):
         cf.compare_range_from_tuple(long, long)
+    
+    notuple = 3
+    with pytest.raises(TypeError, match="need to be tuples"):
+        cf.compare_range_from_tuple(notuple, long)
