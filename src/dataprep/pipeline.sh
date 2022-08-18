@@ -1,6 +1,6 @@
 #!/bin/bash
 
-output_path="../../../output/"
+output_path="../../output/"
 script_path="main/"
 logfile_path="temp/"
 
