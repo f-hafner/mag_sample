@@ -79,3 +79,10 @@ def test_compare_range_from_tuple():
     notuple = 3
     with pytest.raises(TypeError, match="need to be tuples"):
         cf.compare_range_from_tuple(notuple, long)
+
+def test_compare_range_from_tuple_tempfix(capfd):
+    long1 = (1995, 2005)
+    long2 = (2000, 2010)
+    assert cf.compare_range_from_tuple_tempfix(long1, long2) is None 
+    out, err = capfd.readouterr()
+    assert "error occurred" in out

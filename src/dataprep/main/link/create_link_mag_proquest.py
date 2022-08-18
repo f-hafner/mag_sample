@@ -92,12 +92,28 @@ if __name__ == "__main__":
             if data[key]["keywords"] is not None:
                 data[key]["keywords"] = frozenset(data[key]["keywords"].split(";"))
 
-            features = ["institution", "coauthors"]
+            features = ["institution", "coauthors", "year_range",
+                        "main_us_institutions_year", "all_us_institutions_year"]
             ft_in_data = list(data[list(data.keys())[0]].keys()) # extract all features of the first record in the dict data
             features = [f for f in features if f in ft_in_data]
             for feature in features:
                 if data[key][feature] is not None:
-                    data[key][feature] = tuple(data[key][feature].split(";"))
+                    if feature in ["main_us_institutions_year", "all_us_institutions_year"]:
+                        # split, make first entry numeric, convert to tuple
+                        ft = [x.split("//") for x in data[key][feature].split(";")]
+                        ft = [tuple([int(x[0]), x[1]]) for x in ft] 
+                        data[key][feature] = tuple(ft)
+                    elif feature == "year_range":
+                        ft = data[key][feature]
+                        if isinstance(ft, str):
+                            ft = ft.split(";")
+                            ft = tuple([int(f) for f in ft])
+                        else:
+                            assert isinstance(ft, int) 
+                            ft = (ft, )
+                        data[key][feature] = ft
+                    else:
+                        data[key][feature] = tuple(data[key][feature].split(";"))
 
     # NOTE
         # need `frozenset` for the set feature; while the documentation says tuples also work, there is a bug 

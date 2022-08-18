@@ -1,5 +1,6 @@
 # Some functions for comparing records between data sets 
 
+from math import nan
 import re
 from operator import mul 
 from functools import reduce, wraps 
@@ -186,8 +187,21 @@ def compare_range_from_tuple(a, b):
         return 0
 
 
-    
-
-
-
+def compare_range_from_tuple_tempfix(a, b):
+    """
+    A temp fix to the problem described 
+    here https://github.com/f-hafner/mag_sample/issues/6
+    to make labelling and training work
+    """
+    try:
+        compare_range_from_tuple(a, b)
+    except:
+        print(
+            f"An error occurred when calling compare_range_from_tuple({a}, {b}). "
+            "I cannot print the type, but most likely a TypeError or ValueError."
+            , flush=True
+            )
+            # printing the type gives "Segmentation fault (core dumped)". 
+            # https://stackoverflow.com/questions/13654449/error-segmentation-fault-core-dumped
+        return None
 
