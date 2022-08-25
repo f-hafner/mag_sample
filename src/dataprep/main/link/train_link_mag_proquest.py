@@ -77,8 +77,8 @@ if __name__ == "__main__":
         else:
             cur.execute(query_other, tuple(id_field))
             otherdata = {i: row for i, row in custom_enumerate(cur.fetchall(), pq_entity_id)} # TODO: rename proquestdata to otherdata
-    
-    
+
+
     # transform the strings to hashable sequences
     for data in [magdata, otherdata]:
         for key in data.keys():
@@ -102,11 +102,11 @@ if __name__ == "__main__":
                             ft = ft.split(";")
                             ft = tuple([int(f) for f in ft])
                         else:
+                            assert isinstance(ft, int) 
                             ft = (ft, )
                         data[key][feature] = ft
                     else:
                         data[key][feature] = tuple(data[key][feature].split(";"))
-
     
     # NOTE
         # need `frozenset` for the set feature; while the documentation says tuples also work, there is a bug 
@@ -162,7 +162,7 @@ if __name__ == "__main__":
                 {"field": "lastname", "variable name": "lastname", "type": "String", "has missing": False},
                 {"field": "lastname", "variable name": "same_lastname", "type": "Exact"},
                 {"field": "middlename", "variable name": "middlename", "type": "String", "has missing": True},
-                {"field": "year_range", "variable name": "year_range", "type": "Custom", "comparator": cf.compare_range_from_tuple, "has missing": True}
+                {"field": "year_range", "variable name": "year_range", "type": "Custom", "comparator": cf.compare_range_from_tuple_tempfix, "has missing": True}
             ] 
      
         if args.institution == "True":
@@ -184,6 +184,7 @@ if __name__ == "__main__":
                     {"field": "all_us_institutions_year", "variable name": "all_inst_year", "type": "Custom", "comparator": cf.set_of_tuples_distance_overall, "has missing": True},
                     {"field": "all_us_institutions_year", "variable name": "all_inst_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_string, "has missing": True},
                     {"field": "all_us_institutions_year", "variable name": "all_inst_year_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_number, "has missing": True},
+                    {"type": "Interaction", "interaction variables": ["main_inst_year_similarity", "year_range"]} # year_range is the career; main_inst is only US. the interaction may account for people that have part of their career outside of US institutions
                     ]
                 fields = fields + institution_fields 
         if args.fieldofstudy_cat == "True": 

@@ -1,5 +1,6 @@
 # Some functions for comparing records between data sets 
 
+from math import nan
 import re
 from operator import mul 
 from functools import reduce, wraps 
@@ -161,19 +162,22 @@ def compare_range_from_tuple(a, b):
     # print("comparing ranges..", flush=True)
     # print(f"--a is {a}", flush=True)
     # print(f"--b is {b}", flush=True)
-    if len(a) == 1:
-        value = a
-        range_bounds = b
-    elif len(b) == 1:
-        value = b
-        range_bounds = a
-    else:
-        # raise ValueError("Tuples do not meet conditions for range comparison.")
-            # This is a temp fix. Dedupe sometimes passes two tuples of length 2 
+    if isinstance(a, tuple) and isinstance(b, tuple): 
+        if len(a) == 1:
+            value = a
+            range_bounds = b
+        elif len(b) == 1:
+            value = b
+            range_bounds = a
+        else:
+            raise ValueError("Tuples are of wrong length.")
+                # Dedupe sometimes passes two tuples of length 2 
                 # for no reason (and they seem often to be the same).
-                # Uncomment the prints above and run the script to see it.
+                # As a temp fix Uncomment the prints above and run the script to see it.
                 # One test will fail here.
-        return None
+            # return None
+    else:
+        raise TypeError("a, b need to be tuples.")
     
     value = value[0]
     if (value >= (min(range_bounds) - margin) 
@@ -183,8 +187,21 @@ def compare_range_from_tuple(a, b):
         return 0
 
 
-    
-
-
-
+def compare_range_from_tuple_tempfix(a, b):
+    """
+    A temp fix to the problem described 
+    here https://github.com/f-hafner/mag_sample/issues/6
+    to make labelling and training work
+    """
+    try:
+        compare_range_from_tuple(a, b)
+    except:
+        print(
+            f"An error occurred when calling compare_range_from_tuple({a}, {b}). "
+            "I cannot print the type, but most likely a TypeError or ValueError."
+            , flush=True
+            )
+            # printing the type gives "Segmentation fault (core dumped)". 
+            # https://stackoverflow.com/questions/13654449/error-segmentation-fault-core-dumped
+        return None
 

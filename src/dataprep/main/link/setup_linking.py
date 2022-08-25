@@ -112,7 +112,7 @@ if args.linking_type == "advisors":
     if not os.path.isdir(path_dedupe_files):
         os.mkdir(path_dedupe_files)
 elif args.linking_type == "grants":
-    nsf_entity_id = "GrantID"
+    nsf_entity_id = "grantid_authorposition"
     tbl_linking_info = "linking_info_grants"
     tbl_linked_ids = "linked_ids_grants"
     path_dedupe_files = path_dedupe_files + "grants/"
@@ -448,7 +448,8 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
         directorates = f"('{', '.join(directorates)}')"
 
         query_nsf = f"""
-        SELECT a.GrantID, CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) AS year_range
+        SELECT a.GrantID || "_" || c.author_position as grantid_authorposition
+            , CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) AS year_range
             , b.institution, c.firstname, c.lastname, c.middlename
             , '' AS keywords, '' AS coauthors -- # necessary for current code structure
             , CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) || "//" || b.institution AS main_us_institutions_year
@@ -457,6 +458,7 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
         INNER JOIN (
             SELECT GrantID, Name AS institution
             FROM NSF_Institution
+            WHERE Position = 0 -- take the first reported. otherwise possibly duplicates. NSF_Performance_Institution has some missing. https://github.com/chrished/science_career_RAs/issues/19
         ) b 
         USING (GrantID)
         INNER JOIN (
@@ -464,6 +466,7 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
                 , FirstName AS firstname
                 , LastName AS lastname
                 , PIMidInit AS middlename --# NOTE: PISufxName is often "Jr", "Mr", JR, ... 
+                , Position as author_position --## Some grants have >1 PIs
             FROM NSF_Investigator
             WHERE RoleCode = 'principal investigator'
         ) c
