@@ -2,7 +2,7 @@
 
 logfile_path=$1
 RECALL=0.9
-train_name="flavio_baseline"
+train_name="${USER}_baseline"
 keywords=False
 fieldofstudy_cat=False 
 fieldofstudy_str=False 
