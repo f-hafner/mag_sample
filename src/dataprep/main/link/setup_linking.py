@@ -379,14 +379,10 @@ elif args.linking_type == "advisors":
     ) f
     LEFT JOIN (
         SELECT AuthorId
-                , institutions_career as institution
+                , main_institutions_career as institution
                 , coauthors
                 , keywords
         FROM author_info_linking
     ) AS g USING(AuthorId)
-    INNER JOIN (
-        SELECT AuthorId
-        FROM current_links
-    ) AS f USING(AuthorId)
     {where_stmt_mag} 
     """

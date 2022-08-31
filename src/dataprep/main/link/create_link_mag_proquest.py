@@ -7,7 +7,7 @@ Step 2 to Link MAG authors to ProQuest graduates:
 # TODO: dynamic table names for storing links and linking info
 # TODO: correctly assign the ids from the theses
 
-from setup_linking import *
+from main.link.setup_linking import *
 
 if __name__ == "__main__":
     settings_file = "settings"

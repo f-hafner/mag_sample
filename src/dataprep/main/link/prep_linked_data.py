@@ -27,7 +27,7 @@ import sqlite3 as sqlite
 import time 
 import pandas as pd
 from helpers.functions import print_elapsed_time, analyze_db
-from helpers.variables import db_file, insert_questionmarks_doctypes, keep_doctypes
+from helpers.variables import db_file, insert_questionmark_doctypes, keep_doctypes
 
 # ## Arguments
 # parser = argparse.ArgumentParser()
@@ -213,7 +213,7 @@ INNER JOIN (
     SELECT PaperId, Year AS PublicationYear
     FROM Papers
     WHERE 
-        DocType IN ({insert_questionmarks_doctypes}) 
+        DocType IN ({insert_questionmark_doctypes}) 
         AND 
         DocType IS NOT NULL 
 ) c USING(PaperId)
@@ -221,7 +221,7 @@ INNER JOIN (
     SELECT AuthorId
     FROM current_authors
 ) USING(AuthorId)
-WHERE b.ReferencingDocType IN ({insert_questionmarks_doctypes}) 
+WHERE b.ReferencingDocType IN ({insert_questionmark_doctypes}) 
     AND b.Year <= 10 + c.PublicationYear 
 GROUP BY a.AuthorId, b.Year
 """,
@@ -252,7 +252,7 @@ con.execute(f"""CREATE TABLE author_output AS
                     SELECT PaperId, Year
                     FROM Papers 
                     WHERE 
-                        DocType IN ({insert_questionmarks_doctypes}) 
+                        DocType IN ({insert_questionmark_doctypes}) 
                         AND 
                         DocType IS NOT NULL 
                 ) d USING (PaperId)

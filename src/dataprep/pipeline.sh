@@ -73,10 +73,10 @@ bash $script_path/link/graduates.sh $logfile_path
 Rscript -e "rmarkdown::render('$script_path/reports/quality_linking.Rmd', output_dir = '$output_path')" \
     &> $logfile_path/quality_linking.log
 
-python3 $script_path/link/prep_linked_data.py &> $logfile_path/prep_linked_data.log
+python -m $script_path.link.prep_linked_data &> $logfile_path/prep_linked_data.log
 
-# ## Link linked graduates to supervisory activity. 
-bash $script_path/link/advisors.sh $logfile_path
+# ## Link advisors  
+bash $script_path/link/advisors.sh &> $logfile_path/link_advisors.log
 
 Rscript -e "rmarkdown::render('$script_path/reports/advisor_links_quality_select.Rmd', output_dir = '$output_path')" \
     &> $logfile_path/advisor_links_quality_select.log

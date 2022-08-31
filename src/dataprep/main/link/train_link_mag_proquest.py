@@ -3,7 +3,7 @@ Step 1 to Link MAG authors to ProQuest graduates:
          Active labelling
 """
 
-from setup_linking import *
+from main.link.setup_linking import *
 
 
 print("finished setup ... ", flush=True)
