@@ -17,5 +17,5 @@ fields=("geology" "geography" "chemistry"
 for i in "${!fields[@]}"; do 
     field=${fields[$i]} 
 
-    sh link_onefield_advisors.sh $RECALL "$field" $train_name $institution $fieldofstudy_cat $fieldofstudy_str $keywords $logfile_path
+    sh main/link/link_onefield_advisors.sh $RECALL "$field" $train_name $institution $fieldofstudy_cat $fieldofstudy_str $keywords $logfile_path
 done 

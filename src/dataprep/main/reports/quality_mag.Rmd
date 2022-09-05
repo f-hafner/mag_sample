@@ -14,7 +14,8 @@ set.seed(1234)
 ```
 
 ```{r, echo = FALSE, include = FALSE}
-packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "ggplot2")
+packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "ggplot2",
+              "furrr", "tictoc", "parallel")
 
 lapply(packages, library, character.only = TRUE)
 
@@ -28,6 +29,10 @@ end_year <- 2015
 con <- DBI::dbConnect(RSQLite::SQLite(), db_file)
 cat("The database connection is: \n")
 src_dbi(con)
+
+n_cores <- detectCores()
+n_cores_to_use <- n_cores / 2
+
 ```
 
 
@@ -124,8 +129,9 @@ ggplot(author_fields_agg %>% filter(FieldClass == "main"),
 
 
 ### Career length
-* 10 percent subsample of authors
-* The "discontinuous" drop in career length density is at 6 years
+
+- 10 percent subsample of authors
+- The "discontinuous" drop in career length density is at 6 years
 
 
 ```{r, echo = FALSE}
@@ -140,7 +146,9 @@ author_fields %>%
 
 
 ## Author count and gender share by field-cohort and region-cohort
-* region is assigned based on the Iso3166 Code of the author's first affiliation
+
+- region is assigned based on the Iso3166 Code of the author's first affiliation
+
 ```{r, include = FALSE}
 
 # first known affiliation by author
@@ -374,8 +382,9 @@ ggplot(author_fields_agg,
 ```
 
 ### Average Herfindahl index per author
-* The index measures how much an author specializes in a specific field
-* The figure plots the [normalized HHI](https://en.wikipedia.org/wiki/Herfindahl%E2%80%93Hirschman_Index)
+
+- The index measures how much an author specializes in a specific field
+- The figure plots the [normalized HHI](https://en.wikipedia.org/wiki/Herfindahl%E2%80%93Hirschman_Index)
 
 
 ```{r, echo = FALSE}
@@ -400,8 +409,8 @@ ggplot(author_fields_agg,
 
 ### Normalized HHI
 
-* 10 percent subsample of authors by FieldClass-cohort
-* The red line indicates the threshold for moderate concentration
+- 10 percent subsample of authors by FieldClass-cohort
+- The red line indicates the threshold for moderate concentration
 
 
 ```{r, echo = FALSE}
@@ -417,9 +426,10 @@ author_fields %>%
 
 
 ### Who are these authors with very low HHI? 
-* Short careers? random publications?
-  * random publications are taken care of with the sample restriction imposed on `author_sample` table
-* Why does the fraction of such authors grow over time?
+
+- Short careers? random publications?
+  - random publications are taken care of with the sample restriction imposed on `author_sample` table
+- Why does the fraction of such authors grow over time?
 
 ```{r, echo = FALSE}
 m <- lm(HHIAllFields ~ 
@@ -430,6 +440,203 @@ m <- lm(HHIAllFields ~
         )
 summary(m)
 ```
+
+
+# MAG institution coverage over time
+
+Define some functions
+
+- keep authors and their publication when they are in author_sample
+
+
+```{r}
+
+
+make_year_query <- function(year) {
+  query = paste0("
+      SELECT a.PaperId, b.AuthorId, a.Year, a.DocType, c.AffiliationName
+      FROM Papers a
+      INNER JOIN (
+          SELECT PaperId, AuthorId, AffiliationId
+          FROM PaperAuthorAffiliations
+      ) b USING(PaperId)
+      LEFT JOIN (
+          SELECT AffiliationId, NormalizedName AS AffiliationName
+          FROM Affiliations
+      ) c USING(AffiliationId)
+      INNER JOIN (
+        SELECT AuthorId
+        FROM author_sample
+      ) USING(AuthorId)
+      WHERE Year = ", year, " and DocType in ('Journal', 'Book', 'BookChapter', 'Conference')")
+  return(query)
+}
+
+summarise_counts <- function(d) {
+  
+  # by author
+  by_author <- d %>%
+    group_by(Year, AuthorId) %>% 
+    summarise(has_affiliation = any(!is.na(AffiliationName)),
+              .groups = "drop") %>%
+    group_by(Year, has_affiliation) %>% 
+    summarise(nb = n(),
+              .groups = "drop") 
+
+
+  # by paper-doctype
+  by_paper <- d %>%
+    group_by(PaperId, Year, DocType) %>%
+    summarise(has_affiliation = any(!is.na(AffiliationName)),
+              .groups = "drop") %>%
+    group_by(Year, DocType, has_affiliation) %>%
+    summarise(nb = n(),
+              .groups = "drop")
+
+  # by author-paper-doctype
+  by_author_paper <- d %>% 
+    group_by(PaperId, AuthorId, Year, DocType) %>%
+    mutate(has_affiliation = ifelse(any(!is.na(AffiliationName)), 1, 0)) %>%
+    ungroup() %>%
+    filter(!duplicated(paste0(PaperId, AuthorId))) %>%
+    group_by(Year, DocType) %>%
+    summarise(author_paper_count = n(),
+              count_with_affiliation = sum(has_affiliation),
+              .groups = "drop")
+  
+  out <- list(
+    by_author = by_author,
+    by_paper = by_paper,
+    by_author_paper = by_author_paper
+  )
+
+  return(out)
+}
+
+
+
+get_summary <- function(year) {
+  cat(year, "\n--------\n")
+  q <- make_year_query(year)
+  data <- tbl(con, sql(q)) %>% collect()
+  
+  agg <- summarise_counts(data)
+  return(agg)
+}
+
+
+get_summary_parallel <- function(year) {
+  pcon <- DBI::dbConnect(RSQLite::SQLite(), db_file)
+  q <- make_year_query(year)
+  data <- tbl(pcon, sql(q)) %>% collect()
+  DBI::dbDisconnect(pcon)
+
+  agg <- summarise_counts(data)
+  
+  return(agg)
+}
+
+
+
+```
+
+
+
+Parallel queries and summarise
+
+- only querying subset of years should be fine for capturing trends
+
+
+```{r}
+
+years = seq(1950, 2020, 5)
+
+plan(multisession, workers = n_cores_to_use)
+
+tic()
+d_ls <- future_map(.x = years,
+                   .f = ~get_summary_parallel(.x),
+                   .options = furrr_options(chunk_size = 1, seed = TRUE)
+                   )
+toc()
+
+plan(sequential)
+
+
+```
+
+Collect data
+
+```{r}
+
+df_names <- c("by_author", "by_paper", "by_author_paper")
+d_collected <- map(.x = df_names,
+                   .f = ~map(
+                     .x = d_ls,
+                     .f = ~.x[[.y]],
+                     .y = .x
+                   ) %>%
+                     bind_rows()
+                   )
+
+names(d_collected) <- df_names
+
+
+```
+
+
+### Fraction of author-paper combinations with non-missing affiliation
+
+```{r}
+
+d_collected$by_author_paper %>%
+  ggplot(aes(x = Year, y = count_with_affiliation/author_paper_count),
+         group = DocType) + 
+  geom_line(aes(linetype = DocType)) + 
+  geom_point(aes(shape = DocType)) +
+  theme(legend.position = "bottom")
+
+```
+
+### Fraction of papers with non-missing affiliation
+
+```{r}
+
+d_collected$by_paper %>%
+  mutate(has_affiliation = ifelse(has_affiliation, "yes", "no")) %>%
+  spread(key = has_affiliation, value = nb) %>%
+  ggplot(aes(x = Year, y = yes/(yes + no)),
+         group = DocType) +
+  geom_line(aes(linetype = DocType)) +
+  geom_point(aes(shape = DocType)) +
+  theme(legend.position = "bottom") + 
+  labs(y = paste0("Share papers"))
+
+```
+
+### Fraction of authors with non-missing affiliation
+
+```{r}
+d_collected$by_author %>%
+  mutate(has_affiliation = ifelse(has_affiliation, "yes", "no")) %>%
+  spread(key = has_affiliation, value = nb) %>%
+  ggplot(aes(x = Year, y = yes/(yes + no))) +
+  geom_line() +
+  geom_point() +
+  theme(legend.position = "bottom") + 
+  labs(y = "Share of authors")
+
+
+```
+
+### What do we learn?
+
+- At first sight, the coverage of affiliations seems low
+- But we would like to know the stats for a more selected sample: authors in US
+  - Also remember that MAG covers more documents than other sources
+- How can we get closer to what we want to measure?
+  - perhaps we could measure the fraction of authors in our graduate-mag linked sample that have an affiliation over time?
+  - since we did not use the affiliation as a feature for linking, this could work
 
 
 ```{r, include = FALSE}

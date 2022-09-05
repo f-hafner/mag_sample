@@ -1,6 +1,6 @@
 #!/bin/bash
 
-output_path="../../../output/"
+output_path="../../output/"
 script_path="main/"
 logfile_path="temp/"
 
@@ -50,6 +50,9 @@ python3 $script_path/prep_mag/author_info_linking.py --years_first_field 5 \
 # ## Consolidate gender per author in author_sample 
 python3 $script_path/prep_mag/author_gender.py &> $logfile_path/author_gender.log
 
+# ## Tidy and correspond US affiliations
+bash $script_path/institutions/clean_link_institutions.sh $logfile_path
+
 # ## Load ProQuest data
 python3 $script_path/load_proquest/proquest_to_db.py &> $logfile_path/proquest_to_db.log
 python3 $script_path/load_proquest/correspond_fieldofstudy.py &> $logfile_path/correspond_fieldofstudy.log
@@ -70,10 +73,10 @@ bash $script_path/link/graduates.sh $logfile_path
 Rscript -e "rmarkdown::render('$script_path/reports/quality_linking.Rmd', output_dir = '$output_path')" \
     &> $logfile_path/quality_linking.log
 
-python3 $script_path/link/prep_linked_data.py &> $logfile_path/prep_linked_data.log
+python -m $script_path.link.prep_linked_data &> $logfile_path/prep_linked_data.log
 
-# ## Link linked graduates to supervisory activity. 
-bash $script_path/link/advisors.sh $logfile_path
+# ## Link advisors  
+bash $script_path/link/advisors.sh &> $logfile_path/link_advisors.log
 
 Rscript -e "rmarkdown::render('$script_path/reports/advisor_links_quality_select.Rmd', output_dir = '$output_path')" \
     &> $logfile_path/advisor_links_quality_select.log
