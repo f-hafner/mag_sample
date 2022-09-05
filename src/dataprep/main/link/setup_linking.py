@@ -295,22 +295,14 @@ if args.linking_type == "graduates":
     {where_stmt_mag} 
     """
 elif args.linking_type == "advisors" or args.linking_type == "grants":
-    institutions_to_use = "main_institutions_career"
-    join_current_links = """
-        INNER JOIN (
-            SELECT AuthorId
-            FROM current_links
-        ) AS f USING(AuthorId)"""
-    add_more_vars = ""
-    if args.linking_type == "grants":
-        institutions_to_use = "main_us_institutions_career"
-        join_current_links = ""
-        # adjust year conditioning -- people need to be active during the sample period 
-        where_stmt_mag = f"WHERE length(firstname) > 1 AND f.YearLastPub >= {args.startyear} - 5 AND year <= {args.endyear} + 5" 
-        add_more_vars = """ 
-            , f.year || ";" || f.YearLastPub AS year_range 
-            , g.all_us_institutions_year
-        """
+    institutions_to_use = "main_us_institutions_career"
+    join_current_links = ""
+    add_more_vars = """ 
+        , f.year || ";" || f.YearLastPub AS year_range 
+        , g.all_us_institutions_year
+    """
+    where_stmt_mag = f"WHERE length(firstname) > 1 AND f.YearLastPub >= {args.startyear} - 5 AND year <= {args.endyear} + 5" 
+
 
     # note: this still sources field of study, but it is level 0 and thus the same for everyone 
     query_mag = f"""
@@ -378,6 +370,7 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
         query_proquest = f"""
         SELECT relationship_id
                 , year
+                , year AS year_range
                 , firstname 
                 , lastname
                 , CASE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
@@ -388,6 +381,8 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
                 , fieldofstudy
                 , keywords
                 , institution
+                , year || "//" || institution as main_us_institutions_year
+                , year || "//" || institution as all_us_institutions_year
         FROM (
             SELECT goid
                 , relationship_id
@@ -416,7 +411,8 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
         LEFT JOIN pq_keywords USING(goid) 
         INNER JOIN (
             SELECT university_id, normalizedname as institution
-            FROM pq_unis --## mark: different from linking graduates. keep advisors outside the U.S
+            FROM pq_unis --## mark: previously we linked advisors anywhere in the world (as career outcomes). for now, focus on US
+            WHERE location like "%United States%"
         ) USING(university_id)
         {where_stmt}
         """

@@ -185,25 +185,79 @@ score_by_year %>%
 
 ```
 
-Comments
-
-- General upward trend in link_score
-  
-  - why?
-  
-  - use new method on one field, see difference
-
-- What is happening to the median? Where does it come from?
-
-  - The median goes from 0 to 1 mostly as a function of whether more or less than 50 percent of links have a score close to 1.
-
-  - Possible reasons
-  
-    - We are not using the degree year for linking
-    
-    - ... ?
+old comments
 
 - for instance, a student of michael j lambert (authorid 2120159045; relationship id 303670971_0 in proquest) from pre-1990 is link score of 0.02, but should be a clear link
+
+
+## Compare number of links across iterations within fields 
+
+```{r}
+fields_iter_compare <- c("economics", "chemistry")
+min_score <- 0.8
+
+keep_iter_ids <- tbl(con, "linking_info_advisors") %>%
+  filter(field %in% fields_iter_compare) %>%
+  filter(testing == 0) %>%
+  collect() %>%
+  group_by(field, train_name) %>%
+  arrange(iteration_id) %>%
+  mutate(nb = n(),
+         id = row_number()) %>%
+  ungroup() %>%
+  filter(id == nb) %>%
+  select(iteration_id, field, train_name)
+
+linked_ids_to_compare <- tbl(con, "linked_ids_advisors") %>%
+  inner_join(
+    tbl(con, "linking_info_advisors") %>%
+      filter(field %in% fields_iter_compare),
+    by = "iteration_id"
+  ) %>%
+  inner_join(
+    tbl(con, "pq_advisors") %>%
+      select(relationship_id, goid),
+    by = "relationship_id"
+  ) %>%
+  inner_join(
+    tbl(con, "pq_authors") %>%
+      select(goid, degree_year),
+    by = "goid"
+  ) %>%
+  collect() %>%
+  filter(iteration_id %in% keep_iter_ids$iteration_id) 
+
+```
+
+
+Number of graduates with at least 1 advisor
+
+```{r}
+
+d_sum <- linked_ids_to_compare %>%
+  filter(link_score >= min_score) %>%
+  group_by(train_name, field, degree_year) %>%
+  summarise(n_advisors = n(),
+            n_graduates = n_distinct(goid),
+            .groups = "drop") %>%
+  pivot_longer(cols = starts_with("n_"), names_to = "variable")
+
+plotvars <- c("n_graduates")
+
+map(.x = plotvars,
+    .f = ~d_sum %>%
+      filter(variable == .x) %>%
+      ggplot(aes(x = degree_year, y = value)) +
+      geom_line(aes(linetype = train_name)) + 
+      facet_wrap(~field) + 
+      theme(legend.position = "bottom") + 
+      labs(title = paste0("Count: ", .x))
+    )
+
+
+```
+
+
 
 
 
