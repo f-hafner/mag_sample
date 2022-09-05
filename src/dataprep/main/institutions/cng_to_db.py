@@ -11,13 +11,29 @@ import sqlite3 as sqlite
 import pandas as pd
 import numpy as np
 import re 
+import argparse 
 
 
 from helpers.functions import normalize_string, analyze_db
 from helpers.variables import db_file
-from main.misc.utils import us_states
+from helpers.us_states import us_states 
 
-datapath = "../../data/"
+parser = argparse.ArgumentParser()
+parser.add_argument("--rawdata", 
+                    type=str,
+                    default="../../data/institutions",
+                    help="path to raw data with files for zip codes and carnegie classification") 
+parser.add_argument("--zipcodes", 
+                    type=str,
+                    default="ZIP_codes_2020.xls",
+                    help="name of file with zip codes") 
+parser.add_argument("--cng", 
+                    type=str,
+                    default="CCIHE2021-PublicData.xlsx",
+                    help="name of file with carnegie classification") 
+                    
+                    
+args = parser.parse_args()
 
 
 # ## Define some replacements in cng institutions
@@ -41,12 +57,21 @@ replace_city_names = { # facilitate merge with zip code file
     "La Plume, PA": "Factoryville"
 }
 
-replace_uni_names = { # facilatate linking to mag with dedupe
+replace_uni_names = { # facilatate linking to mag/pq
     196060: "university at albany suny",
     231624: "college of william mary",
     207388: "oklahoma state university stillwater",
-    190576: "the graduate center cuny",
-    196033: "state university of new york system" # this seems to be the closest one in MAG 
+    190576: "city university of new york", #https://en.wikipedia.org/wiki/Graduate_Center,_CUNY
+    196033: "state university of new york system", # this seems to be the closest one in MAG 
+    233921: "virginia tech",
+    236948: "university of washington", # note: this will lead to an exact link; but MAG only has one univ of wash.
+    218663: "university of south carolina",
+    126818: "colorado state university",
+    221759: "university of tennessee",
+    190567: "city college of new york",
+    126562: "university of colorado denver",
+    215293: "university of pittsburgh",
+    484613: "university of phoenix"
 }
 
 # drop these states and online universities
@@ -62,7 +87,7 @@ keep_cng_levels.append(27) #27 = "special four-year: research institution"
 
 print("Reading cng file...", flush=True)
 
-cng = pd.read_excel(datapath + "cng_institutions/CCIHE2021-PublicData.xlsx",
+cng = pd.read_excel(args.rawdata + "/" + args.cng,
                     sheet_name="Data",
                     usecols=["unitid", "name", "city", "stabbr", "iclevel", "basic2021"],
                     header=0)
@@ -97,12 +122,20 @@ for k, v in replace_city_names.items():
 cng = cng.drop(columns="city_state")
 cng["city"] = normalize_string(cng["city"], replace_hyphen= " ")
 
+cng["normalizedname"] = cng["normalizedname"].str.removeprefix("the ")
+#cng["normalizedname"] = cng["normalizedname"].str.removesuffix(" main campus")
+cng["normalizedname"] = cng["normalizedname"].str.removesuffix(" campus immersion")
+cng["normalizedname"] = cng["normalizedname"].str.strip()
+
+mask = ~cng["normalizedname"].str.contains("adult degree|lifelong learning|continuing professional|national global")
+cng = cng.loc[mask, :]
+
 
 # ### change name for linking to MAG: MAG seems to have one affiliation for these places (but a few publications are also recorded for the other places)
     # assign the same name to all these ones here; let dedupe find the best link based on location
     # this means we lose the other colleges, but they are less important for publications
-mask = cng["normalizedname"].str.startswith("cuny ")
-cng["normalizedname"] = np.where(mask, "city university of new york", cng["normalizedname"])
+# mask = cng["normalizedname"].str.startswith("cuny ")
+# cng["normalizedname"] = np.where(mask, "city university of new york", cng["normalizedname"])
 
 
 # %% 
@@ -116,7 +149,7 @@ cng["normalizedname"] = np.where(mask, "city university of new york", cng["norma
 print("Loading zip code file...", flush=True)
 vars_mcdc = ["ZIP Code", "Type", "State FIPS", "Preferred name", 
             "Alternate names", "Latitude", "Longitude", "Population (2020)"]
-mcdc = pd.read_excel(datapath + "ZIP_codes_2020.xls", 
+mcdc = pd.read_excel(args.rawdata + "/" + args.zipcodes, 
                         usecols = vars_mcdc)
 mcdc.columns = ["zipcode", "type", "statefips", "name", "altername",
                 "pop", "lat", "lon"]
@@ -203,7 +236,7 @@ assert cng_out.shape == cng.shape
 assert len(cng_out.unitid.unique()) == cng_out.shape[0]
 
 cng_out = cng_out.rename(columns = {"lat": "latitude", "lon": "longitude"})
-reorder_cols = ["unitid", "normalizedname", "city", "stabbr", "basic2021", "latitude", "longitude"]
+reorder_cols = ["unitid", "normalizedname", "originalname", "city", "stabbr", "basic2021", "latitude", "longitude"]
 cng_out = cng_out[reorder_cols]
 
 # %% 

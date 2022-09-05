@@ -1,122 +1,126 @@
-# %%
-# ## linking institutions from mag with list of all institutions
+
+"""
+Link MAG institutions to carnegie classification.
+"""
 
 import sqlite3 as sqlite
 import argparse
 import os
 import pandas as pd
-import numpy as np 
 import dedupe
 import multiprocessing as mp
 
 from helpers.variables import db_file
-from helpers.functions import analyze_db
+from main.institutions.utils import dedupe_datapath, links_to_row
+import main.institutions.sql_queries as sq
+from main.institutions.dedupe_setup import fields_mag
 
-def links_to_row(l):
-    "convert linking output from dedupe to an np array"
-    ids = l[0]
-    score = l[1]
-    out = [ids[0], ids[1], score]
-    out = np.array(out)
-    return(out)
+dedupe_sample_size = 100_000 
+dedupe_share_blockedpairs = 0.7
 
-def ignore_medical_institutions(s1, s2): # using this requires that one labels pairs with "no" when one has the med string but not the other
-    """
-    teach the model to ignore pairs 
-    where only one of the pairs is a med institution and the other is not
-    """
-    med = ["medical", "medicine", "health", "hospital", "cancer"] 
-    med_in_s1 = [x in s1 for x in med]
-    med_in_s2 = [x in s2 for x in med]
-    if (any(med_in_s1) and not any(med_in_s2) 
-        or (any(med_in_s2) and not any(med_in_s1))
-        ):
-        return 1
-    else:
-        return 0
+settings_file = dedupe_datapath + "mag_settings"
+training_file = dedupe_datapath + "mag_training.json"
 
-
-
-dedupe_datapath = "/mnt/ssd/DedupeFiles/institution_links/"
-settings_file = dedupe_datapath + "mag_cng_settings"
-training_file = dedupe_datapath + "mag_cng_training.json"
-
-query_mag = """SELECT AffiliationId
-                        , NormalizedName AS name
-                        , PublicationCount
-                        , Latitude as lat
-                        , Longitude as lon
-                    FROM affiliations
-                    INNER JOIN affiliation_outcomes using(AffiliationId)
-                    WHERE Iso3166Code = 'US' """
-
-query_cng = """SELECT unitid
-            , normalizedname AS name
-            , latitude AS lat
-            , longitude AS lon
-            FROM cng_institutions"""
-
+parser = argparse.ArgumentParser()
+parser.add_argument("--tofile", 
+                    type=str,
+                    default="../../data/link_institutions/links_mag.csv",
+                    help="file path and name to temporarily save the links.") 
+args = parser.parse_args()
 
 n_cores = int(mp.cpu_count() / 2)
 
-
-if __name__ == "__main__":
-    # %%
-    # ## mag sample: Check institutions and names
+def main():
+     # ## mag sample: Check institutions and names
     con = sqlite.connect(db_file)
 
     with con:
-        mag = pd.read_sql(sql=query_mag, con=con)
-        cng = pd.read_sql(sql=query_cng, con = con)
+        mag = pd.read_sql(sql=sq.query_mag, con=con)
+        cng = pd.read_sql(sql=sq.query_cng, con=con)
 
     con.close()
 
+    # ## 1. link on exact name (unique names in cng only)
+    cng_dupes = (cng
+                    .groupby("name")["unitid"]
+                    .count()
+                    .reset_index()
+                    .rename(columns={"unitid": "nb"})
+                    )
+    cng_dupes = cng_dupes.loc[cng_dupes["nb"] > 1] 
+    cng_nodupes = cng.loc[~cng["name"].isin(cng_dupes["name"])]
 
-    # %% [markdown]
-    # ### Prepare for dedupe
+    mag_dupes = (mag
+                    .groupby("name")["AffiliationId"]
+                    .count()
+                    .reset_index()
+                    .rename(columns={"AffiliationId": "nb"})
+    )
+    mag_dupes = mag_dupes.loc[mag_dupes["nb"] > 1]
+    mag_nodupes = mag.loc[~mag["name"].isin(mag_dupes["name"])]
+
+    links_name = (cng_nodupes
+            .loc[:, ["unitid", "name"]]
+            .set_index("name")
+            .join(
+                mag_nodupes
+                .loc[:, ["AffiliationId", "name"]]
+                .set_index("name"),
+                how="left"
+                )
+            .reset_index("name")
+        )
+    mask = ~links_name["AffiliationId"].isna()
+    keep_cols = ["AffiliationId", "unitid"]
+    links_name = links_name.loc[:, keep_cols]
+    links_name = links_name.loc[mask, :]
+    links_name["link_score"] = 1
+    links_name["link_flag"] = "exact_unique_name"
+
+    mag = mag.loc[~mag["AffiliationId"].isin(links_name["AffiliationId"]), :]
+    cng = cng.loc[~cng["unitid"].isin(links_name["unitid"]), :]
+
+    # ## 2. Dedupe
     # - Create dicts from dfs
     # - Give same names to features
     # - Set up the linker 
-
-    # %%
     for data in [mag, cng]:
         data["location"] = data.apply(lambda row: (row["lat"], row["lon"]), axis=1)
 
+    magvars = ["AffiliationId", "name", "location"]
+    cngvars = ["unitid", "name", "location"]
+    data1 = (mag
+                .loc[:, magvars]
+                .set_index("AffiliationId")
+                .to_dict(orient="index"))
+    data2 = (cng
+                .loc[:, cngvars]
+                .set_index("unitid")
+                .to_dict(orient="index"))
 
-    # %%
-    magdata = mag.loc[:, ["AffiliationId", "name", "location"]].set_index("AffiliationId").to_dict(orient="index")
-    cngdata = cng.loc[:, ["unitid", "name", "location"]].set_index("unitid").to_dict(orient="index")
-
-
-    # %%
+    colnames_link = [v[0] for v in [magvars, cngvars]]
 
     if os.path.exists(settings_file):
         print('reading from', settings_file)
         with open(settings_file, 'rb') as sf:
             linker = dedupe.StaticRecordLink(sf)
     else:
-        fields = [
-            {"field": "name", "variable name": "name", "type": "String"},
-            {"field": "location", "variable name": "location", "type": "LatLong"},
-            {"type": "Interaction", "interaction variables": ["name", "location"]},
-            {"field": "name", "variable name": "med_name", "type": "Custom", "comparator": ignore_medical_institutions}, 
-            {"type": "Interaction", "interaction variables": ["med_name", "location"]},
-            {"type": "Interaction", "interaction variables": ["med_name", "name"]}
-        ]
-
-        linker = dedupe.RecordLink(fields, num_cores = n_cores) 
+        linker = dedupe.RecordLink(fields_mag, num_cores = n_cores) 
         linker.prepare_training(
-            data_1=magdata, data_2=cngdata, blocked_proportion=0.9, sample_size=100_000
-            )
+            data_1=data1, 
+            data_2=data2, 
+            blocked_proportion=dedupe_share_blockedpairs, 
+            sample_size=dedupe_sample_size
+        )
 
         if os.path.exists(training_file):
             print(f"reading training data from {training_file}")
             with open(training_file) as tf:
                 linker.prepare_training(
-                    magdata, cngdata, training_file=tf, sample_size=15000
+                    data1, data2, training_file=tf, sample_size=dedupe_sample_size
                 )
         else:
-            linker.prepare_training(magdata, cngdata, sample_size=15000)
+            linker.prepare_training(data1, data2, sample_size=dedupe_sample_size)
 
         print("Starting active labeling", flush=True)
         dedupe.console_label(linker)
@@ -134,34 +138,22 @@ if __name__ == "__main__":
 
     print("Clustering")
 
-    linked_records = linker.join(magdata, cngdata, threshold=0.0, constraint="one-to-one")
+    linked_records = linker.join(data1, data2, threshold=0.0, constraint="one-to-one")
 
     linked_records = [links_to_row(i) for i in linked_records]
-    out = pd.DataFrame(linked_records, columns=["AffiliationId", "unitid", "link_score"])
+    colnames_link.append("link_score")
+    out = pd.DataFrame(linked_records, columns=colnames_link)
+    out["link_flag"] = "dedupe"
 
-    out["datasets"] = "mag_cng"
+    out = pd.concat([out, links_name]) # make sure they are in the same order
+    out = out.rename(columns = {"AffiliationId": "from_id"})
+    out["from_dataset"] = "mag"
 
-    con = sqlite.connect(db_file)
-    with con: 
-        # delete the links between these data sets if we have some already
-        c = con.cursor()
-        c.execute("SELECT COUNT(name) FROM sqlite_master WHERE type = 'table' AND name = 'institution_links' ")
-
-        if c.fetchone()[0] == 1:
-            con.execute("DELETE FROM institution_links WHERE datasets = 'mag_cng' ")
-
-        # write to db
-        out.to_sql("institution_links", 
-                    con=con, 
-                    if_exists="append", 
-                    index=False, 
-                    chunksize=out.shape[0]
-                    )
-
-        analyze_db(con)
-
-
-    con.close()
-
+    out.to_csv(args.tofile, index=False)
 
     print("Done")
+
+
+if __name__ == "__main__":
+    main()
+   
