@@ -11,6 +11,7 @@ print(os.getcwd())
 
 from src.dataprep.helpers.variables import db_file
 import src.dataprep.main.institutions.sql_queries as sq
+from src.dataprep.helpers.functions import analyze_db
 
 import matplotlib.pyplot as plt
 
@@ -33,4 +34,20 @@ print(cng.head())
 cng['distance_km'] = cng.apply(lambda row: distance.distance((row['lat'], row['lon']), (row['lat2'], row['lon2'])).km, axis=1)
 print(cng.head())
 
-cng[['unitid','unitid2','distance']].to_csv("./data/institutions/calculated_distance_cng.csv")
+cng_out = cng[['unitid','unitid2','distance_km']]
+
+
+con = sqlite.connect(db_file)
+with con: 
+    cng_out.to_sql("cng_distances", 
+                    con=con, 
+                    if_exists="replace", 
+                    index=False, 
+                    chunksize=cng_out.shape[0]
+                )
+
+    con.execute("CREATE UNIQUE INDEX idx_ci_unitid_unitid ON cng_distances (unitid ASC, unitid2 ASC)")
+
+    analyze_db(con)
+
+con.close()
