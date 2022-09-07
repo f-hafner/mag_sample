@@ -18,9 +18,9 @@ fields=("sociology"
         "environmental science"
         "physics" 
         "geology" 
-        "geography") 
-#        "economics"
-#        "chemistry")
+        "geography"
+        "economics"
+         "chemistry")
 #fields=("economics" "chemistry")
 
 for i in "${!fields[@]}"; do 
