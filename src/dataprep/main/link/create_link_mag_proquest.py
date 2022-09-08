@@ -48,13 +48,19 @@ if __name__ == "__main__":
     write_con.execute("CREATE UNIQUE INDEX idx_aa_goid ON pq_all_advisors (goid ASC)")
 
     # ## Load data 
+    if args.linking_type == "grants":
+        query_other = query_nsf
+    else:
+        query_other = query_proquest
+
     if args.testing:
         line_limit = 500
-        query_proquest = f"{query_proquest} LIMIT {line_limit}"
+        query_other = f"{query_other} LIMIT {line_limit}"
         query_mag = f"{query_mag} LIMIT {line_limit}"
 
-    for q in [query_proquest, query_mag]:
+    for q in [query_other, query_mag]:
         print(f"{q} \n")
+
 
     # https://stackoverflow.com/questions/3300464/how-can-i-get-dict-from-sqlite-query
     # https://docs.python.org/3/library/sqlite3.html#sqlite3.Connection.row_factory
@@ -73,21 +79,41 @@ if __name__ == "__main__":
         cur.execute(query_mag, tuple(id_field))
         magdata = {i: row for i, row in custom_enumerate(cur.fetchall(), "AuthorId")}
         cur = con.cursor()
-        cur.execute(query_proquest, tuple(id_field))
-        proquestdata = {i: row for i, row in custom_enumerate(cur.fetchall(), pq_entity_id)}
+        if args.linking_type == "grants":
+            cur.execute(query_other)
+            otherdata = {i: row for i, row in custom_enumerate(cur.fetchall(), nsf_entity_id)}
+        else:
+            cur.execute(query_other, tuple(id_field))
+            otherdata = {i: row for i, row in custom_enumerate(cur.fetchall(), pq_entity_id)} # TODO: rename proquestdata to otherdata
     
     # transform the strings to hashable sequences
-    for data in [magdata, proquestdata]:
+    for data in [magdata, otherdata]:
         for key in data.keys():
             if data[key]["keywords"] is not None:
                 data[key]["keywords"] = frozenset(data[key]["keywords"].split(";"))
 
-            features = ["institution", "coauthors"]
+            features = ["institution", "coauthors", "year_range",
+                        "main_us_institutions_year", "all_us_institutions_year"]
             ft_in_data = list(data[list(data.keys())[0]].keys()) # extract all features of the first record in the dict data
             features = [f for f in features if f in ft_in_data]
             for feature in features:
                 if data[key][feature] is not None:
-                    data[key][feature] = tuple(data[key][feature].split(";"))
+                    if feature in ["main_us_institutions_year", "all_us_institutions_year"]:
+                        # split, make first entry numeric, convert to tuple
+                        ft = [x.split("//") for x in data[key][feature].split(";")]
+                        ft = [tuple([int(x[0]), x[1]]) for x in ft] 
+                        data[key][feature] = tuple(ft)
+                    elif feature == "year_range":
+                        ft = data[key][feature]
+                        if isinstance(ft, str):
+                            ft = ft.split(";")
+                            ft = tuple([int(f) for f in ft])
+                        else:
+                            assert isinstance(ft, int) 
+                            ft = (ft, )
+                        data[key][feature] = ft
+                    else:
+                        data[key][feature] = tuple(data[key][feature].split(";"))
 
     # NOTE
         # need `frozenset` for the set feature; while the documentation says tuples also work, there is a bug 
@@ -104,9 +130,11 @@ if __name__ == "__main__":
 
     print("Link now ... ", flush=True)
     if args.linking_type == "graduates":
-        pairs = linker.pairs(data_1 = magdata, data_2 = proquestdata)
+        pairs = linker.pairs(data_1 = magdata, data_2 = otherdata)
     elif args.linking_type == "advisors": # this is important: we link many theses in proquest to one record on mag 
-        pairs = linker.pairs(data_1 = proquestdata, data_2 = magdata)
+        pairs = linker.pairs(data_1 = otherdata, data_2 = magdata)
+    elif args.linking_type == "grants":
+        pairs = linker.pairs(data_1 = magdata, data_2 = otherdata)
 
     
     print("made pairs", flush=True)
@@ -120,7 +148,7 @@ if __name__ == "__main__":
         print("made 1:1 links", flush=True)
 
     
-    del proquestdata 
+    del otherdata 
     del magdata
 
     # ## Write everything into two tables
