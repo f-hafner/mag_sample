@@ -13,8 +13,6 @@ from src.dataprep.helpers.variables import db_file
 import src.dataprep.main.institutions.sql_queries as sq
 from src.dataprep.helpers.functions import analyze_db
 
-import matplotlib.pyplot as plt
-
 
 con = sqlite.connect(db_file)
 
@@ -46,7 +44,7 @@ with con:
                     chunksize=cng_out.shape[0]
                 )
 
-    con.execute("CREATE UNIQUE INDEX idx_ci_unitid_unitid ON cng_distances (unitid ASC, unitid2 ASC)")
+    con.execute("CREATE UNIQUE INDEX idx_cngd_unitid ON cng_distances (unitid ASC, unitid2 ASC)")
 
     analyze_db(con)
 
