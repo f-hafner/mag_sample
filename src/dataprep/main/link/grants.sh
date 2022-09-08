@@ -2,18 +2,17 @@
 
 logfile_path=$1
 RECALL=0.9
-train_name="${USER}_baseline"
+train_name="${USER}_baseline_v2"
 keywords=False
 fieldofstudy_cat=False 
 fieldofstudy_str=False 
 institution=True
 
-# fields=("geology" "geography" "chemistry"
-#         "sociology" "mathematics"
-#         "biology" "computer science" "political science"
-#         "engineering" "psychology" "environmental science"
-#         "physics" "economics")
-fields=("chemistry")
+fields=("geology" "geography" "chemistry"
+        "sociology" "mathematics"
+        "biology" "computer science" "political science"
+        "engineering" "psychology" "environmental science"
+        "physics" "economics")
 
 for i in "${!fields[@]}"; do 
     field=${fields[$i]} 
