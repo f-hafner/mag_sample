@@ -1,4 +1,3 @@
-# run as python -m src.dataprep.main.institutions.distances_cng
 # Calculate distance between cng institutions
 
 import sqlite3 as sqlite
@@ -9,9 +8,9 @@ import os
 
 print(os.getcwd())
 
-from src.dataprep.helpers.variables import db_file
-import src.dataprep.main.institutions.sql_queries as sq
-from src.dataprep.helpers.functions import analyze_db
+from helpers.variables import db_file
+import main.institutions.sql_queries as sq
+from helpers.functions import analyze_db
 
 
 con = sqlite.connect(db_file)
