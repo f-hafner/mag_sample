@@ -102,6 +102,8 @@ tbl_linked_ids = "linked_ids"
 column_order_links = f"""AuthorId INT
                     , {pq_entity_id} INT """
 
+if args.linking_type == "graduates":
+    path_dedupe_files = path_dedupe_files + "graduates/"
 if args.linking_type == "advisors":
     pq_entity_id = "relationship_id"
     tbl_linking_info = "linking_info_advisors"
@@ -118,8 +120,10 @@ elif args.linking_type == "grants":
     path_dedupe_files = path_dedupe_files + "grants/"
     column_order_links = f"""{nsf_entity_id} TEXT
                         , AuthorId INT"""
-    if not os.path.isdir(path_dedupe_files):
-        os.mkdir(path_dedupe_files)
+
+
+if not os.path.isdir(path_dedupe_files):
+    os.mkdir(path_dedupe_files)
 
 # ### check the field here -- choices option in parser does not work straightforwardly with whitespaces
 all_fields = ["history", "geology", "economics", "geography", "chemistry",
@@ -205,7 +209,8 @@ if args.linking_type == "graduates":
             , fieldofstudy
             , keywords
             , institution
-            , advisors AS coauthors
+            , coauthors
+            , year_papertitle
     FROM (
         SELECT goid
             , degree_year AS year 
@@ -218,6 +223,7 @@ if args.linking_type == "graduates":
             , length(REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "")) AS l_lastname
             , fieldname AS fieldofstudy
             , university_id
+            , degree_year || "//" || thesistitle as year_papertitle 
         FROM pq_authors 
         INNER JOIN (
             SELECT goid, fieldname 
@@ -226,13 +232,17 @@ if args.linking_type == "graduates":
         ) USING (goid)
     )
     -- ## NOTE: use left join here as not all graduates have advisor (particularly pre-1980) and possibly also keywords
-    LEFT JOIN pq_keywords USING(goid) 
+    LEFT JOIN (
+        SELECT goid
+            , fields as keywords
+            , advisors as coauthors
+        FROm pq_info_linking
+    ) USING(goid)
     INNER JOIN (
         SELECT university_id, normalizedname as institution
         FROM pq_unis
         WHERE location like "%United States%"
     ) USING(university_id)
-    LEFT JOIN pq_all_advisors USING(goid)
     {where_stmt}
     """
 
@@ -251,6 +261,7 @@ if args.linking_type == "graduates":
         , g.keywords
         , g.coauthors
         , g.institution
+        , g.year_papertitle
     FROM (
         SELECT a.AuthorId
             , a.YearFirstPub AS year
@@ -288,11 +299,15 @@ if args.linking_type == "graduates":
     LEFT JOIN (
         SELECT AuthorId
                 , institutions as institution
+                , main_us_institutions_career
                 , coauthors
                 , keywords
+                , year_papertitle
         FROM author_info_linking
     ) AS g USING(AuthorId)
     {where_stmt_mag} 
+        -- ## use this to condition on people that have at least at some point their main affiliation in the US
+        AND g.main_us_institutions_career IS NOT NULL
     """
 elif args.linking_type == "advisors" or args.linking_type == "grants":
     institutions_to_use = "main_us_institutions_career"
@@ -408,7 +423,11 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
             ) AS a USING(goid)
         )
         -- ## NOTE: use left join here as not all graduates have advisor (particularly pre-1980) and possibly also keywords
-        LEFT JOIN pq_keywords USING(goid) 
+        LEFT JOIN (
+            SELECT goid
+                , fields as keywords
+            FROM pq_info_linking
+        ) USING(goid) 
         INNER JOIN (
             SELECT university_id, normalizedname as institution
             FROM pq_unis --## mark: previously we linked advisors anywhere in the world (as career outcomes). for now, focus on US
