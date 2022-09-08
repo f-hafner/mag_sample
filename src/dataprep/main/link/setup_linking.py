@@ -471,4 +471,7 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
             AND a.AwardInstrument_Value IN ('standard grant', 'continuing grant')
             AND a.Organization_Directorate_ShortName IN {directorates}
             AND c.lastname != 'data not available'
+            AND CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) >= {args.startyear}
+            AND CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) <= {args.endyear}
+            AND b.institution != "travel award"
         """

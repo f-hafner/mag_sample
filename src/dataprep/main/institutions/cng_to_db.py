@@ -251,7 +251,7 @@ with con:
                     chunksize=cng_out.shape[0]
                 )
 
-    con.execute("CREATE UNIQUE INDEX idx_ci_unitid ON cng_institutions (unitid ASC)")
+    con.execute("CREATE UNIQUE INDEX idx_cngi_unitid ON cng_institutions (unitid ASC)")
 
     analyze_db(con)
 

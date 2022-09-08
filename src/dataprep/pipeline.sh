@@ -54,8 +54,14 @@ python3 $script_path/prep_mag/author_gender.py &> $logfile_path/author_gender.lo
 bash $script_path/institutions/clean_link_institutions.sh $logfile_path
 
 # ## Load ProQuest data
-python3 $script_path/load_proquest/proquest_to_db.py &> $logfile_path/proquest_to_db.log
-python3 $script_path/load_proquest/correspond_fieldofstudy.py &> $logfile_path/correspond_fieldofstudy.log
+python -m $script_path.load_proquest.proquest_to_db &> \
+    $logfile_path/proquest_to_db.log
+
+python -m $script_path.load_proquest.correspond_fieldofstudy &> \
+    $logfile_path/correspond_fieldofstudy.log
+
+python -m $script_path.load_proquest.pq_author_info_linking &> \
+    $logfile_path/pq_author_info_linking.log
 
 # ## Make some summary stats on the data
 Rscript $script_path/reports/data_nces.R &> temp/data_nces.log  
