@@ -23,32 +23,6 @@ if __name__ == "__main__":
     
     training_file = f"{path_dedupe_files}{training_file}_{fld}_{args.startyear}_{args.endyear}_institution{args.institution}_fieldofstudy_cat{args.fieldofstudy_cat}_fieldofstudy_str{args.fieldofstudy_str}_keywords{args.keywords}{args.train_name}.json" 
 
-    if args.linking_type != "grants": # not necessary for grants
-        # ## prepare the keywords from proquest
-        print("Preparing temp tables for info of proquest authors... \n")
-        # ### keywords
-        write_con.execute("DROP TABLE IF EXISTS pq_keywords")
-        write_con.execute("""
-        CREATE TABLE pq_keywords AS 
-        SELECT goid, GROUP_CONCAT(fieldname, ";") as keywords
-        FROM pq_fields 
-        GROUP BY goid
-        """)
-        write_con.execute("CREATE UNIQUE INDEX idx_kw_goid ON pq_keywords(goid ASC)")
-
-        ### advisors -> CURRENTLY UNUNSED
-        write_con.execute("DROP TABLE IF EXISTS pq_all_advisors")
-        write_con.execute("""
-        CREATE TABLE pq_all_advisors AS
-        SELECT goid, GROUP_CONCAT(fullname, ";") AS advisors
-        FROM (
-            SELECT goid, firstname || " " || lastname as fullname 
-            FROM pq_advisors
-        )
-        GROUP BY goid
-        """)
-        write_con.execute("CREATE UNIQUE INDEX idx_aa_goid ON pq_all_advisors (goid ASC)")
-
     # ## Load data 
     if args.linking_type == "grants":
         query_other = query_nsf
