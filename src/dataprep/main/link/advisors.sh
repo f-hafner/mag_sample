@@ -8,20 +8,19 @@ fieldofstudy_cat=False
 fieldofstudy_str=False 
 institution=True 
 
-fields=("sociology" 
-        "mathematics"
+fields=("physics"
+        "chemistry"
         "biology" 
         "computer science" 
         "political science"
         "engineering" 
         "psychology" 
-        "environmental science"
-        "physics" 
+        "environmental science" 
         "geology" 
         "geography"
         "economics"
-         "chemistry")
-#fields=("economics" "chemistry")
+        )
+#fields_done=("sociology" "mathematics")
 
 for i in "${!fields[@]}"; do 
     field=${fields[$i]} 
