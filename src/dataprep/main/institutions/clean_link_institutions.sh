@@ -65,6 +65,7 @@ python -m main.institutions.cng_links_to_db \
     &> $logfile_path/cng_links_to_db.log
 
 # 4. Calculate distance between institutions
+echo "calculating distances between cng institutions..."
 python -m main.institutions.distances_cng \
     &> $logfile_path/distances_cng.log
 
