@@ -58,7 +58,7 @@ current_links <- tbl(con, sql("
                                 from authors 
                               ) using(authorid)
                               inner join (
-                                select AuthorId, institutions_career
+                                select AuthorId, main_institutions_career
                                 from author_info_linking
                               ) using(authorId)
                               "))
@@ -137,6 +137,129 @@ linked_advisors %>%
   facet_wrap(~field)
 
 ```
+
+## Average link score by graduation year
+
+
+```{r}
+
+score_by_year <- linked_advisors %>%
+  left_join(theses %>%
+              select(degree_year, relationship_id),
+            by = "relationship_id") %>%
+  left_join(linking_info,
+            by = "iteration_id")
+
+score_by_year %>%
+  group_by(degree_year, field) %>%
+  summarise(mean_score = mean(link_score),
+            p50_score = quantile(link_score, probs = 0.5),
+            .groups = "drop") %>%
+  pivot_longer(cols = ends_with("_score"),
+               names_to = "stat") %>%
+  ggplot(aes(x = degree_year, y = value)) + 
+  geom_line(aes(linetype = stat)) + 
+  facet_wrap(~field) + 
+  theme(legend.position = "bottom")
+
+
+score_by_year %>%
+  group_by(degree_year, field) %>%
+  summarise(n_advisors = n(),
+            .groups = "drop") %>%
+  ggplot(aes(x = degree_year, y = n_advisors)) + 
+  geom_line() + 
+  facet_wrap(~field)
+
+
+# another stat
+  # linked advisors per linked dissertation
+  # versus advisors per dissertation (in the US)
+
+# score_by_year %>% 
+#   mutate(grp = ifelse(degree_year < 2000, "pre", "post")) %>%
+#   ggplot(aes(x = link_score)) +
+#   geom_histogram() + 
+#   facet_wrap(~grp)
+
+
+```
+
+old comments
+
+- for instance, a student of michael j lambert (authorid 2120159045; relationship id 303670971_0 in proquest) from pre-1990 is link score of 0.02, but should be a clear link
+
+
+## Compare number of links across iterations within fields 
+
+```{r}
+fields_iter_compare <- c("economics", "chemistry")
+min_score <- 0.8
+
+keep_iter_ids <- tbl(con, "linking_info_advisors") %>%
+  filter(field %in% fields_iter_compare) %>%
+  filter(testing == 0) %>%
+  collect() %>%
+  group_by(field, train_name) %>%
+  arrange(iteration_id) %>%
+  mutate(nb = n(),
+         id = row_number()) %>%
+  ungroup() %>%
+  filter(id == nb) %>%
+  select(iteration_id, field, train_name)
+
+linked_ids_to_compare <- tbl(con, "linked_ids_advisors") %>%
+  inner_join(
+    tbl(con, "linking_info_advisors") %>%
+      filter(field %in% fields_iter_compare),
+    by = "iteration_id"
+  ) %>%
+  inner_join(
+    tbl(con, "pq_advisors") %>%
+      select(relationship_id, goid),
+    by = "relationship_id"
+  ) %>%
+  inner_join(
+    tbl(con, "pq_authors") %>%
+      select(goid, degree_year),
+    by = "goid"
+  ) %>%
+  collect() %>%
+  filter(iteration_id %in% keep_iter_ids$iteration_id) 
+
+```
+
+
+Number of graduates with at least 1 advisor
+
+```{r}
+
+d_sum <- linked_ids_to_compare %>%
+  filter(link_score >= min_score) %>%
+  group_by(train_name, field, degree_year) %>%
+  summarise(n_advisors = n(),
+            n_graduates = n_distinct(goid),
+            .groups = "drop") %>%
+  pivot_longer(cols = starts_with("n_"), names_to = "variable")
+
+plotvars <- c("n_graduates")
+
+map(.x = plotvars,
+    .f = ~d_sum %>%
+      filter(variable == .x) %>%
+      ggplot(aes(x = degree_year, y = value)) +
+      geom_line(aes(linetype = train_name)) + 
+      facet_wrap(~field) + 
+      theme(legend.position = "bottom") + 
+      labs(title = paste0("Count: ", .x))
+    )
+
+
+```
+
+
+
+
 
 ## Check overlap of institution names and years 
 

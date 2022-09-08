@@ -153,7 +153,8 @@ if __name__ == "__main__":
                 {"field": "firstname", "variable name": "same_firstname", "type": "Exact"},
                 {"field": "lastname", "variable name": "lastname", "type": "String", "has missing": False},
                 {"field": "lastname", "variable name": "same_lastname", "type": "Exact"},
-                {"field": "middlename", "variable name": "middlename", "type": "String", "has missing": True}
+                {"field": "middlename", "variable name": "middlename", "type": "String", "has missing": True},
+                {"field": "year_range", "variable name": "year_range", "type": "Custom", "comparator": cf.compare_range_from_tuple_tempfix, "has missing": True}
             ]
         elif args.linking_type == "grants":
             fields = [
@@ -168,24 +169,45 @@ if __name__ == "__main__":
         if args.institution == "True":
             if args.linking_type == "graduates": # should we also ignore uni for graduates?
                 fields.append({"field": "institution", "variable name": "institution", "type": "Custom", "comparator": cf.tuple_distance, "has missing": True})
-            elif args.linking_type == "advisors":
-                fields.append({"field": "institution", "variable name": "institution", "type": "Custom", "comparator": cf.tuple_distance, "has missing": True})
-                fields.append({"type": "Interaction", "interaction variables": ["institution", "same_firstname"] })
-                fields.append({"type": "Interaction", "interaction variables": ["institution", "same_lastname"] })
-            elif args.linking_type == "grants":
-                institution_fields = [
-                    {"field": "main_us_institutions_year", "variable name": "main_inst_year", "type": "Custom", "comparator": cf.set_of_tuples_distance_overall, "has missing": True},
-                    {"field": "main_us_institutions_year", "variable name": "main_inst_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_string, "has missing": True},
-                    {"field": "main_us_institutions_year", "variable name": "main_inst_year_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_number, "has missing": True},
-                    {'type': 'Interaction', 'interaction variables': ['main_inst_year_similarity', 'firstname']},
-                    {'type': 'Interaction', 'interaction variables': ['main_inst_year_similarity', 'lastname']},
-                    {'type': 'Interaction', 'interaction variables': ['main_inst_year_similarity', 'firstname']},
-                    {'type': 'Interaction', 'interaction variables': ['main_inst_year_similarity', 'lastname']},
-                    {"field": "all_us_institutions_year", "variable name": "all_inst_year", "type": "Custom", "comparator": cf.set_of_tuples_distance_overall, "has missing": True},
-                    {"field": "all_us_institutions_year", "variable name": "all_inst_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_string, "has missing": True},
-                    {"field": "all_us_institutions_year", "variable name": "all_inst_year_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_number, "has missing": True},
-                    {"type": "Interaction", "interaction variables": ["main_inst_year_similarity", "year_range"]} # year_range is the career; main_inst is only US. the interaction may account for people that have part of their career outside of US institutions
-                    ]
+            else:
+                if args.linking_type == "grants": 
+                    # TODO: the naming of the insitution fields below is a typo and creates the wrong interactions later on
+                        # Leaving this here for now for consistency with current advisor linking approach 
+                        # 1. rename the variables:
+                            # main_inst_year_similarity (and `all_us_*``) should use cf.set_of_tuples_distance_overall; 
+                            # main_inst_year (and `all_us_*``) should use cf.set_of_tuples_distance_number
+                        # see below for advisors; I think we can just use the same for both advisors and grants
+                    institution_fields = [ 
+                        {"field": "main_us_institutions_year", "variable name": "main_inst_year", "type": "Custom", "comparator": cf.set_of_tuples_distance_overall, "has missing": True},
+                        {"field": "main_us_institutions_year", "variable name": "main_inst_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_string, "has missing": True},
+                        {"field": "main_us_institutions_year", "variable name": "main_inst_year_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_number, "has missing": True},
+                        {'type': 'Interaction', 'interaction variables': ['main_inst_year_similarity', 'firstname']}, 
+                        {'type': 'Interaction', 'interaction variables': ['main_inst_year_similarity', 'lastname']}, 
+                        {'type': 'Interaction', 'interaction variables': ['main_inst_year_similarity', 'firstname']}, 
+                        {'type': 'Interaction', 'interaction variables': ['main_inst_year_similarity', 'lastname']},
+                        {"field": "all_us_institutions_year", "variable name": "all_inst_year", "type": "Custom", "comparator": cf.set_of_tuples_distance_overall, "has missing": True},
+                        {"field": "all_us_institutions_year", "variable name": "all_inst_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_string, "has missing": True},
+                        {"field": "all_us_institutions_year", "variable name": "all_inst_year_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_number, "has missing": True},
+                        {"type": "Interaction", "interaction variables": ["main_inst_year_similarity", "year_range"]} # year_range is the career; main_inst is only US. the interaction may account for people that have part of their career outside of US institutions
+                        ]
+                elif args.linking_type == "advisors":
+                    institution_fields = [ 
+                        {"field": "main_us_institutions_year", "variable name": "main_year_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_number, "has missing": True},
+                        {"field": "main_us_institutions_year", "variable name": "main_inst_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_string, "has missing": True},
+                        {"field": "main_us_institutions_year", "variable name": "main_inst_year_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_overall, "has missing": True},
+                        # interaction 1
+                        {'type': 'Interaction', 'interaction variables': ['main_year_similarity', 'firstname']}, 
+                        {'type': 'Interaction', 'interaction variables': ['main_year_similarity', 'lastname']}, 
+                        # interaction 2
+                        {'type': 'Interaction', 'interaction variables': ['main_inst_similarity', 'firstname']}, 
+                        {'type': 'Interaction', 'interaction variables': ['main_inst_similarity', 'lastname']},
+                        {"type": "Interaction", "interaction variables": ["main_inst_year_similarity", "year_range"]},
+                        {"field": "all_us_institutions_year", "variable name": "all_year_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_number, "has missing": True},
+                        {"field": "all_us_institutions_year", "variable name": "all_inst_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_string, "has missing": True},
+                        {"field": "all_us_institutions_year", "variable name": "all_inst_year_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_overall, "has missing": True}
+                        ]
+
+
                 fields = fields + institution_fields 
         if args.fieldofstudy_cat == "True": 
             fields.append({"field": "fieldofstudy", "variable name": "fieldofstudy", "type": "Categorical", "categories": areas, "has missing": False})

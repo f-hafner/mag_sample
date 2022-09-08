@@ -101,7 +101,8 @@ con.execute("CREATE INDEX idx_fn_FirstName ON FirstNames (FirstName)")
 con.execute("CREATE INDEX IF NOT EXISTS idx_p_Year ON Papers (Year ASC) ")
 con.execute("CREATE INDEX IF NOT EXISTS idx_p_DocType ON Papers (DocType) ") 
 con.execute("CREATE INDEX IF NOT EXISTS idx_pr_PaperReferenceId ON PaperReferences (PaperReferenceId ASC)")
-
+con.execute("CREATE INDEX idx_paa_AuthorIdAffiliationId ON PaperAuthorAffiliations (AuthorId ASC, AffiliationId ASC)")
+con.execute("CREATE INDEX idx_paa_AffiliationId ON PaperAuthorAffiliations (AffiliationId ASC)")
 
 # ## Run ANALYZE
 analyze_db(con)
