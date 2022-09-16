@@ -93,6 +93,7 @@ theses <- tbl(con, sql("
                          inner join (
                           select university_id, normalizedname as uni_name 
                           from pq_unis
+                          where location like '%United States%'
                          ) using(university_id)
                        ) using(goid)")
               )
@@ -111,6 +112,15 @@ authors_affiliation <- tbl(con,
                                ) using(authorid)
                                "))
 
+pq_fields_mag <- tbl(con,
+                     sql("select goid, normalizedname as field 
+                          from pq_fields_mag
+                          inner join (
+                            select fieldofstudyid, normalizedname
+                            from FieldsOfStudy
+                            ) ON (mag_field0 = FieldOfStudyId)
+                         where position = 0"))
+
 ```
 
 
@@ -121,6 +131,7 @@ linked_advisors <- collect(linked_advisors)
 theses <- collect(theses)
 authors_affiliation <- collect(authors_affiliation)
 linking_info <- collect(linking_info)
+pq_fields_mag <- collect(pq_fields_mag)
 ```
 
 
@@ -138,50 +149,140 @@ linked_advisors %>%
 
 ```
 
-## Average link score by graduation year
+## Link performance by graduation year
 
+- fraction of listed advisors where the link_score is above the treshold
+- the mean link score for advisors where dedupe finds a link (link_score is not NA)
+- NOTE: the field here is assigned based on the first reported in the dissertation, and the crosswalked to the MAG field
+  - in the figure above, we used the field from iteration_id, but this only works for advisors that dedupe suggests to be a link 
 
 ```{r}
 
-score_by_year <- linked_advisors %>%
-  left_join(theses %>%
-              select(degree_year, relationship_id),
+keep_fields <- c("biology", "chemistry", "computer science", 
+                 "economics", "engineering", "environmental science", 
+                 "geography", "geology", "mathetmatics", "physics",
+                 "political science", "psychology", "sociology")
+
+score_by_year <- theses %>% 
+  filter(degree_year >= 1985) %>%
+  left_join(linked_advisors,
             by = "relationship_id") %>%
-  left_join(linking_info,
-            by = "iteration_id")
+  left_join(pq_fields_mag, by = "goid") %>%
+  filter(field %in% keep_fields)
+
+# %>%
+#   left_join(linking_info,
+#             by = "iteration_id")
 
 score_by_year %>%
+  mutate(link_score_adj = ifelse(is.na(link_score), -1, link_score)) %>%
   group_by(degree_year, field) %>%
-  summarise(mean_score = mean(link_score),
-            p50_score = quantile(link_score, probs = 0.5),
+  summarise(mean_score = mean(link_score, na.rm = TRUE),
+            #p50_score = quantile(link_score, probs = 0.5),
+            share_linked = mean(link_score_adj > min_score_advisors),
             .groups = "drop") %>%
-  pivot_longer(cols = ends_with("_score"),
+  pivot_longer(cols = all_of(c("mean_score", "share_linked")),
                names_to = "stat") %>%
   ggplot(aes(x = degree_year, y = value)) + 
   geom_line(aes(linetype = stat)) + 
   facet_wrap(~field) + 
   theme(legend.position = "bottom")
 
+```
+
+
+```{r}
 
 score_by_year %>%
+  filter(field == "biology") %>% 
+  filter(is.na(link_score)) %>% 
+  filter(degree_year < 2000) %>% 
+  group_by(firstname, lastname, uni_name, degree_year) %>%
+  summarise(nb = n(),
+            .groups = "drop") %>%
+  arrange(desc(nb)) %>%
+  head(10)
+
+# score_by_year %>% filter(lastname == "dasgupta" & firstname == "asim" & !is.na(iteration_id)) # never linked 
+# score_by_year %>% filter(lastname == "freeling" & firstname == "michael") # never linked 
+
+# scale this up? check all the main fields of the authors with such names? -- tedious 
+```
+
+### Notes 
+
+
+- Reasons for why advisor not linked
+  - they are not sampled for linking either in the mag or proquest data
+    - most plausibly because they are assigned to different fields 
+  - institution names do not overlap 
+  - dedupe does not find a link even though it should
+    - but how can it explain the time trend?
+- Comparing fields in MAG and ProQuest dissertations
+  - General
+    - not linking an advisor in biology does not mean do not link them in chemistry if the thesis is also classified in chemistry
+    - in the data above, this happens if biology is listed at position 0
+  - Biology 
+    - main field chemistry: gerlt, cooperman, eveleigh (two of them with long careers, but both in chemistry), tsai
+    - main field bioloyg: dasgupta, freeling
+    - at least one of the dissertations of freeling are sampled for the linking 
+  - Sociology
+    - different main field: ishisaka, coulton (medicine), howell (geography), mindel (psychology)
+    - not in MAG, but findable on google: khleif, gullerud
+    - not in MAG, not findable on google: liff
+- Next steps
+  - widen the sampled field in MAG 
+  - re-train and re-check 
+
+
+Here is some python code to look at the learned settings, based on
+
+- https://github.com/dedupeio/rlr/blob/master/rlr/lr.py (new dedupe does not use this anymore I think)
+- https://github.com/dedupeio/dedupe/blob/5742efc7fc696c06d3327e038541532e584551a8/dedupe/api.py
+- Note: The predicates are similar for all three fields I looked at. I do not know how the weights correspond to the logit regression coefficients
+
+```python
+
+sf_biology = "/mnt/ssd/DedupeFiles/advisors/settings_biology_1985_2022_institutionTrue_fieldofstudy_catFalse_fieldofstudy_strFalse_keywordsFalsechristoph_baseline_update"
+sf_chemistry = "/mnt/ssd/DedupeFiles/advisors/settings_chemistry_1985_2022_institutionTrue_fieldofstudy_catFalse_fieldofstudy_strFalse_keywordsFalsechristoph_baseline_update"
+sf_cs = "/mnt/ssd/DedupeFiles/advisors/settings_computer_science_1985_2022_institutionTrue_fieldofstudy_catFalse_fieldofstudy_strFalse_keywordsFalsechristoph_baseline_update"
+
+with open(sf_biology, "rb") as sf:
+    linker_biology = dedupe.StaticRecordLink(sf)
+
+with open(sf_chemistry, "rb") as sf:
+    linker_chemistry = dedupe.StaticRecordLink(sf)
+
+
+with open(sf_cs, "rb") as sf:
+    linker_cs = dedupe.StaticRecordLink(sf)
+
+linker_biology.predicates
+linker_chemistry.predicates
+linker_cs.predicates
+
+linker_biology.classifier.weights
+linker_chemistry.classifier.weights
+linker_cs.classifier.weights
+
+```
+
+
+
+## Number of linked advisors 
+
+- not sure this is still relevant?
+
+```{r}
+score_by_year %>%
+  filter(!is.na(link_score)
+          & field %in% keep_fields) %>%
   group_by(degree_year, field) %>%
   summarise(n_advisors = n(),
             .groups = "drop") %>%
   ggplot(aes(x = degree_year, y = n_advisors)) + 
   geom_line() + 
   facet_wrap(~field)
-
-
-# another stat
-  # linked advisors per linked dissertation
-  # versus advisors per dissertation (in the US)
-
-# score_by_year %>% 
-#   mutate(grp = ifelse(degree_year < 2000, "pre", "post")) %>%
-#   ggplot(aes(x = link_score)) +
-#   geom_histogram() + 
-#   facet_wrap(~grp)
-
 
 ```
 

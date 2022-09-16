@@ -1,0 +1,89 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+ 
+ 
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(1234)
+```
+
+```{r, echo = FALSE, include = FALSE}
+packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "ggplot2", "stringdist")
+
+lapply(packages, library, character.only = TRUE)
+
+datapath <- "/mnt/ssd/"
+db_file  <- paste0(datapath, "AcademicGraph/AcademicGraph.sqlite")
+select_fields <- c("physics", "biology", "chemistry", "sociology",
+                    "economics", "political science", "psychology", 
+                    "mathematics", "geography", "geology", "engineering",
+                    "computer science", "environmental science") # fields currently matched 
+
+
+# ## db connection
+con <- DBI::dbConnect(RSQLite::SQLite(), db_file)
+cat("The database connection is: \n")
+src_dbi(con)
+```
+
+```{r, echo = FALSE, include = FALSE}
+Fields <- tbl(con, sql("select * 
+                                from FieldsOfStudy
+                                ")) %>% collect()
+Children <- tbl(con, sql("select * 
+                                from FieldOfStudyChildren
+                                ")) %>% collect()
+                                
+```
+
+
+```{r, echo = FALSE, include = TRUE}
+Fields0 <- Fields %>% filter(Level==0)         
+DirectChildren <- Fields0 %>% select(FieldOfStudyId, NormalizedName) %>% left_join(Children, by="FieldOfStudyId") %>% rename(FirstChild = ChildFieldOfStudyId)
+DirectChildren <- Fields %>%  select(FieldOfStudyId, NormalizedName, Level) %>% rename(FirstChild = FieldOfStudyId, FirstChildname = NormalizedName) %>% right_join(DirectChildren, by="FirstChild")
+
+NFirstChild <- DirectChildren %>% group_by(FieldOfStudyId, NormalizedName) %>% summarize(N = n())
+NParents <- DirectChildren %>% group_by(FirstChild,FirstChildname) %>% summarize(N = n())
+
+NFirstChild
+NParents %>% ggplot(aes(y=N)) + geom_histogram() + ggtitle("Number of Parent Fields for First Children") 
+```
+
+
+```{r, echo = FALSE, include = TRUE}
+GrandChildren <- DirectChildren %>%  left_join(Children %>% rename(FirstChild=FieldOfStudyId, GrandChild = ChildFieldOfStudyId), by="FirstChild")
+GrandChildren <- Fields %>%  select(FieldOfStudyId, NormalizedName, Level) %>% rename(GrandChild = FieldOfStudyId, GrandChildname = NormalizedName, GrandChildLevel=Level) %>% right_join(GrandChildren, by="GrandChild")
+
+NGrandChild <- GrandChildren %>% group_by(FieldOfStudyId, NormalizedName) %>% summarize(N = n())
+NGrandParents <- GrandChildren %>% group_by(GrandChild,GrandChildname) %>% summarize(N = length(unique(FieldOfStudyId)))
+
+NGrandChild
+NGrandParents %>% ggplot(aes(y=N)) + geom_histogram() + ggtitle("Number of Grandparent Fields for Grand Children") 
+
+
+```
+```{r, include = TRUE}
+# what level are children and grandchildren of Level 0 fields? 
+summary(DirectChildren$Level)
+summary(GrandChildren$GrandChildLevel)
+
+# are there level 1 or level 2 fields without a level 0 correspondence?
+Nlevel2fields <- Fields %>% filter(Level==2) %>% summarize(n=n())
+Ngrandchildren <- length(unique(GrandChildren$GrandChild))
+paste("Nlevel2fields is ", Nlevel2fields)
+paste("Ngrandchildren is ", Ngrandchildren)
+# Nlevel2fields contains fields wihtout a correspondence
+
+Nlevel1fields <- Fields %>% filter(Level==1) %>% summarize(n=n())
+Nchildren <- length(unique(DirectChildren$FirstChild))
+paste("Nlevel1fields is ", Nlevel1fields)
+paste("Nchildren is ", Nchildren)
+# Nlevel2fields contains fields wihtout a correspondence
+
+```
+
+```{r, include = FALSE}
+DBI::dbDisconnect(con)
+```

@@ -2,26 +2,17 @@
 
 logfile_path=$1
 RECALL=0.9
-train_name="${USER}_baseline_update"
+train_name="${USER}_baseline_update_v2"
 keywords=False
 fieldofstudy_cat=False 
 fieldofstudy_str=False 
 institution=True 
 
-fields=("sociology" 
-        "mathematics"
-        "biology" 
-        "computer science" 
-        "political science"
-        "engineering" 
-        "psychology" 
+fields=("sociology" "mathematics" "physics" "chemistry" "biology"  
+        "computer science" "political science" "economics"
+        "psychology" "geography" "geology" "engineering"
         "environmental science"
-        "physics" 
-        "geology" 
-        "geography") 
-#        "economics"
-#        "chemistry")
-#fields=("economics" "chemistry")
+         )
 
 for i in "${!fields[@]}"; do 
     field=${fields[$i]} 
