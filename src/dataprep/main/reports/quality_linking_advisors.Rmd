@@ -43,6 +43,7 @@ max_year_diff <- 5 # maximum difference between advisory and own publication at 
 max_uniname_distance <- 0.02 # keep only links where the jarowinkler distance between the institution naems is below that threshold. 0.02 is conservative
 
 
+
 ```
 
 
@@ -95,7 +96,17 @@ theses <- tbl(con, sql("
                           from pq_unis
                           where location like '%United States%'
                          ) using(university_id)
-                       ) using(goid)")
+                       ) using(goid)
+                       inner join (
+                        select goid, normalizedname as fieldname0_mag
+                        from pq_fields_mag
+                        inner join(
+                          select fieldofstudyid, normalizedname
+                          from fieldsofstudy
+                        ) on (mag_field0 = fieldofstudyid)
+                        where position = 0
+                       ) using(goid)
+                       ")
               )
 
 authors_affiliation <- tbl(con, 
@@ -358,114 +369,58 @@ map(.x = plotvars,
 
 ```
 
+## Fraction of theses with at least 1 supervisor linked to MAG
 
+```{r}
+s_thesis_advisor_link <- theses %>%
+  filter(degree_year %in% 1990:2015) %>%
+  left_join(linked_advisors %>%
+              filter(link_score > min_score_advisors) %>%
+              select(relationship_id) %>%
+              mutate(linked = 1),
+            by = "relationship_id") %>%
+  mutate(linked = ifelse(is.na(linked), 0, linked)) %>%
+  group_by(goid) %>%
+  mutate(any_link = max(linked)) %>%
+  ungroup() %>%
+  filter(!duplicated(goid)) %>%
+  group_by(degree_year, any_link, fieldname0_mag) %>%
+  summarise(n_theses = n(), 
+            .groups = "drop") %>%
+  group_by(degree_year, fieldname0_mag) %>%
+  mutate(s = n_theses / sum(n_theses)) %>%
+  ungroup() %>%
+  filter(any_link == 1)
+```
 
-
-
-## Check overlap of institution names and years 
 
 ```{r}
 
-d_main <- linked_advisors %>%
-  filter(link_score > min_score_advisors) %>%
-  left_join(theses %>%
-              mutate(fullname = paste0(firstname, " ", lastname)) %>%
-              select(relationship_id, degree_year, uni_name, fullname),
-            by = "relationship_id") %>%
-  inner_join(current_links %>%
-               select(author_name, AuthorId),
-             by = "AuthorId") %>%
-  # join on year; filter on max similarity within relationship_id; still need to examine multiple matches (relationship_id) later; compare the years (they may not match if the author moves on but still has advisees at the old place )
-  left_join(authors_affiliation, 
-            by = c("AuthorId")) %>%
-  mutate(dist_uni_name = stringdist(uni_name, affil_name, method = "jw"),
-         dist_year = abs(degree_year - Year)) %>%
-  group_by(relationship_id) %>%
-  filter(dist_uni_name == min(dist_uni_name)) %>%
-  filter(dist_year == min(dist_year)) %>%
-  mutate(nb = n()) %>% # can still have multiple links if e.g. the dissertation is in x, but the affiliation is in x-1 and x+1 at the same institution
-  ungroup() 
-
-d_main <- d_main %>% 
-  filter(!duplicated(relationship_id))
-
-cat("Split of links by whether years are >/<", max_year_diff, "apart")
-table(d_main$dist_year <= max_year_diff)
-
-
-d_main <- d_main %>%
-  filter(dist_year <= max_year_diff & dist_uni_name <= max_uniname_distance)
-
+s_thesis_advisor_link %>% 
+  ggplot(aes(x = degree_year, y = s)) +
+  geom_line() +
+  facet_wrap(~fieldname0_mag) + 
+  scale_x_continuous(breaks = c(1995, 2005, 2015)) + 
+  geom_hline(yintercept = 1, color = "grey55", linetype = "dashed") +
+  labs(y = "Share", title = "Share of US theses with >=1 supervisor linked to MAG",
+       subtitle = "Where >= 1 supervisor reported; by first indicated field0 of thesis.")
 
 ```
+
+### Notes
+
+- Idea: since supervisors tend to be established researchers and publish regularly, we should find a large fraction of supervisors reported in ProQuest in the MAG data.
+
+- The split by field is not exact because the link may have been found using a different reported field0.
+
+- The close to 100% is reassuring of the MAG data quality on affiliations in these fields.
+
+- Fields of concern: physics, sociology, poli science, biology (the level, the break and the trend).
+
+
 
 ## Note: the "usable" links are saved to the db in src/dataprep/main/link/prep_linked_data.py
 
-
-
-
-## Fraction with matched advisor status by cohort of own graduation 
-
-```{r}
-pq_authors <- tbl(con, "pq_authors") %>% collect()
-
-```
-
-
-```{r}
-
-d_agg <- d_main %>%
-  select(AuthorId, relationship_id, degree_year) %>%
-  group_by(AuthorId) %>%
-  filter(degree_year == min(degree_year)) %>%
-  ungroup() %>%
-  rename(year_firstadvisee = degree_year) %>%
-  filter(!duplicated(AuthorId))
-
-```
-
-
-```{r}
-d_links <- current_links %>%
-  left_join(pq_authors %>%
-              select(goid, year_phd = degree_year),
-            by = "goid") %>%
-  left_join(d_agg, by = "AuthorId")
-
-
-```
-
-
-Fraction of authors that eventually becomes advisor
-```{r}
-
-d_links %>%
-  mutate(advisor = ifelse(is.na(year_firstadvisee), 0, 1)) %>%
-  group_by(year_phd) %>%
-  summarise(advisor = mean(advisor),
-            .groups = "drop") %>%
-  ggplot(aes(x = year_phd, y = advisor)) +
-  geom_point() + 
-  geom_line()
-
-```
-
-Duration to advisor
-
-```{r}
-
-d_links %>%
-  filter(!is.na(year_firstadvisee)) %>%
-  mutate(duration = year_firstadvisee - year_phd) %>%
-  group_by(year_phd) %>%
-  summarise(duration = mean(duration),
-            .groups = "drop") %>%
-  ggplot(aes(x = year_phd, y = duration)) +
-  geom_point() + 
-  geom_line()
-
-
-```
 
 
 

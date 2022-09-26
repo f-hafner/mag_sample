@@ -87,8 +87,8 @@ Rscript -e "rmarkdown::render('$script_path/reports/quality_linking.Rmd', output
 # ## Link advisors to MAG
 bash $script_path/link/advisors.sh &> $logfile_path/link_advisors.log
 
-Rscript -e "rmarkdown::render('$script_path/reports/advisor_links_quality_select.Rmd', output_dir = '$output_path')" \
-    &> $logfile_path/advisor_links_quality_select.log
+Rscript -e "rmarkdown::render('$script_path/reports/quality_linking_advisors.Rmd', output_dir = '$output_path')" \
+    &> $logfile_path/quality_linking_advisors.log
 
 # ## Link NSF grants to MAG advisors
 bash $script_path/link/grants.sh $logfile_path
