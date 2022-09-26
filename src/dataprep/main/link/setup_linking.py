@@ -1,4 +1,4 @@
-
+e
 from dataclasses import fields
 import os
 import time
@@ -157,8 +157,7 @@ if field == "all":
     field = all_fields
 else:
     field = [field]
-
-    
+   
 log_level = logging.WARNING
 if args.verbose:
     if args.verbose == 1:
@@ -215,6 +214,8 @@ id_field = read_con.execute(
     tuple(field)
     )
 id_field = [f[0] for f in id_field.fetchall()]
+
+print(f"id_field is {id_field} and will be passed to sql queries.")
 
 # SQL STATEMENTS FOR EXTRACTS
 where_stmt = f"WHERE year >= {args.loadstartyear} and year <= {args.loadendyear} AND length(firstname) > 1"
