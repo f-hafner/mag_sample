@@ -1,0 +1,1395 @@
+/home/flavio/miniconda3/envs/science-career-tempenv/lib/python3.9/site-packages/numpy/core/getlimits.py:500: UserWarning: The value of the smallest subnormal for <class 'numpy.float64'> type is zero.
+  setattr(self, word, getattr(machar, word).flat[0])
+/home/flavio/miniconda3/envs/science-career-tempenv/lib/python3.9/site-packages/numpy/core/getlimits.py:89: UserWarning: The value of the smallest subnormal for <class 'numpy.float64'> type is zero.
+  return self._float_to_str(self.smallest_subnormal)
+/home/flavio/miniconda3/envs/science-career-tempenv/lib/python3.9/site-packages/numpy/core/getlimits.py:500: UserWarning: The value of the smallest subnormal for <class 'numpy.float32'> type is zero.
+  setattr(self, word, getattr(machar, word).flat[0])
+/home/flavio/miniconda3/envs/science-career-tempenv/lib/python3.9/site-packages/numpy/core/getlimits.py:89: UserWarning: The value of the smallest subnormal for <class 'numpy.float32'> type is zero.
+  return self._float_to_str(self.smallest_subnormal)
+Namespace(testing=False, verbose=1, field=['biology'], train_name='flavio_baseline', startyear=1985, endyear=2015, mergemode='1:1', recall=0.9, institution='False', fieldofstudy_cat='False', fieldofstudy_str='False', keywords='True', retrain='True', linking_type='graduates', samplesize=20000)
+Have max 6 cores available
+Testing is False 
+
+finished setup ... 
+Time elapsed: 0.0005763967831929525 minutes 
+
+
+    SELECT goid
+            , year
+            , firstname 
+            , lastname
+            , CASE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                WHEN 
+                    "" THEN NULL 
+                    ELSE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                END AS middlename
+            , fieldofstudy
+            , keywords
+            , institution
+            , coauthors
+            , year_papertitle
+    FROM (
+        SELECT goid
+            , degree_year AS year 
+            , fullname 
+            , SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) AS firstname
+            , REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "") AS lastname 
+            , TRIM(SUBSTR(fullname, length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1)) + 1)) AS middle_lastname 
+            , length(fullname) AS l_fullname 
+            , length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) ) AS l_firstname
+            , length(REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "")) AS l_lastname
+            , fieldname AS fieldofstudy
+            , university_id
+            , degree_year || "//" || thesistitle as year_papertitle 
+        FROM pq_authors 
+        INNER JOIN (
+            SELECT goid, fieldname 
+            FROM pq_fields_mag
+            WHERE mag_field0 IN (?)
+        ) USING (goid)
+    )
+    -- ## NOTE: use left join here as not all graduates have advisor (particularly pre-1980) and possibly also keywords
+    LEFT JOIN (
+        SELECT goid
+            , fields as keywords
+            , advisors as coauthors
+        FROm pq_info_linking
+    ) USING(goid)
+    INNER JOIN (
+        SELECT university_id, normalizedname as institution
+        FROM pq_unis
+        WHERE location like "%United States%"
+    ) USING(university_id)
+    WHERE year >= 1985 and year <= 2015 AND length(firstname) > 1
+     
+
+
+    SELECT f.AuthorId
+        , f.year
+        , f.firstname
+        , f.lastname
+        , CASE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            WHEN 
+                "" THEN NULL 
+                ELSE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            END as middlename 
+            -- ## NOTE this gives "" for middlename when it is missing 
+        , f.fieldofstudy
+        , g.keywords
+        , g.coauthors
+        , g.institution
+        , g.year_papertitle
+    FROM (
+        SELECT a.AuthorId
+            , a.YearFirstPub AS year
+            , a.FirstName AS firstname
+            , REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "") AS lastname 
+                    -- https://stackoverflow.com/questions/21388820/how-to-get-the-last-index-of-a-substring-in-sqlite
+            , TRIM(SUBSTR(b.NormalizedName, length(a.FirstName) + 1)) AS middle_lastname 
+                    -- this gives all except the first name 
+            , length(b.NormalizedName) as l_fullname 
+            , length(a.FirstName) as l_firstname
+            , length(REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "")) as l_lastname
+            , e.NormalizedName AS fieldofstudy
+        FROM author_sample AS a
+        INNER JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM Authors
+        ) AS b USING(AuthorId)
+        INNER JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM author_fields c
+            INNER JOIN (
+                SELECT FieldOfStudyId, NormalizedName
+                FROM FieldsOfStudy
+            ) AS d USING(FieldOfStudyId)
+            -- ## Condition on fieldofstudy being in the level 0 id_field
+            INNER JOIN (
+                SELECT ParentFieldOfStudyId, ChildFieldOfStudyId
+                FROM crosswalk_fields
+                WHERE ParentLevel = 0
+                    AND ParentFieldOfStudyId IN (?)
+            ) AS e ON (e.ChildFieldOfStudyId = c.FieldOfStudyId)
+            WHERE FieldClass = 'first'
+        ) AS e USING(AuthorId)
+    ) f
+    LEFT JOIN (
+        SELECT AuthorId
+                , institutions as institution
+                , main_us_institutions_career
+                , coauthors
+                , keywords
+                , year_papertitle
+        FROM author_info_linking
+    ) AS g USING(AuthorId)
+    WHERE length(firstname) > 1 AND year >= 1985 - 5 AND year <= 2015 + 5 
+        -- ## use this to condition on people that have at least at some point their main affiliation in the US
+        AND g.main_us_institutions_career IS NOT NULL
+        AND g.institution != "chinese academy of sciences"
+     
+
+Time elapsed: 94.35268819729487 minutes 
+
+Starting active labeling...
+firstname : taiguang
+lastname : jin
+middlename : None
+year : 1999
+year_papertitle : ((1999, 'ra gef a novel rap1a guanine nucleotide exchange factor containing a ras rap1a associating domain is conserved between nematode and humans'), (1999, 'the strength of interaction at the raf cysteine rich domain is a critical determinant of response of raf to ras family small gtpases'), (2001, 'ra gef 1 a guanine nucleotide exchange factor for rap1 is activated by translocation induced by association with rap1 gtp and enhances rap1 dependent b raf activation'), (2001, 'role of the cdc25 homology domain of phospholipase ce in amplification of rap1 dependent signaling'), (2004, 'persistent c flip l expression is necessary and sufficient to maintain resistance to tumor necrosis factor related apoptosis inducing ligand mediated apoptosis in prostate cancer'))
+keywords : frozenset({'molecular biology', 'internal medicine', 'cancer research', 'biochemistry', 'cell biology', 'endocrinology'})
+
+firstname : tengchuan
+lastname : jin
+middlename : None
+year : 2008
+year_papertitle : ((2008, 'structural characterization of tumor necrosis factor ligand tl1a and food allergens'),)
+keywords : frozenset({'biochemistry', 'molecular biology'})
+
+0/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished
+firstname : hong
+lastname : zhao
+middlename : None
+year : 2008
+year_papertitle : ((2008, 'recent u s patents on protein drug formulation 2000 2007'), (2010, 'immune response to controlled release of immunomodulating peptides in a murine experimental autoimmune encephalomyelitis eae model'), (2010, 'molecular and functional diversities of cadherin and protocadherin'), (2011, 'enhancement of drug absorption through the blood brain barrier and inhibition of intercellular tight junction resealing by e cadherin peptides'))
+keywords : frozenset({'cell biology', 'pharmacology', 'immunology'})
+
+firstname : wei
+lastname : zhao
+middlename : None
+year : 2009
+year_papertitle : ((2009, 'impact of the innate immune response on mammary epithelia'),)
+keywords : frozenset({'immunology', 'molecular biology'})
+
+0/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : maie
+lastname : john
+middlename : a r st
+year : 1997
+year_papertitle : ((1997, 'understanding human cancer in a fly'), (1999, 'human homologue of the drosophila melanogaster lats tumour suppressor modulates cdc2 activity'), (1999, 'mice deficient of lats1 develop soft tissue sarcomas ovarian tumours and pituitary dysfunction'), (1999, 'the role of lats in cell cycle regulation and tumorigenesis'))
+keywords : frozenset({'molecular biology', 'library science', 'cancer research', 'cell biology', 'bioinformatics'})
+
+firstname : maie
+lastname : john
+middlename : a r st
+year : 1998
+year_papertitle : ((1998, 'the role oflats in mammalian tumorigenesis development and cell cycle regulation'),)
+keywords : frozenset({'genetics', 'cellular biology', 'oncology'})
+
+0/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ana
+lastname : zeri
+middlename : carolina de mattos
+year : 1999
+year_papertitle : ((1999, 'solid state nmr triple resonance backbone assignments in a protein'), (2001, 'sensitivity enhanced nmr of biological solids dynamic nuclear polarization of y21m fd bacteriophage and purple membrane'), (2002, 'deuterium hydrogen exchange factors measured by solution nuclear magnetic resonance spectroscopy as indicators of the structure and topology of membrane proteins'), (2003, 'structure of the coat protein in fd filamentous bacteriophage particles'), (2003, 'structure of the coat protein in fd filamentous bacteriophage particles determined by solid state nmr spectroscopy'))
+keywords : frozenset({'analytical chemistry', 'crystallography', 'biophysics', 'topology'})
+
+firstname : ana
+lastname : zeri
+middlename : carolina de mattos
+year : 2003
+year_papertitle : ((2003, 'solid state nuclear magnetic resonance studies of the major coat protein from the filamentous bacteriophage fd'),)
+keywords : frozenset({'biophysics', 'biochemistry'})
+
+1/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : sarah
+lastname : lee
+middlename : emerson
+year : 2010
+year_papertitle : ((2010, 'rgs14 is a natural suppressor of both synaptic plasticity in ca2 neurons and hippocampal based learning and memory'), (2011, 'rgs14 at the interface of hippocampal signaling and synaptic plasticity'))
+keywords : frozenset({'cell biology', 'neuroscience'})
+
+firstname : sarah
+lastname : lee
+middlename : emerson
+year : 2012
+year_papertitle : ((2012, 'the role of rgs14 in learning memory and synaptic plasticity'),)
+keywords : frozenset({'pharmacology', 'neurosciences', 'molecular biology'})
+
+2/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : min
+lastname : kim
+middlename : gab
+year : 2005
+year_papertitle : ((2005, 'two pseudomonas syringae type iii effectors inhibit rin4 regulated basal defense in arabidopsis'), (2007, 'layered basal defenses underlie non host resistance of arabidopsis to pseudomonas syringae pv phaseolicola'), (2008, 'measuring cell wall based defenses and their effect on bacterial growth in arabidopsis'), (2009, 'the pseudomonas syringae type iii effector avrrpm1 induces significant defenses by activating the arabidopsis nucleotide binding leucine rich repeat protein rps2'))
+keywords : frozenset({'genetics', 'cell biology', 'microbiology', 'botany'})
+
+firstname : min
+lastname : kim
+middlename : gab
+year : 2006
+year_papertitle : ((2006, 'the molecular battle between virulence weapons of i pseudomonas syringae i and integrated defense responses of i arabidopsis thaliana i'),)
+keywords : frozenset({'plant pathology', 'molecular biology'})
+
+3/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : shabana
+lastname : din
+middlename : None
+year : 2008
+year_papertitle : ((2008, 'pim 1 kinase antagonizes aspects of myocardial hypertrophy and compensation to pathological pressure overload'), (2009, 'enhancement of myocardial regeneration through genetic engineering of cardiac progenitor cells expressing pim 1 kinase'), (2010, 'abstract 18407 nucleolar stress is an early response to stress in cardiac cells role of the nucleolar proteins nucleostemin and nucleophosmin'), (2010, 'pim 1 kinase protects mitochondrial integrity in cardiomyocytes'), (2011, 'nucleolar stress is an early response to myocardial damage involving nucleolar proteins nucleostemin and nucleophosmin'))
+keywords : frozenset({'molecular biology', 'internal medicine', 'cancer research', 'cell biology', 'endocrinology', 'immunology'})
+
+firstname : shabana
+lastname : din
+middlename : naz
+year : 2014
+year_papertitle : ((2014, 'the effect of pim kinases upon mitochondrial dynamics and metabolism'),)
+keywords : frozenset({'cellular biology', 'molecular biology'})
+
+4/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : steven
+lastname : podos
+middlename : d
+year : 2006
+year_papertitle : ((2006, 'biological evaluation of isothiazoloquinolones containing aromatic heterocycles at the 7 position in vitro activity of a series of potent antibacterial agents that are effective against methicillin resistant staphylococcus aureus'), (2006, 'isothiazoloquinolones containing functionalized aromatic hydrocarbons at the 7 position synthesis and in vitro activity of a series of potent antibacterial agents with diminished cytotoxicity in human cells'), (2007, 'in vitro and in vivo antibacterial activities of heteroaryl isothiazolones against resistant gram positive pathogens'), (2007, 'isothiazoloquinolones with enhanced antistaphylococcal activities against multidrug resistant strains effects of structural modifications at the 6 7 and 8 positions'), (2007, 'small molecule inhibitors of e coli primase a novel bacterial target'))
+keywords : frozenset({'microbiology', 'stereochemistry', 'biochemistry'})
+
+firstname : steven
+lastname : podos
+middlename : d
+year : 1995
+year_papertitle : ((1995, 'ldlc encodes a peripheral golgi protein required for normal golgi function'),)
+keywords : frozenset({'cellular biology'})
+
+5/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : hong
+lastname : xiang
+middlename : None
+year : 2012
+year_papertitle : ((2012, 'preclinical pharmacokinetics of mehd7945a a novel egfr her3 dual action antibody and prediction of its human pharmacokinetics and efficacious clinical dose'), (2013, 'development and preclinical characterization of a humanized antibody targeting cxcl12'))
+keywords : frozenset({'pharmacology', 'molecular biology', 'cancer research'})
+
+firstname : hong
+lastname : xiang
+middlename : None
+year : 1998
+year_papertitle : ((1998, 'catalysis mechanism and origin of 4 chlorobenzoyl coenzyme a dehalogenase'),)
+keywords : frozenset({'biochemistry'})
+
+5/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : divya
+lastname : patel
+middlename : None
+year : 2020
+year_papertitle : ((2020, 'mapping cortical integration of sensory and affective pain pathways'), (2021, 'recent applications of virtual reality for the management of pain in burn and pediatric patients'), (2021, 'responses to social evaluative stress in regular cannabis smokers'))
+keywords : frozenset({'clinical psychology', 'intensive care medicine', 'neuroscience'})
+
+firstname : divya
+lastname : patel
+middlename : agrawal
+year : 2003
+year_papertitle : ((2003, 'epidemiologic challenges in studying sexual behavior and recurrent vulvovaginal candidiasis'),)
+keywords : frozenset({'gynecology', 'public health', 'microbiology', 'obstetrics'})
+
+5/10 positive, 3/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : sean
+lastname : cahoon
+middlename : m p
+year : 2012
+year_papertitle : ((2012, 'interactions among shrub cover and the soil microclimate may determine future arctic carbon budgets'), (2012, 'large herbivores limit co2 uptake and suppress carbon cycle responses to warming in west greenland'), (2016, 'carbon and water relations of contrasting arctic plants implications for shrub expansion in west greenland'), (2016, 'greater abundance of betula nana and early onset of the growing season increase ecosystem co2 uptake in west greenland'), (2016, 'limited variation in proportional contributions of auto and heterotrophic soil respiration despite large differences in vegetation structure and function in the low arctic'))
+keywords : frozenset({'ecology', 'botany'})
+
+firstname : sean
+lastname : cahoon
+middlename : m p
+year : 2015
+year_papertitle : ((2015, 'the biophysical drivers and carbon climate feedbacks of shrub expansion in the arctic'),)
+keywords : frozenset({'ecology', 'climate change'})
+
+5/10 positive, 4/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : katrina
+lastname : waters
+middlename : m
+year : 1994
+year_papertitle : ((1994, 'insulin and dietary fructose induce stearoyl coa desaturase 1 gene expression of diabetic mice'), (1996, 'polyunsaturated fatty acids inhibit hepatic stearoyl coa desaturase 1 gene in diabetic mice'), (1997, 'localization of a negative thyroid hormone response region in hepatic stearoyl coa desaturase gene 1'), (1997, 'localization of a polyunsaturated fatty acid response region in stearoyl coa desaturase gene 1'), (1997, 'regulation of hepatic stearoyl coa desaturase gene 1 by vitamin a'))
+keywords : frozenset({'molecular biology', 'endocrinology', 'internal medicine', 'biochemistry'})
+
+firstname : katrina
+lastname : waters
+middlename : marie
+year : 1996
+year_papertitle : ((1996, 'regulation of stearoyl coa desaturase gene 1 by dietary and hormonal factors'),)
+keywords : frozenset({'genetics', 'nutrition', 'biochemistry'})
+
+6/10 positive, 4/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jeanette
+lastname : rasmussen
+middlename : l
+year : 1985
+year_papertitle : ((1985, 'genetics of clindamycin resistance in bacteroides'), (1987, 'extrachromosomal systems and gene transmission in anaerobic bacteria'))
+keywords : frozenset({'genetics', 'microbiology'})
+
+firstname : jeanette
+lastname : rasmussen
+middlename : louise
+year : 1985
+year_papertitle : ((1985, 'the molecular organization of a bacteroides fragilis mls resistance determinant insertion sequence transposable element'),)
+keywords : frozenset({'microbiology'})
+
+7/10 positive, 4/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : gregory
+lastname : prete
+middlename : q del
+year : 2007
+year_papertitle : ((2007, 'ampk mediated inhibition of mtor kinase is circumvented during immediate early times of human cytomegalovirus infection'), (2009, 'characterization of a human immunodeficiency virus type 1 v3 deletion mutation that confers resistance to ccr5 inhibitors and the ability to use aplaviroc bound receptor'), (2009, 'derivation and characterization of a simian immunodeficiency virus sivmac239 variant with tropism for cxcr4'), (2010, 'distinct molecular pathways to x4 tropism for a v3 truncated human immunodeficiency virus type 1 lead to differential coreceptor interactions and sensitivity to a cxcr4 antagonist'), (2011, 'tcr triggering transcriptionally downregulates ccr5 expression on rhesus macaque cd4 t cells with no measurable effect on susceptibility to siv infection'))
+keywords : frozenset({'genetics', 'cell biology', 'virology', 'biochemistry'})
+
+firstname : gregory
+lastname : prete
+middlename : q del
+year : 2009
+year_papertitle : ((2009, 'gaining cxcr4 utilization for hiv and siv mechanisms and consequences'),)
+keywords : frozenset({'virology', 'molecular biology'})
+
+8/10 positive, 4/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : robert
+lastname : pelz
+middlename : k
+year : 2002
+year_papertitle : ((2002, 'enteral fluconazole is well absorbed in critically ill surgical patients'), (2006, 'the association between anatomic site of candida colonization invasive candidiasis and mortality in critically ill surgical patients'), (2007, 'the association between anatomic site of candida colonizaton invasive candidiasis and mortality in critically ill surgical patients diagnostic microbiology and infectious disease 55 293 301 2006'))
+keywords : frozenset({'general surgery', 'gastroenterology', 'intensive care medicine', 'internal medicine', 'microbiology', 'surgery'})
+
+firstname : robert
+lastname : pelz
+middlename : kellogg
+year : 2000
+year_papertitle : ((2000, 'nosocomial candida infections in high risk critically ill patients diagnosis cost and prevention'),)
+keywords : frozenset({'pharmaceuticals', 'microbiology', 'surgery'})
+
+9/10 positive, 4/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jonathan
+lastname : moore
+middlename : w
+year : 2015
+year_papertitle : ((2015, 'effect of variation in forest harvest intensity on winter occupancy of barred owls and eastern screech owls in deciduous forests of the east central united states'), (2017, 'do american golden plovers pluvialis dominica avoid wind energy turbines in agricultural fields in indiana during spring migration'))
+keywords : frozenset({'fishery', 'forestry'})
+
+firstname : jonathan
+lastname : moore
+middlename : c
+year : 2009
+year_papertitle : ((2009, 'metabolic engineering of escherichia coli atcc 8739 for production of bioelectricity'),)
+keywords : frozenset({'alternative energy', 'microbiology'})
+
+10/10 positive, 4/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : juan
+lastname : garay
+middlename : antonio raygoza
+year : 2013
+year_papertitle : ((2013, 'stochastic expression and epigenetic memory at the yeast ho promoter'), (2013, 'the taxonomic name resolution service an online tool for automated standardization of plant names'), (2014, 'complete genome sequence and adherence characteristics of escherichia coli o157 h7 isolated from super shedder cattle'), (2014, 'complete genome sequence of mycobacterium avium subsp paratuberculosis isolated from human breast milk'), (2015, 'comparative analysis of super shedder strains of escherichia coli o157 h7 reveals distinctive genomic features and a strongly aggregative adherent phenotype on bovine rectoanal junction squamous epithelial cells'))
+keywords : frozenset({'information retrieval', 'genetics', 'microbiology', 'veterinary medicine', 'database'})
+
+firstname : juan
+lastname : gabayet
+middlename : antonio rull
+year : 2001
+year_papertitle : ((2001, 'towards development of optimal trap deployment strategies for apple maggot fly diptera tephritidae behavioral control'),)
+keywords : frozenset({'entomology', 'agronomy'})
+
+10/10 positive, 5/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : matthew
+lastname : lafevor
+middlename : c
+year : 2010
+year_papertitle : ((2010, 'cartographic encounters indigenous people and the exploration of the new world review'), (2012, 'building a colonial resource monopoly the expansion of sulphur mining in new spain 1600 1820'), (2012, 'sulphur mining on mexico s popocatepetl volcano 1820 1920 origins development and human environmental challenges'), (2013, 'a new longitudinal approach to assess hydrologic connectivity embanked floodplain inundation along the lower mississippi river'), (2014, 'a land between waters environmental histories of modern mexico'))
+keywords : frozenset({'economy', 'anthropology', 'hydrology', 'archaeology', 'political economy'})
+
+firstname : matthew
+lastname : lafave
+middlename : c
+year : 2011
+year_papertitle : ((2011, 'detection and analysis of common fragile sites in i drosophila melanogaster i'),)
+keywords : frozenset({'genetics', 'molecular biology'})
+
+10/10 positive, 6/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jiang
+lastname : hu
+middlename : None
+year : 2004
+year_papertitle : ((2004, 'cartilage derived morphogenetic protein 1 promotes the differentiation of mesenchymal stem cells into chondrocytes'), (2005, 'flow cytometry analysis and differentiation study of selected nestin positive cells'), (2005, 'monoclonal side population progenitors isolated from human fetal pancreas'), (2005, 'monoclonal sp cells derived from human fetal pancreas have phenotypic markers identical to mesenchymal stem cells'), (2005, 'nestin positive progenitor cells isolated from human fetal pancreas have phenotypic markers identical to mesenchymal stem cells'))
+keywords : frozenset({'molecular biology', 'gynecology', 'pathology', 'internal medicine', 'cell biology', 'endocrinology', 'anatomy', 'immunology'})
+
+firstname : qianghua
+lastname : hu
+middlename : None
+year : 2006
+year_papertitle : ((2006, 'role of the ccaat binding protein cbf in cell cycle regulation'),)
+keywords : frozenset({'cellular biology', 'molecular biology'})
+
+10/10 positive, 7/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jianjun
+lastname : sun
+middlename : None
+year : 2005
+year_papertitle : ((2005, 'notch dependent downregulation of the homeodomain gene cut is required for the mitotic cycle endocycle switch and cell differentiation in drosophila follicle cells'), (2006, 'construction of human breast carcinoma cell line transfected with ox40l and its costimulatory effect on t cells'), (2007, 'developmental regulation of the cell cycle transition from genomic to site specific dna replication in drosophila'), (2007, 'hindsight mediates the role of notch in suppressing hedgehog signaling and cell proliferation'), (2008, 'regulation of the endocycle gene amplification switch by notch and ecdysone signaling'))
+keywords : frozenset({'genetics', 'cell biology', 'molecular biology'})
+
+firstname : jia
+lastname : sun
+middlename : None
+year : 2012
+year_papertitle : ((2012, 'biochemical and structural analyses of budding yeast telomere associated cst complex'),)
+keywords : frozenset({'biochemistry'})
+
+10/10 positive, 8/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jianxin
+lastname : xie
+middlename : None
+year : 2008
+year_papertitle : ((2008, 'discovery of tbc1d1 as an insulin aicar and contraction stimulated signaling nexus in mouse skeletal muscle'), (2009, 'tyrosine phosphorylation inhibits pkm2 to promote the warburg effect and tumor growth'), (2010, 'a stress responsive system for mitochondrial protein degradation'), (2010, 'abstract 34 oncogenic tyrosine kinases phosphorylate and inhibit pkm2 to provide a metabolic advantage to tumor growth'), (2010, 'identification of a novel phosphorylation site on tbc1d4 regulated by amp activated protein kinase in skeletal muscle'))
+keywords : frozenset({'internal medicine', 'cancer research', 'biochemistry', 'cell biology', 'endocrinology'})
+
+firstname : jian
+lastname : xie
+middlename : None
+year : 2015
+year_papertitle : ((2015, 'structural and mechanistic studies of hedgehog autoprocessing'),)
+keywords : frozenset({'biophysics', 'biochemistry'})
+
+10/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : chang
+lastname : liu
+middlename : None
+year : 2014
+year_papertitle : ((2014, 'evolution of the bbaa component of bread wheat during its history at the allohexaploid level'), (2015, 'genetic and epigenetic modifications to the bbaa component of common wheat during its evolutionary history at the hexaploid level'))
+keywords : frozenset({'genetics', 'botany'})
+
+firstname : chang
+lastname : liu
+middlename : None
+year : 2015
+year_papertitle : ((2015, 'lineage specification of ovarian theca cells requires multi cellular interactions via oocyte and granulosa cells'),)
+keywords : frozenset({'developmental biology', 'animal sciences'})
+
+10/10 positive, 10/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ning
+lastname : li
+middlename : None
+year : 2013
+year_papertitle : ((2013, 'combined subchronic toxicity of bisphenol a and dibutyl phthalate on male rats'), (2013, 'prevalence and risk assessment of campylobacter jejuni in chicken in china'), (2014, 'immunotoxicity of acrylamide in female balb c mice'), (2015, 'analysis of antimicrobial resistance results of vibrio parahaemolyticus isolated from shellfish and its habitat in 2013'), (2015, 'analysis on 2011 quality control results on aerobic plate count of microbiology laboratories in china'))
+keywords : frozenset({'chromatography', 'environmental health', 'internal medicine', 'fishery', 'microbiology', 'veterinary medicine', 'endocrinology', 'immunology'})
+
+firstname : ning
+lastname : li
+middlename : None
+year : 1996
+year_papertitle : ((1996, 'synthesis and characterization of rhodium 105 labeled thiamacrocycles for use to formulate peptide receptor agents'),)
+keywords : frozenset({'radiology', 'surgery', 'biochemistry'})
+
+10/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ming
+lastname : li
+middlename : None
+year : 2001
+year_papertitle : ((2001, 'agilent 2100 bioanalyzer for restriction fragment length polymorphism analysis of the campylobacter jejuni flagellin gene'), (2002, 'campylobacter jejuni from patients with guillain barre syndrome preferentially expresses a gd1a like epitope'), (2002, 'increasing fluoroquinolone resistance in campylobacter jejuni pennsylvania usa 1982 2001'))
+keywords : frozenset({'genetics', 'virology', 'microbiology', 'molecular biology'})
+
+firstname : ming
+lastname : li
+middlename : None
+year : 2006
+year_papertitle : ((2006, 'statistical models of sequencing error and algorithms of polymorphism detection'),)
+keywords : frozenset({'bioinformatics', 'mathematics', 'molecular biology'})
+
+10/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : wm
+lastname : smith
+middlename : leo
+year : 2003
+year_papertitle : ((2003, 'the evolution of the laterophysic connection with a revised phylogeny and taxonomy of butterflyfishes teleostei chaetodontidae'), (2004, 'phylogeny and biogeography of cichlid fishes teleostei perciformes cichlidae'), (2004, 'polyphyly of the mail cheeked fishes teleostei scorpaeniformes evidence from mitochondrial and nuclear sequence data'), (2005, 'freshwater fishes dispersal ability and nonevidence gondwana life rafts to the rescue'), (2007, 'gobius lagocephalus pallas 1770 currently sicyopterus lagocephalus osteichthyes teleostei gobiidae proposed suppression of the specific name'))
+keywords : frozenset({'genealogy', 'genetics', 'fishery', 'ecology', 'evolutionary biology', 'zoology'})
+
+firstname : william
+lastname : smith
+middlename : leo
+year : 2005
+year_papertitle : ((2005, 'the limits and relationships of mail cheeked fishes teleostei percomorpha and the evolution of venom in fishes'),)
+keywords : frozenset({'zoology'})
+
+10/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : bo
+lastname : li
+middlename : None
+year : 2006
+year_papertitle : ((2006, 'inhibition of m mulv reverse transcriptase activity by fullerene derivatives'), (2007, 'inhibition of a thermophilic deoxyribonucleic acid polymerase by fullerene derivatives'), (2007, 'inhibition of dna restrictive endonucleases and taq dna polymerase by trimalonic acid c60'), (2008, 'analysis of biomarkers for the cross linkage of formaldehyde with bovine serum albumin peptides'), (2008, 'inhibition of in vitro amplification of targeted dna fragment and activity of exonuclease i by a fullerene oligonucleotide conjugate'))
+keywords : frozenset({'chromatography', 'molecular biology', 'biochemistry'})
+
+firstname : bo
+lastname : li
+middlename : None
+year : 2009
+year_papertitle : ((2009, 'mechanistic studies of lantibiotic biosynthetic enzymes and discovery of novel lanthionine containing peptides'),)
+keywords : frozenset({'biochemistry'})
+
+11/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : max
+lastname : kurz
+middlename : j
+year : 2012
+year_papertitle : ((2012, 'stride time variability and sensorimotor cortical activation during walking'), (2014, 'aberrant synchrony in the somatosensory cortices predicts motor performance errors in children with cerebral palsy'), (2014, 'an fnirs exploratory investigation of the cortical activity during gait in children with spastic diplegic cerebral palsy'), (2014, 'neurophysiological abnormalities in the sensorimotor cortices during the motor planning and movement execution stages of children with cerebral palsy'), (2015, 'the magnitude of the somatosensory cortical activity is related to the mobility and strength impairments seen in children with cerebral palsy'))
+keywords : frozenset({'physical medicine and rehabilitation', 'audiology', 'neuroscience'})
+
+firstname : marie
+lastname : kurz
+middlename : juliette
+year : 2013
+year_papertitle : ((2013, 'biogeochemical and hydrologic controls on solute sources and cycling in a biologically productive karst river'),)
+keywords : frozenset({'ecology', 'hydrologic sciences', 'biogeochemistry'})
+
+11/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ju
+lastname : lee
+middlename : hyung
+year : 2009
+year_papertitle : ((2009, 'commensalism or mutualism conditional outcomes in a branchiobdellid crayfish symbiosis'),)
+keywords : frozenset({'ecology'})
+
+firstname : joon
+lastname : lee
+middlename : hyung
+year : 2011
+year_papertitle : ((2011, 'role of nfkappab associated factors in t cell development and function'),)
+keywords : frozenset({'biology', 'immunology', 'molecular biology'})
+
+11/10 positive, 14/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : yan
+lastname : luo
+middlename : None
+year : 2016
+year_papertitle : ((2016, 'transcriptome dataset of halophyte beach morning glory a close wild relative of sweet potato'), (2017, 'comparative rna seq analysis uncovers a complex regulatory network for soybean cyst nematode resistance in wild soybean glycine soja'), (2017, 'salt tolerance response revealed by rna seq in a diploid halophytic wild relative of sweet potato'))
+keywords : frozenset({'genetics', 'biochemistry', 'botany', 'agronomy'})
+
+firstname : yan
+lastname : luo
+middlename : None
+year : 1990
+year_papertitle : ((1990, 'identification purification and functional analysis of ecdysterone receptor from drosophila melanogaster'),)
+keywords : frozenset({'molecular biology', 'biochemistry'})
+
+11/10 positive, 15/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : xavier
+lastname : jeu
+middlename : de mollerat du
+year : 2013
+year_papertitle : ((2013, 'lipid induced toxicity stimulates hepatocytes to release angiogenic microparticles that require vanin 1 for uptake by endothelial cells'), (2016, '462 serum free clinical grade large scale lentiviral production system for gene therapy application'), (2016, 'improved delivery of cas9 protein grna complexes using lipofectamine crisprmax'), (2016, 'liver bid suppression for treatment of fibrosis associated with non alcoholic steatohepatitis'), (2017, 'optimization of gene editing in human primary t cells with neon transfection system'))
+keywords : frozenset({'pharmacology', 'molecular biology', 'biochemistry', 'cell biology', 'computational biology', 'virology', 'immunology'})
+
+firstname : xavier
+lastname : jeu
+middlename : jacques de mollerat du
+year : 2002
+year_papertitle : ((2002, 'molecular analysis of the genes involved in split hand split foot malformation linked to the chromosome 3q27 shfm4 and the chromosome 10q24 shfm3'),)
+keywords : frozenset({'genetics'})
+
+11/10 positive, 16/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : dong
+lastname : yan
+middlename : None
+year : 1996
+year_papertitle : ((1996, 'invariant u2 rna sequences bordering the branchpoint recognition region are essential for interaction with yeast sf3a and sf3b subunits'), (1998, 'cus2 a yeast homolog of human tat sf1 rescues function of misfolded u2 through an unusual rna recognition motif'))
+keywords : frozenset({'genetics', 'cell biology', 'molecular biology'})
+
+firstname : dong
+lastname : yan
+middlename : None
+year : 2002
+year_papertitle : ((2002, 'the structural features of the ligand binding site of the serotonin type 3 receptor'),)
+keywords : frozenset({'neurology', 'molecular biology'})
+
+11/10 positive, 17/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : william
+lastname : coleman
+middlename : l
+year : 2004
+year_papertitle : ((2004, 'regulation of transmitter release by synapsin ii in mouse motor terminals'), (2007, 'rab3a deletion reduces vesicle docking and transmitter release at the mouse diaphragm synapse'), (2008, 'synapsin ii and calcium regulate vesicle docking and the cross talk between vesicle pools at the mouse motor terminals'), (2009, 'rab3a mediated vesicle recruitment regulates short term plasticity at the mouse diaphragm synapse'), (2009, 'synapsin i accelerates the kinetics of neurotransmitter release in mouse motor terminals'))
+keywords : frozenset({'cell biology', 'neuroscience', 'biophysics', 'biochemistry'})
+
+firstname : william
+lastname : coleman
+middlename : joseph
+year : 1987
+year_papertitle : ((1987, 'the mechanism of chloride activation of oxygen evolution in spinach photosystem ii'),)
+keywords : frozenset({'biochemistry'})
+
+11/10 positive, 17/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : theresa
+lastname : nguyen
+middlename : None
+year : 2004
+year_papertitle : ((2004, 'discovery and characterization of novel small molecule inhibitors of human cdc25b dual specificity phosphatase'), (2004, 'synthesis and biological evaluation of caulibugulones a e'), (2005, 'redox regulation of cdc25b by cell active quinolinediones'), (2005, 'redox regulation of cdc25b by novel cell active quinolinediones'), (2007, 'independent mechanistic inhibition of cdc25 phosphatases by a natural product caulibugulone'))
+keywords : frozenset({'cell biology', 'combinatorial chemistry', 'organic chemistry', 'biochemistry'})
+
+firstname : theresa
+lastname : nguyen
+middlename : v
+year : 2006
+year_papertitle : ((2006, 'dipeptide uptake enhances the absorption of 3 substituted gaba derivatives by trans stimulation of amino acid exchangers'),)
+keywords : frozenset({'cellular biology', 'pharmacology'})
+
+11/10 positive, 18/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : steve
+lastname : keller
+middlename : None
+year : 2015
+year_papertitle : ((2015, 'recommendations for adaptation and validation of commercial kits for biomarker quantification in drug development'), (2016, 'recommendations for use and fit for purpose validation of biomarker multiplex ligand binding assays in drug development'), (2018, 'biomarker assays is it time for a standalone regulatory guidance'))
+keywords : frozenset({'biochemical engineering', 'computational biology', 'nanotechnology', 'risk analysis'})
+
+firstname : steve
+lastname : keller
+middlename : harry
+year : 1993
+year_papertitle : ((1993, 'molecules in sea urchin egg jelly involved in the induction of the sperm acrosome reaction'),)
+keywords : frozenset({'cellular biology', 'biochemistry'})
+
+11/10 positive, 18/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : lionel
+lastname : feigenbaum
+middlename : None
+year : 1992
+year_papertitle : ((1992, 'jc virus and simian virus 40 enhancers and transforming proteins role in determining tissue specificity and pathogenicity in transgenic mice'), (1995, 'epigenetic modulation of tumor suppressor genes in the development of cancer'))
+keywords : frozenset({'virology', 'cancer research'})
+
+firstname : lionel
+lastname : feigenbaum
+middlename : None
+year : 1989
+year_papertitle : ((1989, 'the human jc virus gene expression and pathogenesis'),)
+keywords : frozenset({'molecular biology'})
+
+11/10 positive, 19/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jun
+lastname : zhang
+middlename : None
+year : 2007
+year_papertitle : ((2007, 'nitrogen deficiency and recovery in sustainable corn production as revealed by leaf chlorophyll measurements'), (2008, 'differences in physiological age affect diagnosis of nitrogen deficiencies in cornfields'), (2008, 'fertilizer induced advances in corn growth stage and quantitative definitions of nitrogen deficiencies'), (2008, 'luxury production of leaf chlorophyll and mid season recovery from nitrogen deficiencies in corn'), (2008, 'sensitivity of chlorophyll meters for diagnosing nitrogen deficiencies of corn in production agriculture'))
+keywords : frozenset({'botany', 'agronomy'})
+
+firstname : jun
+lastname : zhang
+middlename : None
+year : 1998
+year_papertitle : ((1998, 'molecular genetic studies of autosomal dominant heart defects'),)
+keywords : frozenset({'genetics', 'pathology', 'molecular biology'})
+
+12/10 positive, 19/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : leilei
+lastname : wang
+middlename : None
+year : 2011
+year_papertitle : ((2011, 'curcumin inhibits neuronal and vascular degeneration in retina after ischemia and reperfusion injury'), (2012, 'elevated histone acetylations in muller cell contribute to inflammation a novel inhibitory effect of minocycline'), (2012, 'endoplasmic reticulum stress in retinal vascular degeneration protective role of resveratrol'), (2012, 'inhibition of poly adp ribose polymerase inhibits ischemia reperfusion induced neurodegeneration in retina via suppression of endoplasmic reticulum stress'), (2013, 'curcumin a potential therapeutic candidate for retinal diseases'))
+keywords : frozenset({'pharmacology', 'molecular biology', 'pathology', 'internal medicine', 'biochemistry', 'endocrinology'})
+
+firstname : lei
+lastname : wang
+middlename : None
+year : 2015
+year_papertitle : ((2015, 'retinoids potentiate clinically relevant cellular responses through rarα rxr nuclear receptor synergism in cutaneous t cell lymphoma'),)
+keywords : frozenset({'cellular biology', 'molecular biology'})
+
+12/10 positive, 20/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : dae
+lastname : kim
+middlename : hoon
+year : 1995
+year_papertitle : ((1995, 'immunologic diagnosis and monitoring of cervical cancers using in vitro translated hpv proteins'), (1997, 'a new cell line from human undifferentiated carcinoma of the ovary establishment and characterization'), (1998, 'absence ofp15ink4bandp16ink4agene alterations in primary cervical carcinoma tissues and cell lines with human papillomavirus infection'))
+keywords : frozenset({'gastroenterology', 'molecular biology', 'pathology', 'internal medicine', 'cancer research', 'endocrinology'})
+
+firstname : do
+lastname : kim
+middlename : hoon
+year : 1994
+year_papertitle : ((1994, 'the growth and disease mitigating activity of fluorescent pseudomonad isolates under modified soil atmospheres'),)
+keywords : frozenset({'plant pathology'})
+
+12/10 positive, 21/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : tin
+lastname : nguyen
+middlename : quang
+year : 2013
+year_papertitle : ((2013, 'gabaa receptors implicated in rem sleep control express a benzodiazepine binding site'), (2014, 'inhibitory and excitatory amino acid neurotransmitters are utilized by the projection from the dorsal deep mesencephalic nucleus to the sublaterodorsal nucleus rem sleep induction zone'))
+keywords : frozenset({'cell biology', 'endocrinology', 'internal medicine', 'neuroscience'})
+
+firstname : lynda
+lastname : nguyen
+middlename : quang
+year : 2000
+year_papertitle : ((2000, 'the molecular basis of thyroid follicular cell regulation and function'),)
+keywords : frozenset({'cellular biology', 'molecular biology'})
+
+12/10 positive, 22/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : thanhthanh
+lastname : nguyen
+middlename : None
+year : 2018
+year_papertitle : ((2018, 'bacillus thuringiensis cry5b protein as a new pan hookworm cure'), (2018, 'in vivo and in vitro studies of cry5b and nicotinic acetylcholine receptor agonist anthelmintics reveal a powerful and unique combination therapy against intestinal nematode parasites'), (2020, 'anthelmintic activity of yeast particle encapsulated terpenes'))
+keywords : frozenset({'veterinary medicine', 'pharmacology', 'microbiology'})
+
+firstname : thanh
+lastname : nguyen
+middlename : viet
+year : 2001
+year_papertitle : ((2001, 'identification and characterization of i mb2 i a gene encoding a novel surface antigen of the human malaria parasite i plasmodium falciparum i'),)
+keywords : frozenset({'molecular biology'})
+
+12/10 positive, 23/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : li
+lastname : wang
+middlename : None
+year : 2013
+year_papertitle : ((2013, 'sad a kinase controls islet β cell size and function as a mediator of mtorc1 signaling'), (2015, 'alcat1 controls mitochondrial etiology of fatty liver diseases linking defective mitophagy to steatosis'))
+keywords : frozenset({'cell biology', 'biochemistry'})
+
+firstname : liheng
+lastname : wang
+middlename : None
+year : 2015
+year_papertitle : ((2015, 'investigations of the neuro molecular physiology of obesity using hypothalamic neurons derived from human pluripotent stem cells'),)
+keywords : frozenset({'biology', 'nutrition', 'molecular biology'})
+
+12/10 positive, 24/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : sun
+lastname : oh
+middlename : young
+year : 2010
+year_papertitle : ((2010, 'roles for the type iii tgf β receptor in human cancer'), (2013, 'the type iii tgfβ receptor regulates filopodia formation via a cdc42 mediated irsp53 n wasp interaction in epithelial cells'), (2014, 'the balance of cell surface and soluble type iii tgf β receptor regulates bmp signaling in normal and cancerous mammary epithelial cells'))
+keywords : frozenset({'cell biology', 'endocrinology', 'internal medicine', 'cancer research'})
+
+firstname : sungwhan
+lastname : oh
+middlename : None
+year : 2009
+year_papertitle : ((2009, 'life of resolvins synthesis bioactions and metabolic inactivation of novel anti inflammatory and pro resolving mediators'),)
+keywords : frozenset({'pharmacology', 'immunology', 'biochemistry'})
+
+12/10 positive, 25/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : sanjai
+lastname : kumar
+middlename : None
+year : 2012
+year_papertitle : ((2012, 'multiplex multi antigen multi species microsphere based elisa to detect antibodies to three human plasmodium species'), (2017, 'a novel gametocyte biomarker for superior molecular detection of the plasmodium falciparum infectious reservoirs'))
+keywords : frozenset({'virology'})
+
+firstname : sanjay
+lastname : kumar
+middlename : None
+year : 2003
+year_papertitle : ((2003, 'molecular mechanisms of organization in the neurofilament cytoskeleton'),)
+keywords : frozenset({'biomedical research', 'neurology', 'biophysics', 'biochemistry'})
+
+12/10 positive, 26/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : in
+lastname : lee
+middlename : hyung
+year : 1999
+year_papertitle : ((1999, 'microscopic analysis of neurospora ropy mutants defective in nuclear distribution'), (1999, 'neurospora crassa ro 10 and ro 11 genes encode novel proteins required for nuclear distribution'), (2000, 'a neurospora crassa arp1 mutation affecting cytoplasmic dynein and dynactin localization'), (2000, 'cytoplasmic dynein atpase activity is regulated by dynactin dependent phosphorylation'), (2000, 'two approaches to isolate cytoplasmic dynein atpase from neurospora crassa'))
+keywords : frozenset({'genetics', 'cell biology'})
+
+firstname : il
+lastname : lee
+middlename : hyung
+year : 2012
+year_papertitle : ((2012, 'molecular stochaticity in mammalian cell signaling lipid membrane organization and camkii kinetics'),)
+keywords : frozenset({'physical chemistry', 'biophysics', 'biochemistry'})
+
+12/10 positive, 27/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jchristopher
+lastname : anderson
+middlename : None
+year : 2010
+year_papertitle : ((2010, 'algorithms for automated dna assembly'), (2010, 'bglbricks a flexible standard for biological part assembly'), (2011, 'rapid optimization of gene dosage in e coli using dial strains'))
+keywords : frozenset({'biochemical engineering', 'genetics', 'biotechnology', 'algorithm'})
+
+firstname : christopher
+lastname : anderson
+middlename : neal
+year : 2009
+year_papertitle : ((2009, 'competitor recognition in rubyspot damselflies i hetaerina i spp'),)
+keywords : frozenset({'entomology'})
+
+12/10 positive, 28/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : qingshan
+lastname : xue
+middlename : None
+year : 2007
+year_papertitle : ((2007, 'formation of multinucleated giant cells and microglial degeneration in rats expressing a mutant cu zn superoxide dismutase gene'), (2007, 'microglial activation in the hippocampus of hypercholesterolemic rabbits occurs independent of increased amyloid production'), (2009, 'dystrophic senescent rather than activated microglial cells are associated with tau pathology and likely precede neurodegeneration in alzheimer s disease'), (2009, 'life and death of microglia'), (2010, 'microglial response to murine leukemia virus induced encephalopathy is a good indicator of neuronal perturbations'))
+keywords : frozenset({'neuroscience', 'molecular biology', 'pathology', 'internal medicine', 'endocrinology', 'immunology'})
+
+firstname : ding
+lastname : xue
+middlename : None
+year : 1993
+year_papertitle : ((1993, 'the regulation and function ofmec 3 in the differentiation of the caenorhabditis elegans touch receptor neurons'),)
+keywords : frozenset({'genetics', 'molecular biology'})
+
+12/10 positive, 29/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : amit
+lastname : mitra
+middlename : k
+year : 2010
+year_papertitle : ((2010, 'angiotensin ii induced upregulation of at1 receptor expression sequential activation of nf κb and elk 1 in neurons'), (2013, 'nf κb and creb are required for angiotensin ii type 1 receptor upregulation in neurons'))
+keywords : frozenset({'molecular biology', 'cancer research'})
+
+firstname : amal
+lastname : mitra
+middlename : krishna
+year : 1997
+year_papertitle : ((1997, 'effect of shigellosis on serum concentration and urinary excretion of retinol'),)
+keywords : frozenset({'microbiology', 'pathology', 'nutrition'})
+
+12/10 positive, 30/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : matt
+lastname : smith
+middlename : j
+year : 2010
+year_papertitle : ((2010, 'high resolution melting analysis for the discovery of novel single nucleotide polymorphisms in rainbow and cutthroat trout for species identification'), (2011, 'single nucleotide polymorphisms unravel hierarchical divergence and signatures of selection among alaskan sockeye salmon oncorhynchus nerka populations'))
+keywords : frozenset({'genetics', 'ecology', 'evolutionary biology'})
+
+firstname : autumn
+lastname : smith
+middlename : j
+year : 2008
+year_papertitle : ((2008, 'helminth community structure and pattern in six species of columbids residing in south texas'),)
+keywords : frozenset({'parasitology', 'organismal biology', 'ecology'})
+
+12/10 positive, 31/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jinqiang
+lastname : chen
+middlename : None
+year : 2006
+year_papertitle : ((2006, 'the concept of stem cell in the mammary gland and its implication in morphogenesis cancer and prevention'), (2007, 'erβ shifts from mitochondria to nucleus during estrogen induced neoplastic transformation of human breast epithelial cells and is involved in estrogen induced synthesis of mitochondrial respiratory chain proteins'), (2008, 'mitochondrial oestrogen receptors and their potential implications in oestrogen carcinogenesis in human breast cancer'), (2009, 'erα negative and triple negative breast cancer molecular features and potential therapeutic approaches'))
+keywords : frozenset({'molecular biology', 'internal medicine', 'cancer research', 'cell biology', 'endocrinology', 'immunology'})
+
+firstname : jun
+lastname : chen
+middlename : None
+year : 1997
+year_papertitle : ((1997, 'subcellular localization turnover and oligomerization studies of human acyl co a cholesterol acyltransferase acat'),)
+keywords : frozenset({'cellular biology', 'molecular biology', 'biochemistry'})
+
+12/10 positive, 32/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : tong
+lastname : chen
+middlename : None
+year : 2005
+year_papertitle : ((2005, 'a novel culture system of human es cells for high efficient hematopoietic and endothelial differentiation'), (2007, 'endothelial cells derived from human embryonic stem cells form durable blood vessels in vivo'), (2007, 'stromal cell derived factor 1 cxcr4 signaling modifies the capillary like organization of human embryonic stem cell derived endothelium in vitro'))
+keywords : frozenset({'cell biology', 'immunology'})
+
+firstname : songyang
+lastname : chen
+middlename : None
+year : 2006
+year_papertitle : ((2006, 'identification and characterization of eppa as a potential substrate of dderk2 in camp relay and chemotaxis of i dictyostelium i'),)
+keywords : frozenset({'cellular biology', 'physiology', 'molecular biology'})
+
+12/10 positive, 33/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : james
+lastname : roberts
+middlename : m
+year : 1980
+year_papertitle : ((1980, 'altering genotype and phenotype by dna mediated gene transfer'), (1982, 'gene amplification and gene correction in somatic cells'), (1983, 'a structure for amplified dna'))
+keywords : frozenset({'genetics', 'molecular biology'})
+
+firstname : james
+lastname : roberts
+middlename : j
+year : 2010
+year_papertitle : ((2010, 'the ecological consequences of hypoxia for yellow perch i perca flavescens i in lake erie'),)
+keywords : frozenset({'ecology', 'aquatic sciences'})
+
+12/10 positive, 34/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ying
+lastname : hu
+middlename : None
+year : 2016
+year_papertitle : ((2016, 'high glucose induced oxidative stress mediates apoptosis and extracellular matrix metabolic imbalances possibly via p38 mapk activation in rat nucleus pulposus cells'), (2018, 'circular rna vma21 protects against intervertebral disc degeneration through targeting mir 200c and x linked inhibitor of apoptosis protein'), (2018, 'mesenchymal stem cells deliver exogenous mir 21 via exosomes to inhibit nucleus pulposus cell apoptosis and reduce intervertebral disc degeneration'))
+keywords : frozenset({'cell biology', 'anatomy', 'molecular biology'})
+
+firstname : minghsia
+lastname : hu
+middlename : None
+year : 1991
+year_papertitle : ((1991, 'effects of sensory balance training in older adults'),)
+keywords : frozenset({'cellular biology', 'neurology', 'therapy', 'rehabilitation'})
+
+12/10 positive, 35/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ling
+lastname : feng
+middlename : None
+year : 2006
+year_papertitle : ((2006, 'p229 the role of inhibitor of differentiation in the angiogenesis of head and neck cancers'), (2007, 'cochlear stem cells progenitors and degenerative hearing disorders'), (2007, 'id1 induces the proliferation of cochlear sensory epithelial cells via the nuclear factor κb cyclin d1 pathway in vitro'), (2008, 'egf mediates survival of rat cochlear sensory cells via an nf κb dependent mechanism in vitro'), (2009, 'directed differentiation of mouse cochlear neural progenitors in vitro'))
+keywords : frozenset({'oncology', 'internal medicine', 'cancer research', 'cell biology', 'endocrinology', 'immunology'})
+
+firstname : pinghui
+lastname : feng
+middlename : None
+year : 2001
+year_papertitle : ((2001, 'mrna decay during hsv infections interactions between a viral nuclease and cellular translation factors'),)
+keywords : frozenset({'cellular biology', 'microbiology', 'molecular biology'})
+
+12/10 positive, 36/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ling
+lastname : chang
+middlename : None
+year : 1993
+year_papertitle : ((1993, 'activin induces cell death in hepatocytes in vivo and in vitro'), (1994, 'induction of apoptosis in the murine liver with recombinant human activin a'), (1995, 'sulfated oligosaccharides promote hepatocyte growth factor association and govern its mitogenic activity'))
+keywords : frozenset({'molecular biology', 'endocrinology', 'internal medicine', 'biochemistry'})
+
+firstname : mingi
+lastname : chang
+middlename : None
+year : 1998
+year_papertitle : ((1998, 'analysis of autoantibodies against rna polymerases in patients with systemic sclerosis'),)
+keywords : frozenset({'cellular biology', 'pathology', 'immunology'})
+
+12/10 positive, 37/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : anuja
+lastname : sharma
+middlename : None
+year : 2012
+year_papertitle : ((2012, 'longitudinal growth modeling of discrete time functions with application to dti tract evolution in early neurodevelopment'), (2012, 'quantitative tract based white matter development from birth to age 2years'), (2013, 'modeling longitudinal mri changes in populations using a localized information theoretic measure of contrast'), (2013, 'spatiotemporal modeling of distribution valued data applied to dti tract evolution in infant neurodevelopment'), (2013, 'unc utah na mic dti framework atlas based fiber tract analysis with application to a study of nicotine smoking addiction'))
+keywords : frozenset({'neuroscience', 'cartography', 'artificial intelligence', 'statistics', 'algorithm', 'econometrics', 'data science', 'data mining', 'pattern recognition'})
+
+firstname : anurag
+lastname : sharma
+middlename : None
+year : 2009
+year_papertitle : ((2009, 'comparative analysis of human and nonhuman adenoviral vectors for gene delivery'),)
+keywords : frozenset({'virology', 'microbiology', 'molecular biology'})
+
+12/10 positive, 38/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : huan
+lastname : chen
+middlename : None
+year : 2013
+year_papertitle : ((2013, 'anti hiv active daphnane diterpenoids from trigonostemon thyrsoideum'), (2014, 'design and discovery of flavonoid based hiv 1 integrase inhibitors targeting both the active site and the interaction with ledgf p75'), (2014, 'wikstroelide m potently inhibits hiv replication by targeting reverse transcriptase and integrase nuclear translocation'), (2017, 'anti hiv activities and mechanism of 12 o tricosanoylphorbol 20 acetate a novel phorbol ester from ostodes katharinae'), (2018, 'o galnacylation of rantes improves its properties as a human immunodeficiency virus type 1 entry inhibitor'))
+keywords : frozenset({'molecular biology', 'organic chemistry', 'stereochemistry', 'cell biology', 'virology'})
+
+firstname : guangyu
+lastname : chen
+middlename : None
+year : 2013
+year_papertitle : ((2013, 'imaging analysis of brain network and its application to alzheimer s disease'),)
+keywords : frozenset({'medical imaging', 'biophysics', 'neurosciences'})
+
+12/10 positive, 39/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : wai
+lastname : choi
+middlename : s
+year : 2002
+year_papertitle : ((2002, 'in vitro transcription and start site selection in schizosaccharomyces pombe'), (2004, 'the schizosaccharomyces pombe open promoter bubble mammalian like arrangement and properties'), (2005, 'tfiih xpb mutants suggest a unified bacterial like mechanism for promoter opening but not escape'))
+keywords : frozenset({'genetics', 'cell biology', 'molecular biology'})
+
+firstname : daihyuk
+lastname : choi
+middlename : None
+year : 1997
+year_papertitle : ((1997, 'influence of exercise on hindlimb suspension induced alterations in stress proteins'),)
+keywords : frozenset({'cellular biology', 'physiology', 'molecular biology'})
+
+12/10 positive, 40/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : yun
+lastname : park
+middlename : yong
+year : 2015
+year_papertitle : ((2015, 'significant association of oncogene yap1 with poor prognosis and cetuximab resistance in colorectal cancer patients'), (2016, 'inactivation of hippo pathway is significantly associated with poor prognosis in hepatocellular carcinoma'), (2016, 'yes associated protein 1 and transcriptional coactivator with pdz binding motif activate the mammalian target of rapamycin complex 1 pathway by regulating amino acid transporters in hepatocellular carcinoma'), (2017, 'rcp induces slug expression and cancer cell invasion by stabilizing β1 integrin'), (2018, 'clinical and genomic landscape of gastric cancer with a mesenchymal phenotype'))
+keywords : frozenset({'molecular biology', 'oncology', 'internal medicine', 'cancer research', 'biochemistry', 'cell biology', 'bioinformatics'})
+
+firstname : sungsoo
+lastname : park
+middlename : None
+year : 1988
+year_papertitle : ((1988, 'developmental regulation of the bacillus subtilis subtilisin gene during sporulation'),)
+keywords : frozenset({'molecular biology'})
+
+12/10 positive, 41/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jingqiang
+lastname : wang
+middlename : None
+year : 2011
+year_papertitle : ((2011, 'the msx1 homeoprotein recruits polycomb to the nuclear periphery during development'), (2012, 'the msx1 homeoprotein recruits g9a methyltransferase to repressed target genes in myoblast cells'), (2012, 'transcriptional repression by the msx1 homeoprotein is associated with global redistribution of the h3k27me3 repressive mark to the nuclear periphery'), (2013, 'arf regulates the stability of p16 protein via regγ dependent proteasome degradation'))
+keywords : frozenset({'molecular biology', 'genetics', 'cancer research', 'cell biology', 'bioinformatics'})
+
+firstname : jun
+lastname : wang
+middlename : None
+year : 2009
+year_papertitle : ((2009, 'investigations of the inhibition mechanisms of human ribonucleotide reductase by gemcitabine 5 diphosphate and saccharomyces cerevisiae ribonucleotide reductase by sml1'),)
+keywords : frozenset({'biochemistry'})
+
+12/10 positive, 42/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : qing
+lastname : lu
+middlename : r
+year : 2019
+year_papertitle : ((2019, 'hdac3 deficiency promotes liver cancer through a defect in h3k9ac h3k9me3 transition'), (2020, 'correction hdac3 deficiency promotes liver cancer through a defect in h3k9ac h3k9me3 transition'))
+keywords : frozenset({'cell biology', 'pathology'})
+
+firstname : bingwei
+lastname : lu
+middlename : None
+year : 1995
+year_papertitle : ((1995, 'rna editing in petunia mitochondria'),)
+keywords : frozenset({'genetics', 'molecular biology'})
+
+12/10 positive, 43/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : changfu
+lastname : yao
+middlename : None
+year : 2009
+year_papertitle : ((2009, 'asator a tau tubulin kinase homolog in drosophila localizes to the mitotic spindle'), (2009, 'chromator is required for proper microtubule spindle formation and mitosis in drosophila'), (2011, 'dimethylenastron suppresses human pancreatic cancer cell migration and invasion in vitro via allosteric inhibition of mitotic kinesin eg5'), (2011, 'do nuclear envelope and intranuclear proteins reorganize during mitosis to form an elastic hydrogel like spindle matrix'), (2012, 'the chromodomain containing nh2 terminus of chromator interacts with histone h1 and is required for correct targeting to chromatin'))
+keywords : frozenset({'genetics', 'cell biology', 'molecular biology', 'immunology'})
+
+firstname : cheng
+lastname : yao
+middlename : catsby
+year : 1989
+year_papertitle : ((1989, 'the interactions of 2 3 7 8 tetrachlorodibenzo p dioxin tcdd and 6 methyl 1 3 8 trichlorodibenzofuran mcdf in tcdd induced porphyria'),)
+keywords : frozenset({'biochemistry'})
+
+12/10 positive, 44/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : xin
+lastname : wang
+middlename : None
+year : 2006
+year_papertitle : ((2006, 'improvement of the sensitivity and resolution of pcr sscp analysis with optimized primer concentrations in pcr products'), (2007, 'single nucleotide polymorphisms in the proximal promoter region of apolipoprotein m gene apom confer the susceptibility to development of type 2 diabetes in han chinese'), (2008, 'genetic variation and association analyses of the nuclear respiratory factor 1 nrf1 gene in chinese patients with type 2 diabetes'), (2008, 'localization and mutation detection for paroxysmal kinesigenic choreoathetosis'), (2008, 'm129v polymorphism in the prion protein gene is not associated with mesial temporal lobe epilepsy in a han chinese population'))
+keywords : frozenset({'genetics', 'endocrinology', 'internal medicine', 'molecular biology'})
+
+firstname : xiaoxiao
+lastname : wang
+middlename : None
+year : 2011
+year_papertitle : ((2011, 'cationic random coil protein polymers for free solution conjugate electrophoresis fsce in microchannels'),)
+keywords : frozenset({'bioengineering', 'biochemistry'})
+
+12/10 positive, 45/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : hao
+lastname : yu
+middlename : None
+year : 2010
+year_papertitle : ((2010, 'ferredoxin is involved in secretion of cytotoxic necrotizing factor 1 across the cytoplasmic membrane in escherichia coli k1'), (2012, 'hcp family proteins secreted via the type vi secretion system coordinately regulate escherichia coli k1 interaction with human brain microvascular endothelial cells'))
+keywords : frozenset({'cell biology', 'molecular biology'})
+
+firstname : hanry
+lastname : yu
+middlename : None
+year : 1994
+year_papertitle : ((1994, 'characterization of the interaction between microtubule based motor proteins and cytoplasmic vesicles'),)
+keywords : frozenset({'cellular biology', 'biochemistry', 'molecular biology'})
+
+12/10 positive, 46/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ping
+lastname : shi
+middlename : None
+year : 2016
+year_papertitle : ((2016, 'an acute gastroenteritis outbreak caused by gii 17 norovirus in jiangsu province china'), (2018, 'epidemiological characteristics and influential factors of hand foot and mouth disease reinfection in wuxi china 2008 2016'), (2018, 'genetic characterization of norovirus isolated in an outbreak of gastroenteritis in jiangsu province'), (2020, 'detection of sars cov 2 by rt pcr in anal from patients who have recovered from coronavirus disease 2019'), (2020, 'person to person transmission of avian influenza a h7n9 among family members in eastern china 2016'))
+keywords : frozenset({'virology', 'demography'})
+
+firstname : jingyi
+lastname : shi
+middlename : None
+year : 1994
+year_papertitle : ((1994, 'voltage dependence of the two functionally distinct sodium potassium pumps in guinea pig ventricular myocytes'),)
+keywords : frozenset({'physiology', 'biophysics'})
+
+12/10 positive, 47/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : xiaobo
+lastname : liu
+middlename : None
+year : 1995
+year_papertitle : ((1995, 'distribution of four types of synapse on physiologically identified relay neurons in the ventral posterior thalamic nucleus of the cat'), (1995, 'synaptic distribution of afferents from reticular nucleus in ventroposterior nucleus of cat thalamus'), (1996, 'localization of alpha type ii calcium calmodulin dependent protein kinase at glutamatergic but not gamma aminobutyric acid gabaergic synapses in thalamus and cerebral cortex'), (1997, 'alpha isoform of calcium calmodulin dependent protein kinase ii cam ii kinase alpha restricted to excitatory synapses in the ca1 region of rat hippocampus'), (1997, 'subcellular distribution of ampa and nmda receptor subunit immunoreactivity in ventral posterior and reticular nuclei of rat and cat thalamus'))
+keywords : frozenset({'cell biology', 'neuroscience', 'biochemistry'})
+
+firstname : xin
+lastname : liu
+middlename : None
+year : 2010
+year_papertitle : ((2010, 't cell receptor cdr3 sequence but not recognition characteristics distinguish autoreactive effector and foxp3 sup sup regulatory t cells'),)
+keywords : frozenset({'biology'})
+
+12/10 positive, 48/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : song
+lastname : park
+middlename : y
+year : 2012
+year_papertitle : ((2012, 'human skeletal muscle feed arteries evidence of regulatory potential'), (2014, 'cardiac skeletal and smooth muscle mitochondrial function are all mitochondria created equal 375 board 213 may 28 11'), (2014, 'the role of trpv ion channels in heat induced sympatholysis of human skeletal muscle feed arteries 1283 board 23 may 29 8'), (2014, 'trpv1 channels in human skeletal muscle feed arteries evidence of a potential role in heat induced sympatholysis'), (2015, 'swim training improves indices of vascular mitochondrial function 2765 board 80 may 29 2'))
+keywords : frozenset({'physical medicine and rehabilitation', 'internal medicine', 'biophysics', 'cell biology', 'endocrinology', 'anatomy'})
+
+firstname : sungae
+lastname : park
+middlename : suhr
+year : 2004
+year_papertitle : ((2004, 'development of a capillary electrophoresis based assay for the characterization of multiple neuropeptides from the brain median eminence'),)
+keywords : frozenset({'analytical chemistry', 'veterinary services', 'biochemistry'})
+
+12/10 positive, 49/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jing
+lastname : xiao
+middlename : chen
+year : 2018
+year_papertitle : ((2018, 'exploring the pharmacokinetic pharmacodynamic relationship of relebactam mk 7655 in combination with imipenem in a hollow fiber infection model'), (2020, 'in vitro hollow fiber studies assessing antibacterial activity of ceftolozane tazobactam against multidrug resistant pseudomonas aeruginosa'))
+keywords : frozenset({'pharmacology', 'microbiology'})
+
+firstname : qing
+lastname : xiao
+middlename : None
+year : 1996
+year_papertitle : ((1996, 'mechanism study for the negative dominance of the human aldehyde dehydrogenase aldh2 2 allele'),)
+keywords : frozenset({'genetics', 'biochemistry', 'molecular biology'})
+
+12/10 positive, 50/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : qingshui
+lastname : yu
+middlename : None
+year : 2019
+year_papertitle : ((2019, 'changes in taxonomic and phylogenetic dissimilarity among four subtropical forest communities during 30 years of restoration'), (2020, 'species dominance rather than species asynchrony determines the temporal stability of productivity in four subtropical forests along 30 years of restoration'), (2021, 'long term restoration altered edaphic properties and soil microbial communities in forests evidence from four plantations of southern china'))
+keywords : frozenset({'ecology'})
+
+firstname : jing
+lastname : yu
+middlename : None
+year : 2012
+year_papertitle : ((2012, 'adhesive interactions of mussel foot proteins'),)
+keywords : frozenset({'chemical engineering', 'materials science', 'biophysics'})
+
+12/10 positive, 51/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jin
+lastname : liu
+middlename : None
+year : 2011
+year_papertitle : ((2011, 'effect of linkage disequilibrium on the identification of functional variants'), (2011, 'regularized regression method for genome wide association studies'), (2012, 'analysis of genome wide association studies with multiple outcomes using penalization'), (2013, 'accounting for linkage disequilibrium in genome wide association studies a penalized regression method'), (2013, 'incorporating network structure in integrative analysis of cancer prognosis data'))
+keywords : frozenset({'genetics', 'statistics', 'algorithm', 'computational biology', 'evolutionary biology', 'data mining'})
+
+firstname : yinchang
+lastname : liu
+middlename : louis
+year : 1985
+year_papertitle : ((1985, 'quantitative analysis of protein immobilized dye interaction affinity chromatography'),)
+keywords : frozenset({'biochemistry'})
+
+12/10 positive, 52/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : lyndsay
+lastname : schaeffer
+middlename : m
+year : 2001
+year_papertitle : ((2001, 'pertussis toxin and lipopolysaccharide influence phagocytosis of bordetella pertussis by human monocytes'), (2004, 'bordetella pertussis lipopolysaccharide resists the bactericidal effects of pulmonary surfactant protein a'), (2004, 'interactions of pulmonary collectins with bordetella bronchiseptica and bordetella pertussis lipopolysaccharide elucidate the structural basis of their antimicrobial activities'), (2004, 'the role of phagocytic defenses and innate immunity in the clearance of bordetella pertussis infections'))
+keywords : frozenset({'microbiology', 'bioinformatics', 'immunology'})
+
+firstname : toni
+lastname : schaeffer
+middlename : m
+year : 2004
+year_papertitle : ((2004, 'supply side regulation of phenolic production in plants a comparison of two model systems'),)
+keywords : frozenset({'ecology', 'plant sciences', 'entomology'})
+
+12/10 positive, 53/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : xiaojie
+lastname : xu
+middlename : None
+year : 1995
+year_papertitle : ((1995, 'meiotic recombination break points resolve at high rates at the 5 end of a maize coding sequence'), (1997, 'sequence analysis of the cloned glossy8 gene of maize suggests that it may code for a beta ketoacyl reductase required for the biosynthesis of cuticular waxes'))
+keywords : frozenset({'genetics', 'biochemistry'})
+
+firstname : xiaoming
+lastname : xu
+middlename : None
+year : 1998
+year_papertitle : ((1998, 'the studies of a semiconducting polymer and a natural bipolymeric thin film'),)
+keywords : frozenset({'materials science', 'polymers', 'biochemistry'})
+
+12/10 positive, 54/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : guofeng
+lastname : cheng
+middlename : None
+year : 2005
+year_papertitle : ((2005, 'robust hepatitis c virus infection in vitro'), (2006, 'inhibition of dsrna induced signaling in hepatitis c virus infected cells by ns3 protease dependent and independent mechanisms'), (2006, 'persistent hepatitis c virus infection in vitro coevolution of virus and host'), (2007, 'double stranded dna and double stranded rna induce a common antiviral signaling pathway in human cells'), (2007, 'interferon modulation of cellular micrornas as an antiviral mechanism'))
+keywords : frozenset({'virology', 'molecular biology', 'immunology'})
+
+firstname : yu
+lastname : cheng
+middlename : None
+year : 1993
+year_papertitle : ((1993, 'the structural study of newly synthesized proteoglycans from swarm rat chondrosarcoma cell culture'),)
+keywords : frozenset({'molecular biology', 'biochemistry'})
+
+12/10 positive, 55/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : li
+lastname : zhang
+middlename : None
+year : 2011
+year_papertitle : ((2011, 'rna binding protein fxr2 regulates adult hippocampal neurogenesis by reducing noggin expression'), (2012, 'inhibition of gsk3β improves hippocampus dependent learning and rescues neurogenesis in a mouse model of fragile x syndrome'))
+keywords : frozenset({'genetics', 'neuroscience'})
+
+firstname : xiangfeng
+lastname : zhang
+middlename : None
+year : 2006
+year_papertitle : ((2006, 'roles of zinc in skeletal muscle cells growth'),)
+keywords : frozenset({'livestock', 'cellular biology', 'anatomy physiology', 'nutrition'})
+
+12/10 positive, 56/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : fei
+lastname : sun
+middlename : None
+year : 2013
+year_papertitle : ((2013, 'aquaporin assisted and er mediated mitochondrial fission a hypothesis'), (2014, 'proteome of the porosome complex in human airway epithelia interaction with the cystic fibrosis transmembrane conductance regulator cftr'), (2015, 'a novel er microtubule binding protein erlin2 stabilizes cyclin b1 and regulates cell cycle progression'), (2015, 'copii dependent er export a critical component of insulin biogenesis and β cell er homeostasis'), (2016, 'toll like receptor tlr signaling interacts with crebh to modulate high density lipoprotein hdl in response to bacterial endotoxin'))
+keywords : frozenset({'cell biology', 'biochemistry'})
+
+firstname : wei
+lastname : sun
+middlename : None
+year : 2001
+year_papertitle : ((2001, 'y box binding protein 1 interacts with a transforming growth factor beta responsive element in the alpha 1 i collagen gene promoter'),)
+keywords : frozenset({'cellular biology', 'molecular biology'})
+
+12/10 positive, 57/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+Finished labeling
+Done in 848.0351483265559 minutes.

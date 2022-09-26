@@ -7,6 +7,7 @@ from main.link.setup_linking import *
 
 
 print("finished setup ... ", flush=True)
+print_elapsed_time(start_time)
 
 # ## Link
 if __name__ == "__main__":
@@ -35,14 +36,17 @@ if __name__ == "__main__":
         query_mag = f"{query_mag} LIMIT {line_limit}"
 
     for q in [query_other, query_mag]:
-        print(f"{q} \n")
+        print(f"{q} \n", flush=True)
 
     # https://stackoverflow.com/questions/3300464/how-can-i-get-dict-from-sqlite-query
     # https://docs.python.org/3/library/sqlite3.html#sqlite3.Connection.row_factory
 
     with read_dict_con as con:
         cur = con.cursor()
-        cur.execute(query_mag, tuple(id_field))
+        if args.linking_type == "graduates": # TODO: fix this when all queries are fixed 
+            cur.execute(query_mag, tuple(id_field + id_field)) # this is necessary because we query fieldofstudytable 2x
+        else: 
+            cur.execute(query_mag, tuple(id_field + id_field))
         magdata = {i: row for i, row in custom_enumerate(cur.fetchall(), "AuthorId")}
         cur = con.cursor()
         if args.linking_type == "grants":
@@ -60,12 +64,14 @@ if __name__ == "__main__":
                 data[key]["keywords"] = frozenset(data[key]["keywords"].split(";"))
 
             features = ["institution", "coauthors", "year_range",
-                        "main_us_institutions_year", "all_us_institutions_year"]
+                        "main_us_institutions_year", "all_us_institutions_year",
+                        "year_papertitle"]
             ft_in_data = list(data[list(data.keys())[0]].keys()) # extract all features of the first record in the dict data
             features = [f for f in features if f in ft_in_data]
             for feature in features:
                 if data[key][feature] is not None:
-                    if feature in ["main_us_institutions_year", "all_us_institutions_year"]:
+                    if feature in ["main_us_institutions_year", "all_us_institutions_year",
+                                    "year_papertitle"]:
                         # split, make first entry numeric, convert to tuple
                         ft = [x.split("//") for x in data[key][feature].split(";")]
                         ft = [tuple([int(x[0]), x[1]]) for x in ft] 
@@ -92,17 +98,18 @@ if __name__ == "__main__":
     n_distinct = None
     
     if os.path.exists(settings_file):
-        print('reading from ', settings_file)
+        print(f'reading from {settings_file}', flush=True)
         with open(settings_file, 'rb') as sf:
             linker = dedupe.StaticRecordLink(sf, num_cores = n_cores)
     else:
         # define fields for categorical 
-        if args.linking_type != "grants":
-            query_fields_mag = f"SELECT DISTINCT(fieldofstudy) FROM ( {query_mag} ) WHERE fieldofstudy IS NOT NULL"
-            query_fields_proquest = f"SELECT DISTINCT(fieldofstudy) FROM ( {query_other} ) WHERE fieldofstudy IS NOT NULL"
-            mag_areas = [i[0] for i in read_con.execute(query_fields_mag, tuple(id_field)).fetchall()] 
-            proquest_areas = [i[0] for i in read_con.execute(query_fields_proquest, tuple(id_field)).fetchall()] 
-            areas = mag_areas + proquest_areas
+        # TODO: this is not necessary anymore b/c we do not use categorical for linking
+        # if args.linking_type != "grants":
+        #     query_fields_mag = f"SELECT DISTINCT(fieldofstudy) FROM ( {query_mag} ) WHERE fieldofstudy IS NOT NULL"
+        #     query_fields_proquest = f"SELECT DISTINCT(fieldofstudy) FROM ( {query_other} ) WHERE fieldofstudy IS NOT NULL"
+        #     mag_areas = [i[0] for i in read_con.execute(query_fields_mag, tuple(id_field)).fetchall()] 
+        #     proquest_areas = [i[0] for i in read_con.execute(query_fields_proquest, tuple(id_field)).fetchall()] 
+        #     areas = mag_areas + proquest_areas
 
         if args.linking_type == "graduates":
             # TODO: these definitions here should be eventually standardized across cases
@@ -116,8 +123,12 @@ if __name__ == "__main__":
                 {"field": "year", "variable name": "year", "type": "Price"},
                 # {"field": "year", "variable name": "no_advisor_info", "type": "Custom", "comparator": year_dummy_noadvisor},
                 # {"field": "year", "variable name": "yeardiff_sqrd", "type": "Custom", "comparator": squared_diff},
-                {"type": "Interaction", "interaction variables": ["year", "same_firstname"]},
-                {"type": "Interaction", "interaction variables": ["year", "same_lastname"]}
+                {"type": "Interaction", "interaction variables": ["year", "firstname"]},
+                {"type": "Interaction", "interaction variables": ["year", "lastname"]},
+                {"field": "year_papertitle", "variable name": "title_similarity", "type": "Custom", "comparator" : cf.year_title_comparator, "has missing": True},
+                {"type": "Interaction", "interaction variables": ["title_similarity", "firstname"]},
+                {"type": "Interaction", "interaction variables": ["title_similarity", "lastname"]},
+                {"type": "Interaction", "interaction variables": ["title_similarity", "year"]}
                 # {"field": "coauthors", "variable name": "coauthors", "type": "Custom", "comparator": max_set_similarity, "has missing": True}, 
                 # {"type": "Interaction", "interaction variables": ["no_advisor_info", "coauthors"], "has missing": True},
             ]
@@ -180,15 +191,14 @@ if __name__ == "__main__":
                         {"field": "all_us_institutions_year", "variable name": "all_inst_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_string, "has missing": True},
                         {"field": "all_us_institutions_year", "variable name": "all_inst_year_similarity", "type": "Custom", "comparator": cf.set_of_tuples_distance_overall, "has missing": True}
                         ]
-
-
+                        
                 fields = fields + institution_fields 
         if args.fieldofstudy_cat == "True": 
             fields.append({"field": "fieldofstudy", "variable name": "fieldofstudy", "type": "Categorical", "categories": areas, "has missing": False})
         if args.fieldofstudy_str == "True": 
             fields.append({"field": "fieldofstudy", "variable name": "fieldofstudy", "type": "String", "has missing": False}) 
         if args.keywords == "True": 
-            fields.append({"field": "keywords", "variable name": "keywords", "type": "Set", "has missing": True})
+            fields.append({"field": "keywords", "variable name": "keywords", "type": "Custom", "comparator": cf.keyword_comparator ,"has missing": True})
         
         linker = dedupe.RecordLink(fields, num_cores = n_cores)
 
@@ -207,14 +217,14 @@ if __name__ == "__main__":
         del magdata
 
         if os.path.exists(training_file):
-            print(f"Reading labelled examples from {training_file}")
+            print(f"Reading labelled examples from {training_file}", flush=True)
             with open(training_file) as tf:
                 linker.prepare_training(
                     data_1 = data_1_use, 
                     data_2 = data_2_use, 
                     training_file = tf,
                     blocked_proportion = share_blockedpairs_training,
-                    sample_size = 100_000
+                    sample_size = args.samplesize
                 )
             n_match = len(linker.training_pairs["match"])
             n_distinct = len(linker.training_pairs["distinct"])
@@ -223,10 +233,11 @@ if __name__ == "__main__":
                 data_1 = data_1_use, 
                 data_2 = data_2_use,
                 blocked_proportion = share_blockedpairs_training,
-                sample_size = 100_000
+                sample_size = args.samplesize
             )
 
-        print("Starting active labeling...")
+        print_elapsed_time(start_time)
+        print("Starting active labeling...", flush=True)
 
         dedupe.console_label(linker)
         linker.train(recall = args.recall)

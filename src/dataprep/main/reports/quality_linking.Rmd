@@ -16,7 +16,7 @@ set.seed(1234)
 ```
 
 ```{r, echo = FALSE, include = FALSE}
-packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "ggplot2")
+packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "ggplot2", "lubridate")
 
 lapply(packages, library, character.only = TRUE)
 
@@ -26,6 +26,16 @@ select_fields <- c("physics", "biology", "chemistry", "sociology",
                     "economics", "political science", "psychology", 
                     "mathematics", "geography", "geology", "engineering",
                     "computer science", "environmental science") # fields currently matched 
+
+
+date_method_change <- ymd("2022-07-01") # after summer we extended the sampling period and added more features 
+
+# thresholds for identified links 
+min_link_score <- 0.7
+max_year_diff <- 10
+# Hofstra et al are much more generous here (10 year pre graduation, 15 year post graduation).
+  # we may do the same, but we need to consistently label; 
+  #also, at the current stage a higher boundary here will lead to more links to the duplicated entities
 
 # ## db connection
 con <- DBI::dbConnect(RSQLite::SQLite(), db_file)
@@ -94,7 +104,7 @@ query_proquest <- paste0(
             FROM pq_fields_mag
             WHERE mag_field0 IN (",
             paste0(field_names_id$FieldOfStudyId, collapse = ', '),
-            ") 
+            ") AND position = 0
         ) USING (goid)
         INNER JOIN (
             SELECT university_id
@@ -102,7 +112,7 @@ query_proquest <- paste0(
             WHERE location like '%United States%'
         ) USING(university_id)
 )
-WHERE year >= 1985 and year <= 2005 AND length(firstname) > 1
+WHERE year >= 1985 and year <= 2015 AND length(firstname) > 1
 ")
 
 query_mag <- paste0(
@@ -153,7 +163,7 @@ query_mag <- paste0(
             WHERE FieldClass = 'first'
         ) AS e USING(AuthorId)
     )
-WHERE year >= 1980 and year <= 2010 AND length(firstname) > 1
+WHERE year >= 1980 and year <= 2022 AND length(firstname) > 1
 ")
 
 ```
@@ -161,7 +171,7 @@ WHERE year >= 1980 and year <= 2010 AND length(firstname) > 1
 ```{r, include = FALSE}
 linked_ids <- tbl(con, "linked_ids") 
 linking_info <- tbl(con, "linking_info") %>%
-    filter(mergemode == "1:1" & keywords == "False")
+    filter(mergemode == "1:1" & fieldofstudy_str == "False")
 pq_authors <- tbl(con, sql(query_proquest))
 mag_authors <- tbl(con, sql(query_mag))
 
@@ -177,94 +187,150 @@ pq_authors <- collect(pq_authors)
 ### Which linking iterations to keep?
 
 ```{r}
-keep_iteration_ids <- linking_info %>%
+
+keep_iter_ids_base <- linking_info %>%
+  filter(date <= date_method_change
+         & keywords == "False" 
+         ) 
+
+keep_iter_ids_revise <- linking_info %>%
+  filter(date > date_method_change
+        & keywords == "True"
+        ) %>%
+  # keep only the latest iteration here 
+  group_by(field) %>%
+  filter(iteration_id == max(iteration_id)) %>%
+  ungroup()
+stopifnot(nrow(keep_iter_ids_revise) == n_distinct(keep_iter_ids_revise$field))
+
+keep_iter_ids <- list(
+  base = keep_iter_ids_base,
+  revise = keep_iter_ids_revise
+)
+
+keep_iter_ids <- map(
+  .x = keep_iter_ids,
+  .f = ~.x %>% 
     filter(field %in% select_fields) %>%
     pull(iteration_id)
-linked_ids <- linked_ids %>%
-    filter(iteration_id %in% keep_iteration_ids)
+)
+
+linked_ids <- map(
+  .x = keep_iter_ids,
+  .f = ~linked_ids %>% 
+    filter(iteration_id %in% .x)
+)
+
+
+
+
 ```
 
 
-```{r, include = FALSE}
-d_links <- linked_ids %>%
+```{r}
+d_links <- map(
+  .x = linked_ids,
+  .f = ~.x %>%
     left_join(mag_authors %>%
                 select(AuthorId,
-                        year_mag = year,
-                        firstname_mag = firstname,
-                        lastname_mag = lastname,
-                        field_mag = fieldofstudy,
-                        field0_mag = mag_field0),
-                by = "AuthorId") %>%
+                       year_mag = year,
+                       firstname_mag = firstname,
+                       lastname_mag = lastname,
+                       field_mag = fieldofstudy,
+                       field0_mag = mag_field0),
+              by = "AuthorId") %>%
     left_join(pq_authors %>%
                 select(goid,
-                        year_pq = year,
-                        firstname_pq = firstname,
-                        lastname_pq = lastname,
-                        field_pq = fieldofstudy,
-                        field0_pq = mag_field0),
-                by = "goid")
-
-
-d_links <- d_links %>%
+                       year_pq = year,
+                       firstname_pq = firstname,
+                       lastname_pq = lastname,
+                       field_pq = fieldofstudy,
+                       field0_pq = mag_field0),
+              by = "goid") %>%
     mutate(year_diff = year_mag - year_pq,
-            same_firstname = ifelse(firstname_mag == firstname_pq, 1, 0),
-            same_lastname = ifelse(lastname_mag == lastname_pq, 1, 0)) %>%
-    left_join(field_names_id %>% 
+           same_firstname = ifelse(firstname_mag == firstname_pq, 1, 0),
+           same_lastname = ifelse(lastname_mag == lastname_pq, 1, 0)) %>%
+    left_join(field_names_id %>%
                 rename(main_field = NormalizedName),
-              by = c("field0_pq" = "FieldOfStudyId"))
+              by = c("field0_pq" = "FieldOfStudyId")) %>%
+    filter(goid != 305107842)  %>% #  this is some author which was linked but should not have been in pq data; unclear why.
+    filter(link_score > min_link_score
+           & abs(year_diff) <= max_year_diff)
+  
+  )
 
-d_links <- d_links %>%
-    filter(goid != 305107842) # this is some author which was linked but should not have been in pq data; unclear why.
+d_links$base <- d_links$base %>% filter(year_pq <= 2005) 
 
-
-d_links <- d_links %>%
-    filter(link_score >= 0.5) %>%
-    filter(year_diff >= -5 & year_diff <= 5)
 ```
+
 
 
 
 ## Some histograms 
 ### link score by field 
 ```{r, echo = FALSE}
-d_links %>%
-    mutate(cohort = 10 * floor(year_pq / 10)) %>%
-    ggplot(aes(x = link_score)) +
-    geom_histogram(aes(y = ..density..),
-                    position = position_dodge()) +
-    theme(legend.position = "bottom") +
-    facet_wrap(~cohort) 
+
+map(.x = d_links,
+    .f = ~.x %>%  
+      mutate(cohort = 10 * floor(year_pq / 10)) %>%
+      ggplot(aes(x = link_score)) +
+      geom_histogram(aes(y = ..density..),
+                    position = position_dodge(),
+                    bins = 50) +
+      theme(legend.position = "bottom") +
+      facet_wrap(~cohort) 
+    )
+
 ```
 
 ### Year between first pub and graduation 
+
+- why are there other fields than maths/biology for the following two figures?
+- this is because we sample persons whenever they are in any of the linking fields
+  - thus, a graduate can be linked in a biology iteration if her first field is chemistry
+  - compare this with the advisor links! 
+  - this also means the join above should take care of this, and indicate the multiplicity of the graduates! 
+
+
 ```{r, echo = FALSE}
-d_links %>%
-    mutate(cohort = 10 * floor(year_pq / 10)) %>%
-    ggplot(aes(x = year_diff, fill = main_field, group = main_field)) +
-    geom_histogram(aes(y = ..density..), position = position_dodge()) +
-    theme(legend.position = "bottom") +
-    facet_wrap(~cohort) +
-    geom_vline(xintercept = 0, linetype = "dashed", color = "grey30") +
-    labs(x = "Year first pub. - Year graduation")
+
+map(.x = d_links,
+    .f = ~.x %>%
+      mutate(cohort = 10 * floor(year_pq / 10)) %>%
+      ggplot(aes(x = year_diff, fill = main_field, group = main_field)) +
+      geom_histogram(aes(y = ..density..), position = position_dodge()) +
+      theme(legend.position = "bottom") +
+      facet_wrap(~cohort) +
+      geom_vline(xintercept = 0, linetype = "dashed", color = "grey30") +
+      labs(x = "Year first pub. - Year graduation")
+    )
+
 ```
 
 
 ## First and last name matches by cohort and field
+
 ```{r, echo = FALSE}
-d_links %>%
-    mutate(cohort = floor(year_pq / 5) * 5) %>%
-    group_by(cohort, main_field) %>%
-    summarise(across(all_of(c("same_firstname", "same_lastname")),
-                     ~mean(.x))) %>%
-    gather(key = name, value = val, -cohort, -main_field) %>%
-    mutate(name = gsub("same_|name", "", name)) %>%
-    ggplot(aes(x = cohort, y = val,
-                color = main_field,
-                linetype = name)) +
-    geom_line() +
-    theme(legend.position = "bottom") +
-    labs(y = "Fraction of links with same first/last name") +
-    guides(color = "none")
+
+map(.x = d_links,
+    .f = ~.x %>% 
+       mutate(cohort = floor(year_pq / 5) * 5) %>%
+      group_by(cohort, main_field) %>%
+      summarise(across(all_of(c("same_firstname", "same_lastname")),
+                     ~mean(.x)),
+                .groups = "drop") %>%
+      gather(key = name, value = val, -cohort, -main_field) %>%
+      mutate(name = gsub("same_|name", "", name)) %>%
+      ggplot(aes(x = cohort, y = val,
+                 color = main_field,
+                 linetype = name)) +
+      geom_line() +
+      theme(legend.position = "bottom") +
+      labs(y = "Fraction of links with same first/last name") +
+      guides(color = "none")
+      )
+
+
 ```
 
 
@@ -272,7 +338,7 @@ d_links %>%
 
 ## How do fields of ProQuest map into fields in MAG?
 ```{r, echo = FALSE}
-dtemp <- d_links %>%
+dtemp <- d_links$base %>% # does not make much sense for revise because we use the keywords for linking 
     mutate(grp_year = ifelse(year_pq > 1980, ">1980", "<=1980")) %>%
     group_by(main_field, field_mag, field_pq) %>%
     summarise(nb = n(),
@@ -304,24 +370,89 @@ map(.x = select_fields,
 
 ## Fraction matched by year and field 
 ```{r, echo = FALSE}
-d_matched <- pq_authors %>%
-    left_join(field_names_id %>%
-                rename(main_field = NormalizedName),
-              by = c("mag_field0" = "FieldOfStudyId")) %>%
-    mutate(link = ifelse(goid %in% linked_ids$goid, "linked", "not linked")) %>%
-    group_by(year, main_field, link) %>%
-    summarise(nb = n(), .groups = "drop") %>%
-    group_by(year, main_field) %>%
-    mutate(s = nb / sum(nb)) %>%
-    ungroup() %>%
-    filter(link == "linked")
 
-d_matched %>%
-    ggplot(aes(x = year, y = s, linetype = main_field)) +
-    geom_line() +
-    theme(legend.position = "bottom") +
-    labs(y = "Fraction matched")
+keep_fields <- c("biology", "computer science", "economics",
+                 "chemistry", "psychology", "mathematics")
+
+d_compare <- map(
+  .x = d_links,
+  .f = ~pq_authors %>%
+     left_join(field_names_id %>%
+                  rename(main_field = NormalizedName),
+              by = c("mag_field0" = "FieldOfStudyId")) %>%
+      mutate(link = ifelse(goid %in% .x$goid, "linked", "not linked")) %>%
+      group_by(year, main_field, link) %>%
+      summarise(nb = n(), .groups = "drop")
+) %>%
+  bind_rows(.id = "version") %>%
+  group_by(version, year, main_field) %>% 
+  mutate(s = nb / sum(nb)) %>%
+  ungroup() %>% 
+  filter(link == "linked") %>%
+  filter(main_field %in% keep_fields) 
+
+d_compare %>% 
+  ggplot(aes(x = year, y = s, linetype = version)) +
+  geom_line() +
+  theme(legend.position = "bottom") +
+  labs(y = "Fraction matched") +
+  facet_wrap(~main_field)
+
+d_compare %>% 
+  ggplot(aes(x = year, y = nb, linetype = version)) +
+  geom_line() +
+  theme(legend.position = "bottom") +
+  labs(y = "N matched") +
+  facet_wrap(~main_field)
+  
+
+
+
 ``` 
+
+
+# Checking non-linked entities that should be a link
+
+```{r}
+
+d_chem <- pq_authors %>% 
+   left_join(field_names_id %>%
+                  rename(main_field = NormalizedName),
+              by = c("mag_field0" = "FieldOfStudyId")) %>%
+      mutate(link = ifelse(goid %in% d_links$revise$goid, "linked", "not linked")) %>%
+  filter(main_field == "chemistry")
+  
+pq_unis <- tbl(con, "pq_authors") %>%
+  left_join(tbl(con, "pq_unis") %>%
+              select(university_id, normalizedname),
+            by = "university_id") %>%
+  select(goid, uni_name = "normalizedname") %>%
+  collect()
+
+d_chem <- d_chem %>%
+  left_join(pq_unis, by = "goid")
+
+```
+
+
+```{r}
+d_chem %>% 
+  filter(year == 1995 & uni_name == "stanford university" & link == "not linked") %>% head(10)
+
+#unique(d_chem$fieldofstudy)
+## comparing to candidates:
+# harvard:
+# weldon in materials science 
+# beltrame in chemistry 
+# mit:
+# lapointe is chemistry
+# duff is chemistry 
+# stanford:
+# shear in chemistry 
+# marcus is in biology 
+# hansen is in biology 
+# tokmakoff is in materials science 
+```
 
 
 ```{r, include = FALSE}

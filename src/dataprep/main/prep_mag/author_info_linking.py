@@ -20,6 +20,7 @@ Generate tables:
         - all_us_institutions_year: unique pairs of year and 
            institution name from *all* documents ever 
            published by the author
+    - year and title of papers in the first years of the career
 """
 
 import sqlite3 as sqlite
@@ -54,7 +55,8 @@ print(f"Making temp table with papers in first {args.years_first_field} years.",
 print(f"--Considering papers with DocType {keep_doctypes_citations}.", flush=True)
 con.execute(f"""
 CREATE TEMP TABLE papers_start AS 
-SELECT AuthorId, PaperId 
+SELECT AuthorId
+    , PaperId
 FROM (
     SELECT a.AuthorId
         , a.PaperId
@@ -62,7 +64,7 @@ FROM (
             AS paper_number
     FROM PaperAuthorUnique AS a
     INNER JOIN (
-        SELECT PaperId, Year, Date 
+        SELECT PaperId, Year, Date
         FROM Papers
         WHERE DocType IN ({insert_questionmark_doctypes_citations}) {query_limit} 
     ) AS b USING(PaperId)
@@ -72,7 +74,7 @@ FROM (
     ) AS c USING(AuthorId) 
     WHERE b.Year <= c.YearFirstPub + (?)
 )
-WHERE paper_number <= 5 -- selects the first 5 papers if there are more from a given author
+WHERE paper_number <= 10 -- selects the first 10 papers if there are more from a given author
 """,
 (keep_doctypes_citations + (args.years_first_field,) )
 )
@@ -82,6 +84,37 @@ con.execute("CREATE INDEX idx_ps_AuthorId ON papers_start (AuthorId ASC) ")
 
 
 # ## Create temporary tables with the variables 
+
+# ### paper titles
+print_elapsed_time(start_time)
+print("Creating temp table for paper titles at start", flush=True)
+con.execute("DROP TABLE IF EXISTS paper_titles_start")
+con.execute("""
+CREATE TEMP TABLE paper_titles_start AS 
+SELECT AuthorId, GROUP_CONCAT(year_papertitle, ";") AS year_papertitle
+FROM (
+    SELECT AuthorId
+        , Year || "//" || PaperTitle AS year_papertitle
+    FROM (
+        SELECT a.AuthorId
+            , b.PaperTitle
+            , b.Year
+            , MIN(b.Year) AS min_year -- this selects the year of the paper when it first appears 
+        FROM papers_start a
+        INNER JOIN (
+            SELECT PaperId, Year, PaperTitle
+            FROM Papers
+        ) b USING(PaperId)
+        -- keep only the first occurence of a paper if there are multiple versions with the same title 
+        GROUP BY AuthorId, PaperTitle
+    )
+    WHERE Year = min_year
+    ORDER BY Year
+)
+GROUP BY AuthorId 
+""")
+
+con.execute("CREATE UNIQUE INDEX idx_pts_AuthorId ON paper_titles_start (AuthorId ASC)")
 
 # ### keywords
 print_elapsed_time(start_time)
@@ -296,6 +329,7 @@ SELECT a.AuthorId
     , e.main_us_institutions as main_us_institutions_career
     , f.main_us_institutions_year
     , g.all_us_institutions_year
+    , h.year_papertitle
 FROM author_sample a
 LEFT JOIN keywords b USING(AuthorId)
 LEFT JOIN institutions c USING(AuthorId)
@@ -303,6 +337,7 @@ LEFT JOIN coauthors d USING(AuthorId)
 LEFT JOIN institutions_career e USING(AuthorId)
 LEFT JOIN institutions_year_career f USING(AuthorId)
 LEFT JOIN all_institutions_year_career g USING(AuthorId)
+LEFT JOIN paper_titles_start h USING(AuthorId)
 """)
 
 con.execute("CREATE UNIQUE INDEX idx_ail_AuthorId ON author_info_linking (AuthorId ASC)")

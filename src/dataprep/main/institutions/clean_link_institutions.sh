@@ -53,10 +53,8 @@ python -m main.institutions.link_cng_pq \
     --minmag $min_score_mag
     2>&1 | tee $logfile_path/link_cng_pq.log
 
-# # 2. run the notebook overview_links.ipynb 
-    # interactively to see a summary of the work above 
 
-# 3. Save links with min_score to db
+# 2. Save links with min_score to db
 echo "writing accepted links to db..."
 python -m main.institutions.cng_links_to_db \
     --fromdir $tempdatapath \
@@ -64,9 +62,12 @@ python -m main.institutions.cng_links_to_db \
     --minpq $min_score_pq
     &> $logfile_path/cng_links_to_db.log
 
-# 4. Calculate distance between institutions
+# 3. Calculate distance between institutions
 echo "calculating distances between cng institutions..."
 python -m main.institutions.distances_cng \
     &> $logfile_path/distances_cng.log
+
+# # 4. run the notebook overview_links.ipynb 
+    # interactively to see a summary of the work above 
 
 rm -rf $tempdatapath

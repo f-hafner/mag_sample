@@ -6,10 +6,13 @@ from operator import mul
 from functools import reduce, wraps 
 
 from nltk.metrics.distance import jaro_winkler_similarity
-import numpy
+from nltk.stem import SnowballStemmer
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+import numpy 
 
-from .functions import is_numeric
+from .functions import is_numeric, list_from_tuples
 from .decorators import decorator_with_args
+from .tfidf_settings import stop_words, ngram_range
 
 # 1. Basic comparators
 
@@ -67,7 +70,17 @@ def compare_two_single_tuples(fnc):
 def tuple_distance(a, b): 
     "Calculate the smallest distance between the values in two tuples."
     return compare_values(a, b, ignore_substr="university of|university")
-    
+
+
+def keyword_comparator(a, b):
+    "Return 1 if at least one keyword in a is also in b, else 0."
+    count = sum([1 for x in a if x in b])
+    if count > 0:
+        return 1
+    else:
+        return 0
+
+
 # 2. Compare sets of tuples and return minimum distance
 
 # ## Positions in the tuples sourced from MAG/NSF--hardcoded!
@@ -173,8 +186,7 @@ def compare_range_from_tuple(a, b):
             raise ValueError("Tuples are of wrong length.")
                 # Dedupe sometimes passes two tuples of length 2 
                 # for no reason (and they seem often to be the same).
-                # As a temp fix Uncomment the prints above and run the script to see it.
-                # One test will fail here.
+                # As a temp fix: Uncomment the prints above and run the script to see it.
             # return None
     else:
         raise TypeError("a, b need to be tuples.")
@@ -189,9 +201,9 @@ def compare_range_from_tuple(a, b):
 
 def compare_range_from_tuple_tempfix(a, b):
     """
-    A temp fix to the problem described 
-    here https://github.com/f-hafner/mag_sample/issues/6
-    to make labelling and training work
+    A temp fix to make labelling and training work.
+    It seems that dedupe sometimes compares one record with itself,
+    and this violates our assumptions on the structure of the data.
     """
     try:
         compare_range_from_tuple(a, b)
@@ -204,4 +216,65 @@ def compare_range_from_tuple_tempfix(a, b):
             # printing the type gives "Segmentation fault (core dumped)". 
             # https://stackoverflow.com/questions/13654449/error-segmentation-fault-core-dumped
         return None
+
+# NOTE: it is well possible that dedupe compares also records *within* data sets when doing a 
+    # record-linking task--after all, it needs to block them eventually.
+
+# 4. Compare paper titles
+
+def year_title_comparator(x, y):
+    """
+    Compare tuples of year-title combinations in x and y.
+
+    Parameters
+    ----------
+    x: A tuple of (year, title) combination
+    y: A tuple of one or mor tuples of (year, title) combinations
+    """
+    # extract the strings from the year-title pairs
+    x = list_from_tuples(x)
+    y = list_from_tuples(y)
+    return text_comparator(x, y)
+    
+
+def text_comparator(a, b):
+    """
+    Compare similarity of two tuples of text.
+
+    Parameters
+    ----------
+    a: list of texts
+    b: list of texts
+
+    The function returns the maximum similarity of the 
+    first text in a to any of the texts in b.
+    """
+    # TODO: how does it deal with numbers? ie chemical molecules indexed by numbers?
+    # TODO: check the tokenizer -- does it use the same stopwords by default? 
+    corpus = a + b
+
+    Vectorizer = TfidfVectorizer(
+        analyzer=stemmed_words,
+        stop_words=stop_words,
+        ngram_range=ngram_range
+    )
+
+    tfidf = Vectorizer.fit_transform(corpus)
+    pairwise_similarity = tfidf * tfidf.T
+    # we want the upper right matrix that compares the distance between elements in a and elements in b
+        # include rows 0 to len(a)
+        # include columns len(a) to len(a) + len(b)
+    similarity = pairwise_similarity.toarray()[0:len(a), len(a):]
+    return numpy.max(similarity)
+
+
+def stemmed_words(doc):
+    "Stem words with same settings as Tfidf vectorizer."
+    stemmer = SnowballStemmer("english")
+    Vectorizer = CountVectorizer(
+        stop_words=stop_words,
+        ngram_range=ngram_range
+    )
+    analyzer = Vectorizer.build_analyzer() 
+    return (stemmer.stem(w) for w in analyzer(doc))
 

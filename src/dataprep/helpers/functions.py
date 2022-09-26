@@ -1,4 +1,5 @@
 import time 
+import warnings 
 
 def print_elapsed_time(start_time):
     print(f"Time elapsed: {(time.time()-start_time)/60} minutes \n", flush = True)
@@ -70,6 +71,20 @@ def is_numeric(a):
     return isinstance(a, int) | isinstance(a, float)
     
 
+def list_from_tuples(x):
+    "Create a list of strings from a tuple (or tuple of tuples) of (int, string)."
+    if isinstance(x[0], tuple): # tuple of tuples
+        out = [x[i][1] for i in range(len(x)) if isinstance(x[i][1], str)]
+        if len(out) != len(x):
+            raise TypeError("All inputs in position 1 need to be strings")
+    else: # singleton
+        if not (isinstance(x[0], int) and isinstance(x[1], str)):
+            # warnings.warn("Singleton input detected. Should be (int, str). Returning [x[1]].")
+            raise TypeError("Singleton input needs to be (int, str)")
+        
+        out = [x[1]]
+    
+    return out
 
 # ### Some functions for reading sqlite data into dict
 

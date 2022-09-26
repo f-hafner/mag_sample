@@ -2,7 +2,10 @@
 # -*- coding: utf-8 -*-
 
 import src.dataprep.helpers.comparator_functions as cf
+import src.dataprep.helpers.tfidf_settings as ts
 from nltk.metrics.distance import jaro_winkler_similarity
+from sklearn.feature_extraction.text import TfidfVectorizer
+
 import numpy 
 import pytest
 
@@ -86,3 +89,42 @@ def test_compare_range_from_tuple_tempfix(capfd):
     assert cf.compare_range_from_tuple_tempfix(long1, long2) is None 
     out, err = capfd.readouterr()
     assert "error occurred" in out
+
+
+thesis_title = ["a dissertation about my favorized topics"]
+paper_titles = ["a paper about an unrelated topic",
+                "a published paper about my favorite topic based on the dissertations chapter"]
+long_set_of_titles = [
+    "a published paper about my favorite topic based on the dissertations chapter",
+    "something about cats",
+    "something about dogs",
+    "something about mice"
+]
+
+def test_text_comparator():
+    sim = cf.text_comparator(thesis_title, paper_titles)
+    Vectorizer = TfidfVectorizer(
+        analyzer=cf.stemmed_words,
+        stop_words=ts.stop_words,
+        ngram_range=ts.ngram_range
+    )
+    tfidf = Vectorizer.fit_transform(thesis_title + paper_titles)
+    target = tfidf * tfidf.T
+    target = target.toarray()[0,2]
+    assert sim == target, "does not return the right text similarity"
+
+    sim = cf.text_comparator(paper_titles, paper_titles)
+    assert sim == pytest.approx(1), "wrongly handles len(a) > 1"
+
+    sim = cf.text_comparator(paper_titles, long_set_of_titles)
+    assert sim == pytest.approx(1), "wrongly handles inputs of different length > 1"
+
+    # with pytest.raises(ValueError, match="empty"):
+    #     cf.text_comparator([], paper_titles)
+
+def test_keyword_comparator():
+    set1 = ("organic chemistry", "molecular biology")
+    set2 = ("labor economics", "organic chemistry")
+    set3 = ("inorganic chemistry", "computer science")
+    assert cf.keyword_comparator(set1, set2) == 1
+    assert cf.keyword_comparator(set1, set3) == 0

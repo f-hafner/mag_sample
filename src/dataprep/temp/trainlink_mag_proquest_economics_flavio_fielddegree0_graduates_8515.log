@@ -1,0 +1,525 @@
+/home/flavio/miniconda3/envs/science-career-tempenv/lib/python3.9/site-packages/numpy/core/getlimits.py:500: UserWarning: The value of the smallest subnormal for <class 'numpy.float64'> type is zero.
+  setattr(self, word, getattr(machar, word).flat[0])
+/home/flavio/miniconda3/envs/science-career-tempenv/lib/python3.9/site-packages/numpy/core/getlimits.py:89: UserWarning: The value of the smallest subnormal for <class 'numpy.float64'> type is zero.
+  return self._float_to_str(self.smallest_subnormal)
+/home/flavio/miniconda3/envs/science-career-tempenv/lib/python3.9/site-packages/numpy/core/getlimits.py:500: UserWarning: The value of the smallest subnormal for <class 'numpy.float32'> type is zero.
+  setattr(self, word, getattr(machar, word).flat[0])
+/home/flavio/miniconda3/envs/science-career-tempenv/lib/python3.9/site-packages/numpy/core/getlimits.py:89: UserWarning: The value of the smallest subnormal for <class 'numpy.float32'> type is zero.
+  return self._float_to_str(self.smallest_subnormal)
+Namespace(testing=True, verbose=1, field=['economics'], train_name='flavio_fielddegree0', startyear=1985, endyear=2015, mergemode='1:1', recall=0.9, institution='False', fieldofstudy_cat='False', fieldofstudy_str='False', keywords='True', retrain='True', linking_type='graduates', samplesize=50000, write_to='database')
+Have max 6 cores available
+Testing is True 
+
+Write connection to main database
+finished setup ... 
+Time elapsed: 0.0006169954935709636 minutes 
+
+
+    SELECT goid
+            , year
+            , firstname 
+            , lastname
+            , CASE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                WHEN 
+                    "" THEN NULL 
+                    ELSE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                END AS middlename
+            , fieldofstudy
+            , keywords
+            , institution
+            , coauthors
+            , year_papertitle
+    FROM (
+        SELECT goid
+            , degree_year AS year 
+            , fullname 
+            , SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) AS firstname
+            , REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "") AS lastname 
+            , TRIM(SUBSTR(fullname, length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1)) + 1)) AS middle_lastname 
+            , length(fullname) AS l_fullname 
+            , length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) ) AS l_firstname
+            , length(REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "")) AS l_lastname
+            , fieldname AS fieldofstudy
+            , university_id
+            , degree_year || "//" || thesistitle as year_papertitle 
+        FROM pq_authors 
+        INNER JOIN (
+            SELECT goid, fieldname 
+            FROM pq_fields_mag
+            WHERE mag_field0 IN (?)
+        ) USING (goid)
+    )
+    -- ## NOTE: use left join here as not all graduates have advisor (particularly pre-1980) and possibly also keywords
+    LEFT JOIN (
+        SELECT goid
+            , fields as keywords
+            , advisors as coauthors
+        FROm pq_info_linking
+    ) USING(goid)
+    INNER JOIN (
+        SELECT university_id, normalizedname as institution
+        FROM pq_unis
+        WHERE location like "%United States%"
+    ) USING(university_id)
+    WHERE year >= 1985 and year <= 2015 AND length(firstname) > 1
+     LIMIT 500 
+
+
+    SELECT f.AuthorId
+        , f.year
+        , f.firstname
+        , f.lastname
+        , CASE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            WHEN 
+                "" THEN NULL 
+                ELSE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            END as middlename 
+            -- ## NOTE this gives "" for middlename when it is missing 
+        , f.fieldofstudy
+        , g.keywords
+        , g.coauthors
+        , g.institution
+        , g.year_papertitle
+    FROM (
+        SELECT a.AuthorId
+            , a.YearFirstPub AS year
+            , a.FirstName AS firstname
+            , REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "") AS lastname 
+                    -- https://stackoverflow.com/questions/21388820/how-to-get-the-last-index-of-a-substring-in-sqlite
+            , TRIM(SUBSTR(b.NormalizedName, length(a.FirstName) + 1)) AS middle_lastname 
+                    -- this gives all except the first name 
+            , length(b.NormalizedName) as l_fullname 
+            , length(a.FirstName) as l_firstname
+            , length(REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "")) as l_lastname
+            , e.NormalizedName AS fieldofstudy
+        FROM author_sample AS a
+        INNER JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM Authors
+        ) AS b USING(AuthorId)
+        INNER JOIN (
+            SELECT AuthorId
+            FROM author_field0
+            WHERE FieldOfStudyId_lvl0 IN (?)
+                AND Degree <= 0
+        ) USING(AuthorId)
+        LEFT JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM author_fields c
+            INNER JOIN (
+                SELECT FieldOfStudyId, NormalizedName
+                FROM FieldsOfStudy
+            ) AS d USING(FieldOfStudyId)
+            -- ## Condition on fieldofstudy being in the level 0 id_field
+            INNER JOIN (
+                SELECT ParentFieldOfStudyId, ChildFieldOfStudyId
+                FROM crosswalk_fields
+                WHERE ParentLevel = 0
+                    AND ParentFieldOfStudyId IN (?)
+            ) AS e ON (e.ChildFieldOfStudyId = c.FieldOfStudyId)
+            WHERE FieldClass = 'first'
+        ) AS e USING(AuthorId)
+    ) f
+    LEFT JOIN (
+        SELECT AuthorId
+                , institutions as institution
+                , main_us_institutions_career
+                , coauthors
+                , keywords
+                , year_papertitle
+        FROM author_info_linking
+    ) AS g USING(AuthorId)
+    WHERE length(firstname) > 1 AND year >= 1985 - 5 AND year <= 2015 + 5 
+        -- ## use this to condition on people that have at least at some point their main affiliation in the US
+        AND g.main_us_institutions_career IS NOT NULL
+        AND g.institution != "chinese academy of sciences"
+     LIMIT 500 
+
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (wholeFieldPredicate, lastname)
+Time elapsed: 1.9775649627049765 minutes 
+
+Starting active labeling...
+firstname : daniel
+lastname : castrolacouture
+middlename : None
+year : 2003
+year_papertitle : ((2003, 'a framework for developing a unified b2b e trading construction marketplace'), (2003, 'applicability of e work models for the automation of construction materials management systems'), (2004, 'enabling information sharing between e commerce systems for construction material procurement'), (2005, 'quantitative assessment of web based construction management systems application in rebar design and estimation'), (2006, 'implementing a b2b e work system to the approval process of rebar design and estimation'), (2006, 'optimizing b2b transactions using the marketplace competitive analyzer'), (2007, 'cable suspended robotic contour crafting system'), (2007, 'current state of construction enterprise information systems survey research'), (2007, 'supply chain optimization tool for purchasing decisions in b2b construction marketplaces'), (2008, 'erratum to cable suspended robotic contour crafting system automation in construction 17 2007 45 55'))
+keywords : frozenset({'manufacturing engineering', 'commerce', 'artificial intelligence', 'marketing', 'systems engineering', 'construction engineering', 'world wide web', 'engineering drawing', 'computer security', 'industrial engineering', 'industrial organization', 'engineering management', 'knowledge management'})
+
+firstname : daniel
+lastname : lass
+middlename : alfred
+year : 1985
+year_papertitle : ((1985, 'estimation of total factor productivity growth in the corn belt region a dual approach to measurement microeconomics profit functions econometrics technological change'),)
+keywords : frozenset({'agricultural economics'})
+
+0/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished
+(y)es / (n)o / (u)nsure / (f)inished
+firstname : ronald
+lastname : mincy
+middlename : b
+year : 1990
+year_papertitle : ((1990, 'in reply underclass problems with the term'), (1990, 'raising the minimum wage effects on family poverty'), (1990, 'the underclass definition and measurement'), (1991, 'workforce 2000 silver bullet or dud job structure changes and economic prospects for black males in the 1990s'), (1993, 'understanding the changing fortunes of metropolitan neighborhoods 1980 to 1990'), (1994, 'nurturing young black males challenges to agencies programs and social policy'), (1997, 'the disparate racial neighborhood impacts of metropolitan economic restructuring'))
+keywords : frozenset({'development economics', 'demographic economics', 'neoclassical economics', 'labour economics', 'economic growth', 'criminology', 'positive economics'})
+
+firstname : ronald
+lastname : milcarek
+middlename : None
+year : 1989
+year_papertitle : ((1989, 'technology transfer and technological dependence the global pesticide industry'),)
+keywords : frozenset({'agricultural economics', 'business costs', 'economics'})
+
+1/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (wholeFieldPredicate, lastname)
+INFO:dedupe.training:SimplePredicate: (commonSixGram, firstname)
+firstname : john
+lastname : mamer
+middlename : w
+year : 1982
+year_papertitle : ((1982, 'cost analysis of pro rata and free replacement warranties'), (1982, 'optimizing field repair kits based on job completion rate'), (1985, 'job completion based inventory systems optimal policies for repair kits and spare machines'), (1986, 'a zero sum game with incomplete information and compact action spaces'), (1986, 'successive approximations for finite horizon semi markov decision processes with application to asset liquidation'), (1987, 'a constrained capital budgeting problem with applications to repair kit selection'), (1987, 'discounted and per unit costs of product warranty'), (1987, 'uncertainty competition and the adoption of new technology'), (1988, 'approximations for the random minimal spanning tree with application to network provisioning'), (1988, 'when many wrongs make a right an asymptotic analysis of risk aversion and additive risks'))
+keywords : frozenset({'discrete mathematics', 'combinatorics', 'operations research', 'operations management', 'mathematical optimization', 'microeconomics', 'econometrics', 'mathematical economics', 'actuarial science'})
+
+firstname : john
+lastname : mackenzie
+middlename : None
+year : 1985
+year_papertitle : ((1985, 'the residential market for fuelwood in rhode island demand supply and policy implications household production logit discrete choice wood heat wood burning'),)
+keywords : frozenset({'agricultural economics'})
+
+1/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : charles
+lastname : kurzman
+middlename : None
+year : 1988
+year_papertitle : ((1988, 'the rhetoric of science strategies for logical leaping'), (1993, 'how the field grows cases from berkeley ethnography unbound power and resistance in the modern metropolis'), (1993, 'paradigm busting and vertical linkage ethnography unbound power and resistance in the modern metropolis'), (1994, 'epistemology and the sociology of knowledge'), (1995, 'book reviews allan megill ed rethinking objectivity duke university press durham nc and london 1994 pp 342 15 95'), (1995, 'conditions of liberty civil society and its rivals by ernest gellner allen lane penguin press 1994 cloth 27 95'), (1995, 'historiography of the iranian revolutionary movement 1977 79'))
+keywords : frozenset({'law and economics', 'economic geography', 'engineering physics', 'social science', 'media studies', 'operations management', 'literature', 'library science', 'epistemology', 'art history', 'economic history'})
+
+firstname : charngyeong
+lastname : ku
+middlename : None
+year : 1989
+year_papertitle : ((1989, 'the political economy of the philippine sugar industry'),)
+keywords : frozenset({'agricultural economics', 'political science'})
+
+2/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (firstTokenPredicate, firstname)
+firstname : casto
+lastname : kuscevic
+middlename : martin montero
+year : 2014
+year_papertitle : ((2014, 'okun s law and urban spillovers in us unemployment'), (2015, 'dollarization and money demand stability in bolivia'), (2015, 'mises and montaigne a note'), (2016, 'mises and montaigne a reply to bagus et al'), (2017, 'the role of spatial gdp spillovers in state level okun s law'), (2018, 'inflation volatility and economic growth in bolivia a regional analysis'), (2019, 'ideology and the role of natural resources in bolivia'), (2019, 'party cues political trends and fiscal interactions in the united states'), (2020, 'female unemployment in lebanon a time series analysis'), (2020, 'syrian refugees in lebanon a spatial study'))
+keywords : frozenset({'psychoanalysis', 'public economics', 'monetary economics', 'demographic economics', 'labour economics', 'economic growth', 'macroeconomics', 'econometrics', 'natural resource economics'})
+
+firstname : charngyeong
+lastname : ku
+middlename : None
+year : 1989
+year_papertitle : ((1989, 'the political economy of the philippine sugar industry'),)
+keywords : frozenset({'agricultural economics', 'political science'})
+
+2/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : joseph
+lastname : herriges
+middlename : a
+year : 1984
+year_papertitle : ((1984, 'consistency of residential customer response in time of use electricity pricing experiments'), (1984, 'modelling alternative residential peak load electricity rate structures'), (1985, 'statistically adjusted engineering sae models of end use load curves'), (1987, 'a bayesian approach to combining conditional demand and engineering models of electricity usage'), (1987, 'the neoclassical model of consumer demand with identically priced commodities an application to time of use electricity pricing'), (1988, 'load impact of interruptible and curtailable rate programs evidence from ten utilities tariff incentives'), (1989, 'load shifting under voluntary residential time of use rates'), (1990, 'customer demand for service reliability in the electric power industry a synthesis of the outage cost literature'))
+keywords : frozenset({'statistics', 'environmental economics', 'operations research', 'operations management', 'industrial organization', 'econometrics', 'microeconomics'})
+
+firstname : jose
+lastname : hernandezdiaz
+middlename : ciro
+year : 1988
+year_papertitle : ((1988, 'input output analysis of the state of durango mexico'),)
+keywords : frozenset({'agricultural economics'})
+
+3/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (firstTokenPredicate, firstname)
+INFO:dedupe.training:TfidfNGramSearchPredicate: (0.4, lastname)
+firstname : ani
+lastname : katchova
+middlename : l
+year : 2004
+year_papertitle : ((2004, 'credit score migration analysis of farm businesses conditioning on business cycles and migration trends'), (2004, 'two step econometric estimation of farm characteristics affecting marketing contract decisions'), (2005, 'a dynamic model of oligopoly and oligopsony in the u s potato processing industry'), (2005, 'credit risk models and agricultural lending'), (2005, 'factors affecting farm credit use'), (2005, 'farmland valuation and asset performance'), (2005, 'mean reversion and autocorrelation in profitability of illinois farms'), (2005, 'the farm diversification discount'), (2006, 'a dynamic model of individual and group lending in developing countries'), (2008, 'a comparison of the economic well being of farm and nonfarm households'))
+keywords : frozenset({'market economy', 'demographic economics', 'marketing', 'labour economics', 'finance', 'agricultural science', 'econometrics', 'agricultural economics', 'microeconomics', 'financial economics', 'actuarial science'})
+
+firstname : charngyeong
+lastname : ku
+middlename : None
+year : 1989
+year_papertitle : ((1989, 'the political economy of the philippine sugar industry'),)
+keywords : frozenset({'agricultural economics', 'political science'})
+
+3/10 positive, 3/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : javier
+lastname : calatravarequena
+middlename : None
+year : 2003
+year_papertitle : ((2003, 'the economic benefits of soil erosion control an application of the contingent valuation method in the alto genil basin of southern spain'), (2005, 'designing policy for reducing the off farm effects of soil erosion using choice experiments'), (2006, 'analysing the social benefits of soil conservation measures using stated preference methods'), (2006, 'comparison of farming techniques actually implemented and their rationality in organic and conventional olive groves in andalusia spain'), (2007, 'a multi criteria evaluation of the environmental performances of conventional organic and integrated olive growing systems in the south of spain based on experts knowledge'), (2007, 'diffusion and adoption of organic farming in the southern spanish olive groves'), (2007, 'testing choice experiment for benefit transfer with preference heterogeneity'), (2008, 'a systemic comparative assessment of the multifunctional performance of alternative olive systems in spain within an ahp extended framework'), (2008, 'gender needs awareness and gender asymmetry an analysis of a rural women survey in mountainous areas of south eastern spain'), (2009, 'public preferences for landscape features the case of agricultural landscape in mountainous mediterranean areas'))
+keywords : frozenset({'environmental economics', 'environmental resource management', 'natural resource economics', 'agricultural economics', 'econometrics', 'agricultural engineering', 'environmental protection', 'socioeconomics'})
+
+firstname : david
+lastname : park
+middlename : william
+year : 1986
+year_papertitle : ((1986, 'an appraisal of composite forecasting methods with applications to agricultural commodity price series'),)
+keywords : frozenset({'agricultural economics'})
+
+4/10 positive, 3/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (sortedAcronym, lastname)
+INFO:dedupe.training:SimplePredicate: (commonSixGram, firstname)
+firstname : javier
+lastname : calatravarequena
+middlename : None
+year : 2003
+year_papertitle : ((2003, 'the economic benefits of soil erosion control an application of the contingent valuation method in the alto genil basin of southern spain'), (2005, 'designing policy for reducing the off farm effects of soil erosion using choice experiments'), (2006, 'analysing the social benefits of soil conservation measures using stated preference methods'), (2006, 'comparison of farming techniques actually implemented and their rationality in organic and conventional olive groves in andalusia spain'), (2007, 'a multi criteria evaluation of the environmental performances of conventional organic and integrated olive growing systems in the south of spain based on experts knowledge'), (2007, 'diffusion and adoption of organic farming in the southern spanish olive groves'), (2007, 'testing choice experiment for benefit transfer with preference heterogeneity'), (2008, 'a systemic comparative assessment of the multifunctional performance of alternative olive systems in spain within an ahp extended framework'), (2008, 'gender needs awareness and gender asymmetry an analysis of a rural women survey in mountainous areas of south eastern spain'), (2009, 'public preferences for landscape features the case of agricultural landscape in mountainous mediterranean areas'))
+keywords : frozenset({'environmental economics', 'environmental resource management', 'natural resource economics', 'agricultural economics', 'econometrics', 'agricultural engineering', 'environmental protection', 'socioeconomics'})
+
+firstname : jeffrey
+lastname : dale
+middlename : francis
+year : 1989
+year_papertitle : ((1989, 'optimal agricultural management decisions for controlling nonpoint subsurface chemical contamination'),)
+keywords : frozenset({'agricultural economics', 'environmental science'})
+
+4/10 positive, 4/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : paul
+lastname : glasserman
+middlename : None
+year : 1987
+year_papertitle : ((1987, 'sensitivity of sample values not generated by inversion'), (1988, 'infinitesimal perturbation analysis of a birth and death process'), (1988, 'performance continuity and differentiability in monte carlo optimization'), (1989, 'aggregation approximations for sensitivity analysis of multi class queueing networks'), (1989, 'derivative estimates from discontinuous realizations smoothing techniques'), (1990, 'applications of some structural properties in stochastic discrete event systems'), (1990, 'discrete time inversion and derivative estimation for markov chains'), (1990, 'gradient estimation via perturbation analysis'), (1990, 'smoothed perturbation analysis for a class of discrete event systems'), (1990, 'the limiting value of derivative estimators based on perturbation analysis'))
+keywords : frozenset({'applied mathematics', 'discrete mathematics', 'mathematical analysis', 'calculus', 'algorithm', 'mathematical optimization'})
+
+firstname : paul
+lastname : teague
+middlename : wood
+year : 1985
+year_papertitle : ((1985, 'optimal cropping patterns under risk the texas lower rio grande valley'),)
+keywords : frozenset({'agricultural economics'})
+
+5/10 positive, 4/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (metaphoneToken, firstname)
+INFO:dedupe.training:SimplePredicate: (sortedAcronym, lastname)
+firstname : javier
+lastname : calatravarequena
+middlename : None
+year : 2003
+year_papertitle : ((2003, 'the economic benefits of soil erosion control an application of the contingent valuation method in the alto genil basin of southern spain'), (2005, 'designing policy for reducing the off farm effects of soil erosion using choice experiments'), (2006, 'analysing the social benefits of soil conservation measures using stated preference methods'), (2006, 'comparison of farming techniques actually implemented and their rationality in organic and conventional olive groves in andalusia spain'), (2007, 'a multi criteria evaluation of the environmental performances of conventional organic and integrated olive growing systems in the south of spain based on experts knowledge'), (2007, 'diffusion and adoption of organic farming in the southern spanish olive groves'), (2007, 'testing choice experiment for benefit transfer with preference heterogeneity'), (2008, 'a systemic comparative assessment of the multifunctional performance of alternative olive systems in spain within an ahp extended framework'), (2008, 'gender needs awareness and gender asymmetry an analysis of a rural women survey in mountainous areas of south eastern spain'), (2009, 'public preferences for landscape features the case of agricultural landscape in mountainous mediterranean areas'))
+keywords : frozenset({'environmental economics', 'environmental resource management', 'natural resource economics', 'agricultural economics', 'econometrics', 'agricultural engineering', 'environmental protection', 'socioeconomics'})
+
+firstname : elton
+lastname : li
+middlename : None
+year : 1987
+year_papertitle : ((1987, 'microcomputer applications to agricultural policy analysis in developing countries'),)
+keywords : frozenset({'agricultural economics'})
+
+5/10 positive, 5/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : daniel
+lastname : castrolacouture
+middlename : None
+year : 2003
+year_papertitle : ((2003, 'a framework for developing a unified b2b e trading construction marketplace'), (2003, 'applicability of e work models for the automation of construction materials management systems'), (2004, 'enabling information sharing between e commerce systems for construction material procurement'), (2005, 'quantitative assessment of web based construction management systems application in rebar design and estimation'), (2006, 'implementing a b2b e work system to the approval process of rebar design and estimation'), (2006, 'optimizing b2b transactions using the marketplace competitive analyzer'), (2007, 'cable suspended robotic contour crafting system'), (2007, 'current state of construction enterprise information systems survey research'), (2007, 'supply chain optimization tool for purchasing decisions in b2b construction marketplaces'), (2008, 'erratum to cable suspended robotic contour crafting system automation in construction 17 2007 45 55'))
+keywords : frozenset({'manufacturing engineering', 'commerce', 'artificial intelligence', 'marketing', 'systems engineering', 'construction engineering', 'world wide web', 'engineering drawing', 'computer security', 'industrial engineering', 'industrial organization', 'engineering management', 'knowledge management'})
+
+firstname : chihming
+lastname : ka
+middlename : None
+year : 1987
+year_papertitle : ((1987, 'land tenure development and dependency in colonial taiwan 1895 1945'),)
+keywords : frozenset({'agricultural economics', 'history', 'social structure'})
+
+6/10 positive, 5/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (metaphoneToken, firstname)
+INFO:dedupe.training:SimplePredicate: (sortedAcronym, lastname)
+INFO:dedupe.training:ExistsPredicate: (Exists, middlename)
+firstname : dogan
+lastname : tirtiroglu
+middlename : None
+year : 1991
+year_papertitle : ((1991, 'housing price indices based on all transactions compared to repeat subsamples'), (1993, 'an international comparison of scale economies in banking evidence from turkey'), (1994, 'positive feedback trading and diffusion of asset price changes evidence from housing transactions'), (1995, 'imperfect information and investor inferences from housing price dynamics'), (1996, 'capitalization of brokerage commissions the case of nonlocal buyers and sellers'), (1997, 'temporal and spatial information diffusion in real estate price changes and variances'), (1997, 'valuation process and market efficiency for us treasury bonds'), (1998, 'bank efficiency in croatia a stochastic frontier analysis'), (1998, 'total factor productivity growth and regulation in u s commercial banking during 1946 1995 an empirical investigation'))
+keywords : frozenset({'international trade', 'statistics', 'monetary economics', 'market economy', 'finance', 'economy', 'international economics', 'econometrics', 'financial system', 'financial economics', 'actuarial science'})
+
+firstname : craig
+lastname : witt
+middlename : allan
+year : 1988
+year_papertitle : ((1988, 'agricultural diversification decisions under risk pragmatic use of e v portfolio analysis'),)
+keywords : frozenset({'agricultural economics', 'finance'})
+
+6/10 positive, 6/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : leopold
+lastname : kirner
+middlename : None
+year : 2003
+year_papertitle : ((2003, 'comparison of organic and non organic dairy farms world wide'), (2004, 'status and development of organic farming in de at dk hu ar'), (2006, 'intended and actual behavior of organic farmers in austria after a five year commitment period'), (2010, 'greenhouse gas emissions from selected austrian dairy production systems model calculations considering the effects of land use change'))
+keywords : frozenset({'agricultural economics', 'agricultural science', 'economic growth', 'agronomy'})
+
+firstname : steven
+lastname : turner
+middlename : cornell
+year : 1986
+year_papertitle : ((1986, 'economic implications of a computerized trading system for grains'),)
+keywords : frozenset({'agricultural economics'})
+
+7/10 positive, 6/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:ExistsPredicate: (Exists, year_papertitle)
+firstname : thomas
+lastname : chemmanur
+middlename : j
+year : 1993
+year_papertitle : ((1993, 'the pricing of initial public offerings a dynamic model with information production'), (1994, 'investment bank reputation information production and financial intermediation'), (1994, 'reputation renegotiation and the choice between bank loans and publicly traded debt'), (1996, 'optimal incorporation structure of debt contracts and limited recourse project financing'), (1997, 'why include warrants in new equity issues a theory of unit ipos'), (1999, 'a theory of the going public decision'), (1999, 'asymmetric information corporate myopia and capital gains tax rates an analysis of policy prescriptions'), (2000, 'symposium2000 journal of financial intermediation symposium new technologies financial innovation and intermediation presented by financial service research center the wallace e carroll school of management at boston college'))
+keywords : frozenset({'public economics', 'monetary economics', 'finance', 'accounting', 'financial system', 'financial economics'})
+
+firstname : hsiangtai
+lastname : cheng
+middlename : None
+year : 1985
+year_papertitle : ((1985, 'impacts of socioeconomic and demographic factors on household expenditure for disaggregate fish and shellfish in the united states'),)
+keywords : frozenset({'aquaculture', 'agricultural economics', 'fish production'})
+
+7/10 positive, 7/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : henrik
+lastname : lindhjem
+middlename : None
+year : 2003
+year_papertitle : ((2003, 'costs and benefits of recycling liquid board containers'), (2007, '20 years of stated preference valuation of non timber benefits from fennoscandian forests a meta analysis'), (2007, 'environmental economic impact assessment in china problems and prospects'), (2008, 'how reliable are meta analyses for international benefit transfers'), (2008, 'valuing forest recreation on the national level in a transition economy the case of poland'), (2009, 'asking for individual or household willingness to pay for environmental goods implication for aggregate welfare measures'), (2009, 'environmental pollution in china status and trends'), (2009, 'how do the economic instruments work'), (2009, 'summary and cross country comparison'), (2009, 'the use of economic instruments in nordic environmental policy 2006 2009'))
+keywords : frozenset({'public economics', 'environmental economics', 'engineering ethics', 'demographic economics', 'natural resource economics', 'economic growth', 'environmental planning', 'economy', 'socioeconomics', 'agricultural economics', 'environmental protection', 'waste management'})
+
+firstname : junvae
+lastname : lee
+middlename : None
+year : 1988
+year_papertitle : ((1988, 'a parametric spatial equilibrium and response surface analysis of the texas and us fresh onion industry'),)
+keywords : frozenset({'agricultural economics'})
+
+8/10 positive, 7/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : carl
+lastname : dassbach
+middlename : h a
+year : 1991
+year_papertitle : ((1991, 'the origins of fordism the introduction of mass production and the five dollar wage'), (1993, 'enterprises and b phases the overseas expansion of u s auto companies in the 1920s and japanese auto companies in the 1980s'), (1994, 'book review beyond mass production the japanese system and its transfer to the u s by martin kenney and richard florida new york and oxford oxford university press 1993'), (1994, 'the japanese world of work and north american factories'), (1995, 'review of japanese auto transplants in the heartland corporatism and community by robert perucci'), (1998, 'the flaws of realism'))
+keywords : frozenset({'law', 'public administration', 'neoclassical economics', 'labour economics', 'media studies', 'economy', 'economic history'})
+
+firstname : chihming
+lastname : ka
+middlename : None
+year : 1987
+year_papertitle : ((1987, 'land tenure development and dependency in colonial taiwan 1895 1945'),)
+keywords : frozenset({'agricultural economics', 'history', 'social structure'})
+
+8/10 positive, 8/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : olaf
+lastname : unteroberdoerster
+middlename : None
+year : 2001
+year_papertitle : ((2001, 'trade and transboundary pollution spatial separation reconsidered'), (2003, 'trade policy and environmental regulation in the asia pacific a simulation'), (2004, 'banking reform in the lower mekong countries'))
+keywords : frozenset({'natural resource economics', 'economy', 'international economics', 'development economics'})
+
+firstname : elton
+lastname : li
+middlename : None
+year : 1987
+year_papertitle : ((1987, 'microcomputer applications to agricultural policy analysis in developing countries'),)
+keywords : frozenset({'agricultural economics'})
+
+9/10 positive, 8/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : constantine
+lastname : loucopoulos
+middlename : None
+year : 1995
+year_papertitle : ((1995, 'examining optimal criterion weights in mixed integer programming approaches to the multiple group classification problem'), (1997, 'computational characteristics of a new mathematical programming model for the three group discriminant problem'), (1997, 'effect of prior probabilities on the classificatory performance of parametric and mathematical programming approaches to the two group discriminant problem'), (2001, 'evaluating the effect of gap size in a single function mathematical programming model for the three group classification problem'), (2001, 'three group classification with unequal misclassification costs a mathematical programming approach'), (2002, 'insights into gender discrimination in employment compensation through the use of classification models'))
+keywords : frozenset({'statistics', 'labour economics', 'artificial intelligence', 'mathematical optimization', 'pattern recognition', 'machine learning'})
+
+firstname : heungdong
+lastname : lee
+middlename : None
+year : 1989
+year_papertitle : ((1989, 'input demand and output supply responses when the production function is heteroskedastic'),)
+keywords : frozenset({'agricultural economics'})
+
+9/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : dan
+lastname : braha
+middlename : None
+year : 1992
+year_papertitle : ((1992, 'communications a proof of the complexity of design'), (1996, 'control limits for multi stage manufacturing processes with binomial yield single and multiple production runs'), (1996, 'on the complexity of the design synthesis problem'), (1997, 'grouping components in printed circuit board assembly with limited component staging capacity and single card setup problem characteristics and solution procedures'), (1997, 'the design process properties paradigms and structure'), (1998, 'a genetic algorithm approach to scheduling pcbs on a single machine'), (1998, 'a mathematical theory of design foundations algorithms and applications'), (1998, 'corrigendum to the design process properties paradigms and structure'), (1998, 'the measurement of a design structural and functional complexity'), (1998, 'unifying themes in complex systems'))
+keywords : frozenset({'manufacturing engineering', 'process engineering', 'management science', 'theoretical computer science', 'electronic engineering', 'algorithm', 'operations research', 'mathematical optimization', 'mechanical engineering', 'computer engineering', 'software engineering'})
+
+firstname : edith
+lastname : brashares
+middlename : nevins
+year : 1985
+year_papertitle : ((1985, 'estimating the instream value of lake water quality in southeast michigan hedonics prices property demand benefits'),)
+keywords : frozenset({'agricultural economics'})
+
+9/10 positive, 10/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : theodore
+lastname : apostolopoulos
+middlename : k
+year : 1986
+year_papertitle : ((1986, 'queueing analysis of buffered csma cd protocols'), (1989, 'time distributions in discrete time markov processes'), (1990, 'the inverse scattering problem for a rigid ellipsoid in linear elasticity'), (1991, 'model for the analysis of csma cd channel for data and voice applications'), (1992, 'a parallel algorithm for solving the inverse scattering moment problem'), (1992, 'performance of read only transactions in a distributed system'))
+keywords : frozenset({'real time computing', 'mathematical analysis', 'classical mechanics', 'geometry', 'calculus', 'algorithm', 'computer network', 'distributed computing'})
+
+firstname : oumar
+lastname : aw
+middlename : None
+year : 1986
+year_papertitle : ((1986, 'status and perspectives of the wood energy crisis in the sahel'),)
+keywords : frozenset({'agricultural economics'})
+
+10/10 positive, 10/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+Finished labeling
+INFO:rlr.crossvalidation:using cross validation to find optimum alpha...
+INFO:rlr.crossvalidation:optimum alpha: 1.000000, score -0.14942810495373765
+INFO:dedupe.training:Final predicate set:
+Done in 2.555940937995911 minutes.

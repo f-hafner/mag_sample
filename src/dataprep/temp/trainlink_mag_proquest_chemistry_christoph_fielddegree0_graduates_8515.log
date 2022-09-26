@@ -1,0 +1,839 @@
+/home/christoph/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/numpy/core/getlimits.py:500: UserWarning: The value of the smallest subnormal for <class 'numpy.float64'> type is zero.
+  setattr(self, word, getattr(machar, word).flat[0])
+/home/christoph/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/numpy/core/getlimits.py:89: UserWarning: The value of the smallest subnormal for <class 'numpy.float64'> type is zero.
+  return self._float_to_str(self.smallest_subnormal)
+/home/christoph/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/numpy/core/getlimits.py:500: UserWarning: The value of the smallest subnormal for <class 'numpy.float32'> type is zero.
+  setattr(self, word, getattr(machar, word).flat[0])
+/home/christoph/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/numpy/core/getlimits.py:89: UserWarning: The value of the smallest subnormal for <class 'numpy.float32'> type is zero.
+  return self._float_to_str(self.smallest_subnormal)
+Namespace(testing=False, verbose=1, field=['chemistry'], train_name='christoph_fielddegree0', startyear=1985, endyear=2015, mergemode='1:1', recall=0.9, institution='False', fieldofstudy_cat='False', fieldofstudy_str='False', keywords='True', retrain='True', linking_type='graduates', samplesize=50000)
+Have max 6 cores available
+Testing is False 
+
+finished setup ... 
+Time elapsed: 0.0006355921427408854 minutes 
+
+
+    SELECT goid
+            , year
+            , firstname 
+            , lastname
+            , CASE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                WHEN 
+                    "" THEN NULL 
+                    ELSE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                END AS middlename
+            , fieldofstudy
+            , keywords
+            , institution
+            , coauthors
+            , year_papertitle
+    FROM (
+        SELECT goid
+            , degree_year AS year 
+            , fullname 
+            , SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) AS firstname
+            , REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "") AS lastname 
+            , TRIM(SUBSTR(fullname, length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1)) + 1)) AS middle_lastname 
+            , length(fullname) AS l_fullname 
+            , length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) ) AS l_firstname
+            , length(REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "")) AS l_lastname
+            , fieldname AS fieldofstudy
+            , university_id
+            , degree_year || "//" || thesistitle as year_papertitle 
+        FROM pq_authors 
+        INNER JOIN (
+            SELECT goid, fieldname 
+            FROM pq_fields_mag
+            WHERE mag_field0 IN (?)
+        ) USING (goid)
+    )
+    -- ## NOTE: use left join here as not all graduates have advisor (particularly pre-1980) and possibly also keywords
+    LEFT JOIN (
+        SELECT goid
+            , fields as keywords
+            , advisors as coauthors
+        FROm pq_info_linking
+    ) USING(goid)
+    INNER JOIN (
+        SELECT university_id, normalizedname as institution
+        FROM pq_unis
+        WHERE location like "%United States%"
+    ) USING(university_id)
+    WHERE year >= 1985 and year <= 2015 AND length(firstname) > 1
+     
+
+
+    SELECT f.AuthorId
+        , f.year
+        , f.firstname
+        , f.lastname
+        , CASE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            WHEN 
+                "" THEN NULL 
+                ELSE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            END as middlename 
+            -- ## NOTE this gives "" for middlename when it is missing 
+        , f.fieldofstudy
+        , g.keywords
+        , g.coauthors
+        , g.institution
+        , g.year_papertitle
+    FROM (
+        SELECT a.AuthorId
+            , a.YearFirstPub AS year
+            , a.FirstName AS firstname
+            , REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "") AS lastname 
+                    -- https://stackoverflow.com/questions/21388820/how-to-get-the-last-index-of-a-substring-in-sqlite
+            , TRIM(SUBSTR(b.NormalizedName, length(a.FirstName) + 1)) AS middle_lastname 
+                    -- this gives all except the first name 
+            , length(b.NormalizedName) as l_fullname 
+            , length(a.FirstName) as l_firstname
+            , length(REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "")) as l_lastname
+            , e.NormalizedName AS fieldofstudy
+        FROM author_sample AS a
+        INNER JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM Authors
+        ) AS b USING(AuthorId)
+        INNER JOIN (
+            SELECT AuthorId
+            FROM author_field0
+            WHERE FieldOfStudyId_lvl0 IN (?)
+                AND Degree <= 0
+        ) USING(AuthorId)
+        LEFT JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM author_fields c
+            INNER JOIN (
+                SELECT FieldOfStudyId, NormalizedName
+                FROM FieldsOfStudy
+            ) AS d USING(FieldOfStudyId)
+            -- ## Condition on fieldofstudy being in the level 0 id_field
+            INNER JOIN (
+                SELECT ParentFieldOfStudyId, ChildFieldOfStudyId
+                FROM crosswalk_fields
+                WHERE ParentLevel = 0
+                    AND ParentFieldOfStudyId IN (?)
+            ) AS e ON (e.ChildFieldOfStudyId = c.FieldOfStudyId)
+            WHERE FieldClass = 'first'
+        ) AS e USING(AuthorId)
+    ) f
+    LEFT JOIN (
+        SELECT AuthorId
+                , institutions as institution
+                , main_us_institutions_career
+                , coauthors
+                , keywords
+                , year_papertitle
+        FROM author_info_linking
+    ) AS g USING(AuthorId)
+    WHERE length(firstname) > 1 AND year >= 1985 - 5 AND year <= 2015 + 5 
+        -- ## use this to condition on people that have at least at some point their main affiliation in the US
+        AND g.main_us_institutions_career IS NOT NULL
+        AND g.institution != "chinese academy of sciences"
+     
+
+INFO:dedupe.canopy_index:Removing stop word an
+INFO:dedupe.canopy_index:Removing stop word ma
+INFO:dedupe.canopy_index:Removing stop word al
+INFO:dedupe.canopy_index:Removing stop word le
+INFO:dedupe.canopy_index:Removing stop word ch
+INFO:dedupe.canopy_index:Removing stop word la
+INFO:dedupe.canopy_index:Removing stop word re
+INFO:dedupe.canopy_index:Removing stop word in
+INFO:dedupe.canopy_index:Removing stop word ro
+INFO:dedupe.canopy_index:Removing stop word el
+INFO:dedupe.canopy_index:Removing stop word ha
+INFO:dedupe.canopy_index:Removing stop word ll
+INFO:dedupe.canopy_index:Removing stop word ra
+INFO:dedupe.canopy_index:Removing stop word ar
+INFO:dedupe.canopy_index:Removing stop word on
+INFO:dedupe.canopy_index:Removing stop word en
+INFO:dedupe.canopy_index:Removing stop word ne
+INFO:dedupe.canopy_index:Removing stop word en
+INFO:dedupe.canopy_index:Removing stop word an
+INFO:dedupe.canopy_index:Removing stop word sh
+INFO:dedupe.canopy_index:Removing stop word ch
+INFO:dedupe.canopy_index:Removing stop word ng
+INFO:dedupe.canopy_index:Removing stop word in
+INFO:dedupe.canopy_index:Removing stop word ar
+INFO:dedupe.canopy_index:Removing stop word on
+INFO:dedupe.canopy_index:Removing stop word un
+INFO:dedupe.canopy_index:Removing stop word an
+INFO:dedupe.canopy_index:Removing stop word er
+INFO:dedupe.canopy_index:Removing stop word ri
+INFO:dedupe.canopy_index:Removing stop word hi
+INFO:dedupe.canopy_index:Removing stop word ha
+INFO:dedupe.canopy_index:Removing stop word ia
+INFO:dedupe.canopy_index:Removing stop word na
+INFO:dedupe.canopy_index:Removing stop word ra
+INFO:dedupe.canopy_index:Removing stop word ar
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:TfidfNGramSearchPredicate: (0.8, lastname)
+Time elapsed: 498.7891074935595 minutes 
+
+Starting active labeling...
+firstname : gregory
+lastname : beutner
+middlename : l
+year : 2002
+year_papertitle : ((2002, 'catalytic enantioselective addition of dialkylzincs to aldehydes using 2s 3 exo dimethylamino isoborneol 2s daib s 1 phenyl 1 propanol benzenemethanol α ethyl s'), (2002, 'formation of γ keto esters from β keto esters methyl 5 5 dimethyl 4 oxohexanoate hexanoic acid 5 5 dimethyl 4 oxo methyl ester'), (2002, 'lewis base activation of lewis acids addition of silyl ketene acetals to aldehydes'), (2003, 'lewis base activation of lewis acids vinylogous aldol reactions'), (2005, 'catalytic enantioselective vinylogous aldol reactions'), (2005, 'lewis base activation of lewis acids catalytic enantioselective addition of silyl ketene acetals to aldehydes'), (2006, 'rhenium catalyzed 1 3 isomerization of allylic alcohols scope and chirality transfer'), (2007, 'a concise synthesis of s n ethoxycarbonyl α methylvaline'), (2007, 'a practical method for preparation of 4 hydroxyquinolinone esters'), (2007, 'enantioselective ring opening of epoxides with silicon tetrachloride in the presence of a chiral lewis base mechanism studies'))
+keywords : frozenset({'polymer chemistry', 'medicinal chemistry', 'combinatorial chemistry', 'stereochemistry', 'organic chemistry'})
+
+firstname : gregory
+lastname : beutner
+middlename : louis
+year : 2004
+year_papertitle : ((2004, 'lewis base activation of lewis acids in asymmetric aldol reactions of silyl ketene acetals'),)
+keywords : frozenset({'organic chemistry'})
+
+0/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished
+firstname : carl
+lastname : newman
+middlename : i d
+year : 2005
+year_papertitle : ((2005, 'effects of nonequilibrium on velocity and plate height in reactive capillary electrophoresis'), (2005, 'stochastic simulation of reactive separations in capillary electrophoresis'), (2006, 'capillary electrophoresis for thermodynamic and kinetic studies of peptidyl proline isomerization by the theoretical plate height model'), (2008, 'advances in ce for kinetic studies'))
+keywords : frozenset({'thermodynamics', 'analytical chemistry', 'statistical physics', 'computational chemistry'})
+
+firstname : carl
+lastname : newman
+middlename : i d
+year : 2006
+year_papertitle : ((2006, 'capillary electrophoresis for thermodynamic and kinetic studies'),)
+keywords : frozenset({'analytical chemistry'})
+
+1/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:TfidfNGramSearchPredicate: (0.8, lastname)
+INFO:dedupe.training:SimplePredicate: (commonSixGram, lastname)
+firstname : nicholas
+lastname : shaw
+middlename : m
+year : 1987
+year_papertitle : ((1987, 'intracellular and extracellular cyclic nucleotides in wild type and white collar mutant strains of neurospora crassa temperature dependent efflux of cyclic amp from mycelia'), (1988, 'heat stable calcium inhibited cyclic nucleotide phosphodiesterase from neurospora crassa'))
+keywords : frozenset({'biochemistry', 'stereochemistry'})
+
+firstname : nicholas
+lastname : shaw
+middlename : n
+year : 2011
+year_papertitle : ((2011, 'targeting a form nucleic acids a neomycin based approach'),)
+keywords : frozenset({'genetics', 'organic chemistry', 'biochemistry'})
+
+2/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : charles
+lastname : perez
+middlename : m rubert
+year : 2008
+year_papertitle : ((2008, 'inhibitors of anthrax lethal factor based upon n oleoyldopamine'), (2011, 'a collagen peptide based physical hydrogel for cell encapsulation'), (2011, 'metal mediated tandem coassembly of collagen peptides into banded microstructures'), (2012, 'small molecule inhibitors of anthrax toxin induced cytotoxicity targeted against protective antigen'), (2013, 'dynamic display of bioactivity through host guest chemistry'), (2013, 'hierarchical assembly of collagen peptide triple helices into curved disks and metal ion promoted hollow spheres'), (2014, 'tuning the thermosensitive properties of hybrid collagen peptide polymer hydrogels'), (2015, 'the powerful functions of peptide based bioactive matrices for regenerative medicine'))
+keywords : frozenset({'crystallography', 'molecular biology', 'chemical engineering', 'biomedical engineering', 'polymer chemistry', 'biophysics', 'nanotechnology', 'cell biology', 'stereochemistry', 'biochemistry'})
+
+firstname : charles
+lastname : perez
+middlename : m rubert
+year : 2012
+year_papertitle : ((2012, 'development of collagen peptide based biomaterials and synthesis of small molecules targeted against anthrax protective antigen'),)
+keywords : frozenset({'chemistry', 'biochemistry'})
+
+2/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ziqiang
+lastname : guan
+middlename : None
+year : 1992
+year_papertitle : ((1992, 'electrochemistry of fullerene c60 films quartz crystal microbalance and mass spectrometric studies'), (1993, 'concentric tube vacuum chamber for high magnetic field high pressure ionization in a fourier transform ion cyclotron resonance mass spectrometer'), (1993, 'remeasurement of electrosprayed proteins in the trapped ion cell of a fourier transform ion cyclotron resonance mass spectrometer'), (1994, 'selective generation of charge cependent independent ion energy distributions from a heated capillary electrospray source'), (1995, 'cell geometry considerations for the fourier transform ion cyclotron resonance mass spectrometry remeasurement experiment'), (1995, 'charge state assignment from schiff base adducts in low resolution electrospray mass spectra of protein mixtures and dissociation products'), (1995, 'high performance detection of biomolecules using a high magnetic field electrospray ionization source fourier transform ion cyclotron resonance mass spectrometer'), (1995, 'real time monitoring of the gas phase reactions of a single ion population using the remeasurement experiment in fourier transform ion cyclotron resonance mass spectrometry'), (1995, 'remeasurement at high resolving power in fourier transform ion cyclotron resonance mass spectrometry'), (1996, 'broadband quadrupolar axialization of large multiply charged ions to enhance measurement and minimize conformational restrictions'))
+keywords : frozenset({'atomic physics', 'analytical chemistry', 'molecular physics'})
+
+firstname : ziqiang
+lastname : guan
+middlename : None
+year : 1994
+year_papertitle : ((1994, 'gas phase protein analysis by electrospray ionization fourier transform ion cyclotron resonance mass spectrometry'),)
+keywords : frozenset({'analytical chemistry'})
+
+3/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:TfidfNGramSearchPredicate: (0.8, lastname)
+INFO:dedupe.training:SimplePredicate: (commonTwoTokens, middlename)
+INFO:dedupe.training:SimplePredicate: (commonSixGram, lastname)
+firstname : luxin
+lastname : wang
+middlename : None
+year : 2007
+year_papertitle : ((2007, 'rapid and simultaneous quantitation of escherichia coli o157 h7 salmonella and shigella in ground beef by multiplex real time pcr and immunomagnetic separation'), (2009, 'detection of viable escherichia coli o157 h7 by ethidium monoazide real time pcr'), (2010, 'ema real time pcr as a reliable method for detection of viable salmonella in chicken and eggs'), (2012, 'detection of escherichia coli o157 h7 and salmonella in ground beef by a bead free quantum dot facilitated isolation method'), (2012, 'survival of salmonella escherichia coli o157 h7 and listeria monocytogenes on inoculated almonds and pistachios stored at 19 4 and 24 c'), (2013, 'a framework for developing research protocols for evaluation of microbial hazards and controls during production that pertain to the application of untreated soil amendments of animal origin on land used to grow produce that may be consumed raw'), (2013, 'correlation analysis of shiga toxin producing escherichia coli shedding and faecal bacterial composition in beef cattle'), (2014, '92survival and growth of listeria monocytogenes on deli roast beef during refrigeration storage'), (2014, 'evaluation of the effects of weaning diets on escherichia coli o157 shedding body weight and fecal bacterial communities in beef calves'), (2014, 'survival comparison of shiga toxin producing escherichia coli stec o26 and farm isolated o26 in ground beef'))
+keywords : frozenset({'molecular biology', 'environmental protection', 'microbiology', 'analytical chemistry', 'animal science', 'agronomy', 'food science', 'chromatography'})
+
+firstname : luxin
+lastname : wang
+middlename : None
+year : 2009
+year_papertitle : ((2009, 'novel pcr based rapid detection strategies for i escherichia coli i o157 h7 and i salmonella i in meat products'),)
+keywords : frozenset({'microbiology', 'food science'})
+
+4/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:TfidfTextSearchPredicate: (0.6, lastname)
+firstname : hai
+lastname : xu
+middlename : None
+year : 2006
+year_papertitle : ((2006, 'structures of eukaryotic ribonucleotide reductase i define gemcitabine diphosphate binding and subunit assembly'), (2006, 'structures of eukaryotic ribonucleotide reductase i provide insights into dntp regulation'), (2007, 'crystal structure of the anthrax drug target bacillus anthracis dihydrofolate reductase'), (2008, 'the structural basis for peptidomimetic inhibition of eukaryotic ribonucleotide reductase a conformationally flexible pharmacophore'), (2009, 'structure based design synthesis and evaluation of 2 2 hydroxyethyl 2 deoxyadenosine and the 5 diphosphate derivative as ribonucleotide reductase inhibitors'), (2011, 'structural basis for allosteric regulation of human ribonucleotide reductase by nucleotide induced oligomerization'), (2011, 'targeting the large subunit of human ribonucleotide reductase for cancer chemotherapy'))
+keywords : frozenset({'biochemistry', 'stereochemistry'})
+
+firstname : hai
+lastname : xuan
+middlename : None
+year : 2006
+year_papertitle : ((2006, 'characterization of drug interactions with alpha 1 acid glycoprotein using high performance affinity chromatography'),)
+keywords : frozenset({'organic chemistry', 'analytical chemistry', 'biochemistry'})
+
+5/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : reza
+lastname : mohseni
+middlename : m
+year : 1990
+year_papertitle : ((1990, 'retention characteristics of several compound classes in reversed phase liquid chromatography with β cyclodextrin as a mobile phase modifier'), (1990, 'reversed phase chromatographic separation of selected hydroxyl aromatics with β cyclodextrin as a mobile phase additive'), (1991, 'changes in the enthalpy and entropy of hydroxyl aromatics in reversed phase liquid chromatography with β cyclodextrin in the mobile phase'))
+keywords : frozenset({'chromatography'})
+
+firstname : reza
+lastname : mohsenimotlagh
+middlename : None
+year : 1990
+year_papertitle : ((1990, 'the effects of beta cyclodextrin on solute retention in reversed phase liquid chromatography'),)
+keywords : frozenset({'analytical chemistry'})
+
+6/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (fingerprint, firstname)
+firstname : jianwu
+lastname : xie
+middlename : None
+year : 2006
+year_papertitle : ((2006, 'organocatalytic and direct asymmetric vinylogous michael addition of α α dicyanoolefins to α β unsaturated aldehydes'), (2007, 'highly asymmetric michael addition to α β unsaturated ketones catalyzed by 9 amino 9 deoxyepiquinine'), (2007, 'highly enantioselective michael addition of cyclic 1 3 dicarbonyl compounds to alpha beta unsaturated ketones'), (2008, 'stereoselective desymmetrisation of prochiral α α dicyanoalkenes via domino michael michael addition reactions'))
+keywords : frozenset({'organic chemistry', 'stereochemistry', 'medicinal chemistry'})
+
+firstname : jian
+lastname : xie
+middlename : None
+year : 2006
+year_papertitle : ((2006, 'protein tyrosine phosphatase inhibitors rational design and combinatorial synthesis'),)
+keywords : frozenset({'organic chemistry'})
+
+7/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : fan
+lastname : he
+middlename : None
+year : 2019
+year_papertitle : ((2019, 'interaction between p53 n terminus and core domain regulates specific and nonspecific dna binding'), (2020, 'conformational flexibility of p53 transactivation domain controls dna binding specificity and promoter selectivity'), (2020, 'protein disorder regulates the dna binding specificity of p53'))
+keywords : frozenset({'biophysics', 'biochemistry', 'cell biology'})
+
+firstname : fang
+lastname : he
+middlename : None
+year : 2013
+year_papertitle : ((2013, 'chemical biological and analytical studies on natural products from central nervous system cns active plants'),)
+keywords : frozenset({'chemistry', 'biochemistry', 'analytical chemistry'})
+
+7/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : yinsheng
+lastname : wang
+middlename : None
+year : 2002
+year_papertitle : ((2002, 'esi ms ms for the differentiation of diastereomeric pyrimidine glycols in mononucleosides'), (2002, 'fragmentation of deprotonated ions of oligodeoxynucleotides carrying a 5 formyluracil or 2 aminoimidazolone'), (2002, 'hplc isolation and mass spectrometric characterization of two isomers of thymine glycols in oligodeoxynucleotides'), (2002, 'major adenine products from 2 methyl 1 4 naphthoquinone sensitized photoirradiation at 365 nm'), (2002, 'mechanisms for the formation of major oxidation products of adenine upon 365 nm irradiation with 2 methyl 1 4 naphthoquinone as a sensitizer'), (2003, 'identification and characterization of a novel cross link lesion in d cpc upon 365 nm irradiation in the presence of 2 methyl 1 4 naphthoquinone'), (2003, 'independent generation of 5 2 deoxycytidinyl methyl radical and the formation of a novel cross link lesion between 5 methylcytosine and guanine'), (2003, 'structure elucidation of dna interstrand cross link by a combination of nuclease p1 digestion with mass spectrometry'), (2004, 'fragmentation of protonated ions of peptides containing cysteine cysteine sulfinic acid and cysteine sulfonic acid'), (2004, 'identification of novel in vivo phosphorylation sites in high mobility group n1 protein from the mcf 7 human breast cancer cells'))
+keywords : frozenset({'organic chemistry', 'photochemistry', 'biochemistry', 'stereochemistry'})
+
+firstname : yi
+lastname : wang
+middlename : None
+year : 1995
+year_papertitle : ((1995, 'studies on the practical applications and mechanism of nitrilase catalyzed reactions'),)
+keywords : frozenset({'organic chemistry', 'analytical chemistry', 'biochemistry'})
+
+7/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : liang
+lastname : ma
+middlename : None
+year : 2014
+year_papertitle : ((2014, 'gene targeted microfluidic cultivation validated by isolation of a gut bacterium listed in human microbiome project s most wanted taxa'), (2014, 'individually addressable arrays of replica microbial cultures enabled by splitting slipchips'), (2015, 'indigenous bacteria from the gut microbiota regulate host serotonin biosynthesis'), (2019, 'multistep slipchip for the generation of serial dilution nanoliter arrays and hepatitis b viral load quantification by digital loop mediated isothermal amplification'))
+keywords : frozenset({'biological system', 'computational biology', 'microbiology', 'genetics'})
+
+firstname : li
+lastname : ma
+middlename : None
+year : 1999
+year_papertitle : ((1999, 'molecular genetic analysis of curvaticin fs47 an antilisterial bacteriocin produced by i lactobacillus curvatus i fs47'),)
+keywords : frozenset({'microbiology', 'food science'})
+
+7/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : weixi
+lastname : liu
+middlename : None
+year : 2011
+year_papertitle : ((2011, 'the in vitro glycation of human serum albumin in the presence of zn ii'), (2012, 'in vitro glycation of human serum albumin by dihydroxyacetone and dihydroxyacetone phosphate'), (2012, 'the in vitro inhibition effect of 2 nm gold nanoparticles on non enzymatic glycation of human serum albumin'), (2013, 'non enzymatic glycation of melamine with sugars and sugar like compounds'), (2014, 'dihydroxyacetone disturbs collagen fibril formation due to side chain modifications by glycation 979 1'), (2014, 'inhibitory effect of gold nanoparticles on the d ribose glycation of bovine serum albumin'), (2014, 'inhibitory effects of pentagalloyl glucose from winged sumac rhus copallinum on albumin glycation and the formation of advanced glycation endproducts 975 4'), (2014, 'pomegranate phenolics inhibit formation of advanced glycation endproducts by scavenging reactive carbonyl species'), (2014, 'pomegranate punica granatum fruit polyphenols punicalagin ellagic acid and gallic acid inhibit formation of advanced glycation endproducts by scavenging reactive carbonyl species 975 10'), (2015, 'uva radiation disturbed type i collagen fibrillation by enhancing early glycation'))
+keywords : frozenset({'endocrinology', 'internal medicine', 'food science', 'chromatography', 'biochemistry'})
+
+firstname : weixia
+lastname : liu
+middlename : None
+year : 1999
+year_papertitle : ((1999, 'multidimensional nmr studies of branching polyethylenes organotin polymer chain ends and polymer precursors'),)
+keywords : frozenset({'polymers', 'analytical chemistry'})
+
+7/10 positive, 3/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : julian
+lastname : haase
+middlename : None
+year : 2006
+year_papertitle : ((2006, 'thin foil magnetic force system for high numerical aperture microscopy'), (2007, 'the yeast dna damage checkpoint proteins control a cytoplasmic response to dna damage'), (2008, 'chromosome congression by kinesin 5 motor mediated disassembly of longer kinetochore microtubules'), (2008, 'fluorosim a visual problem solving environment for fluorescence microscopy'), (2008, 'pericentric chromatin is organized into an intramolecular loop in mitosis'), (2008, 'the microtubule based motor kar3 and plus end binding protein bim1 provide structural support for the anaphase spindle'), (2009, 'dna relaxation dynamics as a probe for the intracellular environment'), (2009, 'function and assembly of dna looping clustering and microtubule attachment complexes within a eukaryotic kinetochore'), (2011, 'cohesin condensin and the intramolecular centromere loop together generate the mitotic chromatin spring'), (2011, 'systematic exploration of essential yeast gene function with temperature sensitive mutants'))
+keywords : frozenset({'genetics', 'molecular biology', 'biophysics', 'nanotechnology', 'cell biology', 'optics', 'computer vision', 'artificial intelligence'})
+
+firstname : julia
+lastname : haas
+middlename : None
+year : 2002
+year_papertitle : ((2002, 'application of 3 4 annulation reactions to natural product syntheses'),)
+keywords : frozenset({'organic chemistry'})
+
+7/10 positive, 4/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : joseph
+lastname : sipe
+middlename : b
+year : 2004
+year_papertitle : ((2004, 'a simple and non radioactive technique to study the effect of monophosphoesters on matrix vesicle mediated calcification'), (2004, 'impaired calcification around matrix vesicles of growth plate and bone in alkaline phosphatase deficient mice'), (2004, 'localization of bone morphogenetic proteins bmps 2 4 and 6 within megakaryocytes and platelets'), (2004, 'primary culture of rat growth plate chondrocytes an in vitro model of growth plate histotype matrix vesicle biogenesis and mineralization'), (2005, 'sustained osteomalacia of long bones despite major improvement in other hypophosphatasia related mineral deficits in tissue nonspecific alkaline phosphatase nucleotide pyrophosphatase phosphodiesterase 1 double deficient mice'), (2007, 'immunohistochemical localization of bone morphogenetic proteins bmps 2 4 6 and 7 during induced heterotopic bone formation'))
+keywords : frozenset({'molecular biology', 'biophysics', 'endocrinology', 'cell biology', 'internal medicine', 'pathology', 'biochemistry', 'anatomy'})
+
+firstname : joseph
+lastname : swanstrom
+middlename : andrew
+year : 2013
+year_papertitle : ((2013, 'instrument and method development for single cell classification using fluorescence imaging multivariate optical computing'),)
+keywords : frozenset({'chemistry', 'biochemistry'})
+
+7/10 positive, 5/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ruth
+lastname : modzelewski
+middlename : a
+year : 1989
+year_papertitle : ((1989, 'sister chromatid exchange induced by etheno atp derivatives in vitro'), (1990, 'disparate cytogenetic responses of peripheral blood and spleen lymphocytes to ethenoadenine nucleotides in vitro maximal expression in splenic lymphocytes under conditions of enhanced membrane permeabilization'), (1993, 'synergistic enhancement by interleukin 1 α of cisplatin mediated antitumor activity in rif 1 tumor bearing c3h hej mice'), (1994, 'gene therapy and endothelial cell targeting for cancer'), (1994, 'isolation and identification of fresh tumor derived endothelial cells from a murine rif 1 fibrosarcoma'), (1994, 'potentiation by interleukin 1α of cisplatin and carboplatin antitumor activity schedule dependent and pharmacokinetic effects in the rif 1 tumor model'), (1996, 'integrin activation suppresses etoposide induced dna strand breakage in cultured murine tumor derived endothelial cells'), (1996, 'interleukin 1α and γ interferon induction of nitric oxide production from murine tumor derived endothelial cells'))
+keywords : frozenset({'pharmacology', 'molecular biology', 'cancer research', 'endocrinology', 'internal medicine', 'immunology', 'biochemistry'})
+
+firstname : ruth
+lastname : spolar
+middlename : margaret
+year : 1991
+year_papertitle : ((1991, 'the role of the hydrophobic effect in site specific protein dna interactions and protein folding a thermodynamic analysis using model compound transfer data'),)
+keywords : frozenset({'biophysics', 'chemistry', 'biochemistry'})
+
+7/10 positive, 6/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : cynthia
+lastname : williams
+middlename : None
+year : 1987
+year_papertitle : ((1987, 'morphine analgesia in the periaqueductal gray and locus ceruleus involvement of mu 1 receptors'), (1988, 'irreversible opiate agonists and antagonists iv analgesic actions of 14 hydroxydihydromorphinone hydrazones'), (1988, 'role of μ1 opiate receptors in supraspinal opiate analgesia a microinjection study'))
+keywords : frozenset({'neuroscience', 'pharmacology'})
+
+firstname : cynthia
+lastname : millis
+middlename : dominka
+year : 1994
+year_papertitle : ((1994, 'characterization of the active site of porcine kidney diamine oxidase'),)
+keywords : frozenset({'organic chemistry', 'biochemistry'})
+
+7/10 positive, 7/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jia
+lastname : yang
+middlename : None
+year : 2018
+year_papertitle : ((2018, 'non invasive imaging methods for brown adipose tissue detection and function evaluation'), (2019, 'dendritic cell immunotherapy induces anti tumor effect in a transgenic mouse model of pancreatic ductal adenocarcinoma'), (2019, 'diffusion weighted mr imaging to evaluate immediate response to irreversible electroporation in a rabbit vx2 liver tumor model'), (2019, 'dwi and dce mri approaches for differentiating reversibly electroporated penumbra from irreversibly electroporated ablation zones in a rabbit liver model'), (2019, 'establishment of a new non invasive imaging prediction model for liver metastasis in colon cancer'), (2019, 'magnetic resonance imaging monitoring therapeutic response to dendritic cell vaccine in murine orthotopic pancreatic cancer models'), (2019, 'mri assessment of associations between brown adipose tissue and cachexia in murine pancreatic ductal adenocarcinoma'), (2019, 'natural killer cell based adoptive transfer immunotherapy for pancreatic ductal adenocarcinoma in a kraslsl g12dp53lsl r172hpdx1 cre mouse model'), (2019, 'non invasive dynamic monitoring initiation and growth of pancreatic tumor in the lsl krasg12d lsl trp53r172h pdx 1 cre kpc transgenic mouse model'), (2019, 'radiomics signature for the preoperative assessment of stage in advanced colon cancer'))
+keywords : frozenset({'cancer research', 'radiology', 'bioinformatics', 'nuclear medicine', 'pathology'})
+
+firstname : jia
+lastname : kang
+middlename : None
+year : 2015
+year_papertitle : ((2015, 'uniaxial plastic deformation of i isotactic i polypropylene studied by solid state nmr'),)
+keywords : frozenset({'materials science', 'physical chemistry', 'polymer chemistry', 'plastics'})
+
+7/10 positive, 8/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : yuan
+lastname : chien
+middlename : hung
+year : 2004
+year_papertitle : ((2004, 'nitric oxide inhibits dna adduct excision in nucleotide excision repair'), (2005, 'comet assay with nuclear extract incubation'), (2006, 'calcium site mutations in cadherin impact on adhesion and evidence of cooperativity'), (2007, 'memory in receptor ligand mediated cell adhesion'), (2008, 'biophysical properties of cadherin bonds do not predict cell sorting'), (2008, 'two stage cadherin kinetics require multiple extracellular domains but not the cytoplasmic region'))
+keywords : frozenset({'molecular biology', 'biophysics', 'cell biology', 'immunology', 'biochemistry'})
+
+firstname : yuan
+lastname : chien
+middlename : yung
+year : 1990
+year_papertitle : ((1990, 'photooxidation of polymer blends and miscibility of copolymers with a homopolymer'),)
+keywords : frozenset({'polymers'})
+
+7/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : stephen
+lastname : lee
+middlename : None
+year : 1989
+year_papertitle : ((1989, 'the hubbard model for alternant and nonalternant systems'), (1989, 'the hubbard transition and unsaturated hydrocarbons'), (1991, 'second moment scaling and covalent crystal structures'), (1992, 'optimization of the main group and late transition metal elemental structures gallium boron zinc cadmium and manganese'), (1992, 'synthesis and structure of a new layer compound scps4'), (1992, 'synthesis of three dimensional nanoscaffolding'), (1993, 'synthesis and structure of two phases with both extended and point defects mn1 xbi2 ys4andmn1 xbi2 yse4'), (1994, 'an organic solid with wide channels based on hydrogen bonding between macrocycles'), (1994, 'comparison of μ2 scaled huckel theory and hartree fock theory of boranes and carboranes'), (1994, 'modular construction for the programmed assembly of molecular crystals and liquid crystals'))
+keywords : frozenset({'crystallography', 'chemical engineering', 'quantum mechanics', 'theoretical physics', 'nanotechnology', 'stereochemistry', 'atomic physics', 'organic chemistry', 'condensed matter physics', 'chemical physics'})
+
+firstname : stephen
+lastname : leviness
+middlename : claude
+year : 1989
+year_papertitle : ((1989, 'polymer formation deactivation and ethylene selectivity decline in palladium aluminum oxide catalyzed selective acetylene hydrogenation'),)
+keywords : frozenset({'polymers', 'chemistry', 'chemical engineering'})
+
+7/10 positive, 10/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : eun
+lastname : park
+middlename : young
+year : 2002
+year_papertitle : ((2002, 'a study on the relationships among the influential variables on stage of change of exercise in the elderly'), (2003, 'novel chemoattractant peptides for human leukocytes'), (2003, 'tight binding inhibition by α naphthoflavone of human cytochrome p450 1a2'), (2004, 'compounds stimulating cytosolic phospholipase a2 activity with a combinational action mode'), (2004, 'crystal structure of the bowman birk inhibitor from barley seeds in ternary complex with porcine trypsin'), (2004, 'perceived stress ways of coping and health promoting behavior in patients with chronic cardiovascular disease'), (2004, 'probing the functional importance of the hexameric ring structure of rnase ph'), (2004, 'the relationship of stress social support and depression in the elderly'), (2005, 'a correlational study among perceived stress anger expression and depression in cancer patients'), (2005, 'electrospray diagnostics by fourier analysis of current oscillations and fast imaging'))
+keywords : frozenset({'crystallography', 'clinical psychology', 'molecular physics', 'analytical chemistry', 'gerontology', 'cell biology', 'stereochemistry', 'biochemistry'})
+
+firstname : eun
+lastname : park
+middlename : young
+year : 2014
+year_papertitle : ((2014, 'functional and nutritional properties of whole wheat flour as affected by organic no till cropping systems and physical enzymatic treatments'),)
+keywords : frozenset({'food science'})
+
+7/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : elizabeth
+lastname : davie
+middlename : a colby
+year : 2007
+year_papertitle : ((2007, 'asymmetric catalysis mediated by synthetic peptides'), (2013, 'bidirectional synthesis of montamine analogs'), (2014, 'total synthesis of putative montamine and a proposed structural reassignment'))
+keywords : frozenset({'stereochemistry', 'combinatorial chemistry'})
+
+firstname : elizabeth
+lastname : davie
+middlename : a colby
+year : 2005
+year_papertitle : ((2005, 'i enantioselective nickel catalyzed reductive coupling reactions of alkynes and aldehydes ii syntheses of amphidinolides t1 and t4 via catalytic stereoselective macrocyclizations'),)
+keywords : frozenset({'organic chemistry'})
+
+7/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : kenneth
+lastname : stensrud
+middlename : f
+year : 2008
+year_papertitle : ((2008, 'deoxycholate interacts with ipad of shigella flexneri in inducing the recruitment of ipab to the type iii secretion apparatus needle tip'), (2008, 'fluorinated photoremovable protecting groups the influence of fluoro substituents on the photo favorskii rearrangement'), (2009, 'competing pathways in the photo favorskii rearrangement and release of esters studies on fluorinated p hydroxyphenacyl caged gaba and glutamate phototriggers'), (2011, 'gas phase fragmentation of deprotonated p hydroxyphenacyl derivatives'), (2013, 'stereochemically probing the photo favorskii rearrangement a mechanistic investigation'))
+keywords : frozenset({'medicinal chemistry', 'microbiology', 'stereochemistry', 'cell biology', 'photochemistry'})
+
+firstname : kenneth
+lastname : stensrud
+middlename : f
+year : 2008
+year_papertitle : ((2008, 'investigative photochemistry elucidating the mechanism of the photo favorskii rearrangement'),)
+keywords : frozenset({'organic chemistry'})
+
+8/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ahmet
+lastname : inceli
+middlename : levent
+year : 1994
+year_papertitle : ((1994, 'substituted diphenyl oxalates'), (1996, 'aryl oxalate derivatives as convenient precursors for generation of aryloxyl radicals'), (1997, 'synthesis characterization and photolysis of poly 3 5 di tert butyl 4 2 4 6 tri tert butylphenyl oxalato phenylacetylene a photochemical polyradical precursor'))
+keywords : frozenset({'photochemistry', 'stereochemistry', 'medicinal chemistry'})
+
+firstname : ahmet
+lastname : inceli
+middlename : levent
+year : 1996
+year_papertitle : ((1996, 'design of interelectronic exchange in phenoxyl and nitroxyl based systems'),)
+keywords : frozenset({'organic chemistry'})
+
+9/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jeffrey
+lastname : elam
+middlename : w
+year : 2006
+year_papertitle : ((2006, 'imaging of atomic layer deposited ald tungsten monolayers on α tio2 110 by x ray standing wave fourier inversion'), (2007, 'toward a thermally robust operando surface enhanced raman spectroscopy substrate'), (2009, 'nanoscale structure and morphology of atomic layer deposition platinum on srtio 3 001'), (2010, 'palladium catalysts synthesized by atomic layer deposition for methanol decomposition'), (2010, 'redox driven crystalline coherent incoherent transformation for a 2 ml vox film grown on α tio2 110'), (2010, 'supported ru pt bimetallic nanoparticle catalysts prepared by atomic layer deposition'), (2011, 'atomic layer deposition of fe2o3 using ferrocene and ozone'), (2011, 'seeding atomic layer deposition of high k dielectrics on epitaxial graphene with organic self assembled monolayers'), (2011, 'subnanometer palladium particles synthesized by atomic layer deposition'), (2012, 'porous alumina protective coatings on palladium nanoparticles by self poisoned atomic layer deposition'))
+keywords : frozenset({'crystallography', 'chemical engineering', 'molecular physics', 'analytical chemistry', 'nanotechnology', 'optoelectronics', 'inorganic chemistry'})
+
+firstname : jeffrey
+lastname : elam
+middlename : walker
+year : 1995
+year_papertitle : ((1995, 'laser desorption of organic compounds an experimental study of mechanism'),)
+keywords : frozenset({'chemistry', 'materials science'})
+
+10/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : normell
+lastname : mesastonestreet
+middlename : jhoe de
+year : 2010
+year_papertitle : ((2010, 'mechanical and microstructural properties of soy protein high amylose corn starch extrudates in relation to physiochemical changes of starch during extrusion'), (2010, 'sorghum proteins the concentration isolation modification and food applications of kafirins'), (2012, 'extrusion enzyme liquefaction as a method for producing sorghum protein concentrates'))
+keywords : frozenset({'food science', 'agronomy', 'biochemistry', 'biotechnology'})
+
+firstname : normell
+lastname : stonestreet
+middlename : jhoe de mesa
+year : 2011
+year_papertitle : ((2011, 'processing and characterization of sorghum protein concentrates using extrusion enzyme liquefaction'),)
+keywords : frozenset({'agriculture', 'plant sciences', 'food science'})
+
+10/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : deborah
+lastname : pre
+middlename : None
+year : 2006
+year_papertitle : ((2006, 'an internal model of self motion based on inertial signals'), (2008, 'a high frequency vibrating system to stimulate cells in bone tissue engineering'), (2009, 'effects of low amplitude high frequency vibrations on proliferation and differentiation of saos 2 human osteogenic cell line'), (2011, 'cross striated collagen fibers formation with low amplitude high frequency vibrations'), (2011, 'the differentiation of human adipose derived stem cells hascs into osteoblasts is promoted by low amplitude high frequency vibration treatment'), (2013, 'high frequency vibration treatment of human bone marrow stromal cells increases differentiation toward bone tissue'))
+keywords : frozenset({'andrology', 'biomedical engineering', 'pathology', 'cell biology', 'computer vision', 'audiology', 'immunology', 'artificial intelligence', 'anatomy'})
+
+firstname : deborah
+lastname : preston
+middlename : marie
+year : 1988
+year_papertitle : ((1988, 'spectroscopic studies of the excited state single crystal potassium tetrachloroplatinate gas phase nickel carbonyl and nitrospiropyrans in sol gel'),)
+keywords : frozenset({'chemistry'})
+
+11/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : christopher
+lastname : jones
+middlename : a
+year : 2018
+year_papertitle : ((2018, 'enhancing humoral responses against hiv envelope trimers via nanoparticle delivery with stabilized synthetic liposomes'), (2019, 'innate immune recognition of glycans targets hiv nanoparticle immunogens to germinal centers'))
+keywords : frozenset({'biophysics', 'cell biology'})
+
+firstname : christopher
+lastname : jones
+middlename : david wilson
+year : 1999
+year_papertitle : ((1999, 'synthesis structure and properties of potential thermoelectric materials'),)
+keywords : frozenset({'materials science', 'chemistry', 'condensation'})
+
+11/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : teresa
+lastname : smith
+middlename : y
+year : 2015
+year_papertitle : ((2015, 'integration of a blog into an emergency medicine residency curriculum'), (2016, 'changing the tradition of grand rounds using google hang out'), (2020, 'emergency medicine s role in the crossroads of social revolution and the covid 19 pandemic'))
+keywords : frozenset({'medical education', 'family medicine', 'emergency medicine', 'art history', 'medical emergency'})
+
+firstname : teresa
+lastname : smith
+middlename : anne gibson
+year : 1985
+year_papertitle : ((1985, 'single crystal polarized x ray absorption edge studies of copper complexes k edge spectroscopy'),)
+keywords : frozenset({'chemistry'})
+
+11/10 positive, 14/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : david
+lastname : ackerman
+middlename : m
+year : 2002
+year_papertitle : ((2002, 'rapid transport of gases in carbon nanotubes'), (2003, 'diffusivities of ar and ne in carbon nanotubes'))
+keywords : frozenset({'nanotechnology', 'chemical engineering'})
+
+firstname : david
+lastname : ackerman
+middlename : michael
+year : 2013
+year_papertitle : ((2013, 'interplay between inhibited transport and reaction in nanoporous materials'),)
+keywords : frozenset({'molecular chemistry', 'physical chemistry'})
+
+11/10 positive, 15/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : li
+lastname : zhang
+middlename : None
+year : 2007
+year_papertitle : ((2007, 'a high specificity competitive europium based assay for autoantibodies of aps1 patients reacting with interferon alpha'), (2008, 'conserved t cell receptor α chain induces insulin autoantibodies'), (2008, 'sa 64 analysis of t cell receptor hybridomas with the conserved anti insulin b 9 23 bdc12 4 1 t cell receptor tcr alpha chain'), (2009, 'analysis of t cell receptor beta chains that combine with dominant conserved trav5d 4 04 anti insulin b 9 23 alpha chains'), (2009, 'f 127 loss of aire expression in thymoma tissue associated with multiple endocrine autoimmunity a novel case of aps1'), (2009, 's 74 gamma delta cells recognizing the b 9 23 peptide of nod mice'), (2010, 'diabetogenic t cells recognize insulin bound to iag7 in an unexpected weakly binding register'), (2010, 'gamma delta t cell receptors confer autonomous responsiveness to the insulin peptide b 9 23'), (2010, 'targeting a primary trimolecular complex for type 1 diabetes of nod mice'), (2011, 'prediction and prevention of type 1 diabetes mellitus'))
+keywords : frozenset({'genetics', 'molecular biology', 'endocrinology', 'virology', 'internal medicine', 'cell biology', 'immunology'})
+
+firstname : li
+lastname : zhang
+middlename : None
+year : 1998
+year_papertitle : ((1998, 'sensors forph based on swelling and reflectivity of derivatized polystyrene beads and membranes'),)
+keywords : frozenset({'polymers', 'analytical chemistry'})
+
+11/10 positive, 16/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : nelmi
+lastname : baez
+middlename : o devarie
+year : 2014
+year_papertitle : ((2014, 'a redox centered view of radiation resistance in head and neck squamous cancer 768 1'), (2015, 'mass spectrometry in studies of protein thiol chemistry and signaling opportunities and caveats'))
+keywords : frozenset({'chromatography', 'cancer research', 'biochemistry'})
+
+firstname : nelmi
+lastname : baez
+middlename : o devarie
+year : 2012
+year_papertitle : ((2012, 'new chemistry of sulfur containing molecules b part 1 b brook rearrangement mediated synthesis of disubstituted thiophenes b part 2 b applications of s nitrosation in organic synthesis'),)
+keywords : frozenset({'organic chemistry'})
+
+11/10 positive, 17/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : nadine
+lastname : kam
+middlename : wong shi
+year : 2007
+year_papertitle : ((2007, 'multifunctional layer by layer carbon nanotube polyelectrolyte thin films for strain and corrosion sensing'), (2008, 'exponential growth of lbl films with incorporated inorganic sheets'), (2008, 'gold nanoparticles enhance the anti leukemia action of a 6 mercaptopurine chemotherapeutic agent'), (2009, 'electrical stimulation of neural stem cells mediated by humanized carbon nanotube composite made with extracellular matrix protein'), (2009, 'nanomaterials for neural interfaces'))
+keywords : frozenset({'pharmacology', 'chemical engineering', 'composite material', 'nanotechnology', 'stereochemistry'})
+
+firstname : nadine
+lastname : kam
+middlename : wong shi
+year : 2006
+year_papertitle : ((2006, 'biological applications of carbon nanotubes paving the way to nanotube based delivery vehicles and therapies for living systems'),)
+keywords : frozenset({'chemistry'})
+
+12/10 positive, 17/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : nevin
+lastname : uras
+middlename : None
+year : 1998
+year_papertitle : ((1998, 'molecular bending mode frequencies of the surface and interior of crystalline ice'), (1999, 'covalent and ionic states of strong acids at the ice surface'), (2000, 'hydrogen bond surface chemistry interaction of nh3 with an ice particle'), (2000, 'rate study of ice particle conversion to ammonia hemihydrate hydrate crust nucleation and nh3 diffusion'), (2002, 'discrete stages in the solvation and ionization of hydrogen chloride adsorbed on ice particles'), (2002, 'intermolecular potentials for ammonia aqueous mixture'))
+keywords : frozenset({'crystallography', 'chemical engineering', 'mineralogy', 'physical chemistry', 'biophysics', 'molecular physics', 'analytical chemistry', 'atomic physics', 'inorganic chemistry', 'chemical physics'})
+
+firstname : nevin
+lastname : uras
+middlename : None
+year : 2001
+year_papertitle : ((2001, 'a mechanistic and kinetic study conversion of ice nanocrystals to nanoparticles of the hydrates of ammonia'),)
+keywords : frozenset({'chemistry'})
+
+13/10 positive, 17/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : david
+lastname : devore
+middlename : d
+year : 1985
+year_papertitle : ((1985, 'reactivity of molybdenum oxo imido complexes with organophosphines generation and chemistry of mov ntol s2cnet2 2 2o and moiv ntol s2cnet2 2'), (1986, 'an alkyne derivative of an organoimido molybdenum iv complex molecular structure of the acetone hemi solvate of bis diethyldithiocarbamato dimethylacetylenedicarboxylate p tolylimido molybdenum iv mo ntol dmac s2cnet2 2 1 2me2co'), (1986, 'organoimido complexes of mo iv mo v and mo vi preparation structure and reactivity'), (1987, 'cleavage reactions of bridged structures asymmetric cleavage of diborane a case of counterintuitive orbital control of reaction products'), (1987, 'complexes of arylimido vanadium v synthetic structural spectroscopic and theoretical studies of v ntol cl3 and derivatives'), (1988, 'coupling metal centers with linearly bridging delocalized π bonded ligands p phenylenediimido dimolybdenum complexes'), (1988, 'verknupfung von metallzentren durch linear verbruckende π gebundene liganden p phenylendiimidodimolybdan komplexe'))
+keywords : frozenset({'crystallography', 'stereochemistry', 'medicinal chemistry'})
+
+firstname : david
+lastname : devore
+middlename : dayton
+year : 1987
+year_papertitle : ((1987, 'the chemistry of organoimido complexes of molybdenum and vanadium'),)
+keywords : frozenset({'chemistry'})
+
+14/10 positive, 17/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : timothy
+lastname : boller
+middlename : m
+year : 1998
+year_papertitle : ((1998, 'protonation of rhenium alkyne complexes produces η3 allyl rhenium complexes via observable 1 metallacyclopropene intermediates'),)
+keywords : frozenset({'photochemistry', 'medicinal chemistry'})
+
+firstname : timothy
+lastname : boller
+middlename : marlow
+year : 2002
+year_papertitle : ((2002, 'regioselectivity of nucleophilic additon to eta 3 propargyl complexes and electronic effects on a novel equilibrium between eta 3 propargyl and eta 2 allenyl complexes of rhenium'),)
+keywords : frozenset({'organic chemistry', 'chemistry'})
+
+15/10 positive, 17/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : christopher
+lastname : price
+middlename : p
+year : 2005
+year_papertitle : ((2005, 'cardiac troponins and renal function in nondialysis patients with chronic kidney disease'), (2012, 'kidney function tests'))
+keywords : frozenset({'cardiology', 'urology', 'internal medicine'})
+
+firstname : christopher
+lastname : price
+middlename : patrick
+year : 2005
+year_papertitle : ((2005, 'methods for and implications of controlling solid form in organic crystals'),)
+keywords : frozenset({'chemistry'})
+
+16/10 positive, 17/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : lin
+lastname : zhang
+middlename : None
+year : 2007
+year_papertitle : ((2007, 'synthesis of bf pt perovskite powders by high energy ball milling'), (2008, 'crystalinity properties of carbon nanotube polyvinylidene fluoride composites'), (2008, 'dielectric response of ceramic polymer composite with high permittivity'), (2008, 'dynamical mode transitions of simply supported double walled carbon nanotubes based on an elastic shell model'), (2008, 'preparation and characterization of high tc 1 x bisco3 xpbtio3 ceramics from high energy ball milling process'), (2008, 'synthesis sintering and characterization of pnzst ceramics from high energy ball milling process'), (2009, 'novel electro strain effect in la doped pb zr ti o 3 relaxor ferroelectrics'), (2010, 'microstructure and dielectric properties of ccto p vdf trfe nanocomposites'), (2011, 'development of polymer based 0 3 composites with high dielectric constant'), (2011, 'influence of process condition on the dielectric properties of ccto p vdf trfe 0 3 composites'))
+keywords : frozenset({'chemical engineering', 'mineralogy', 'composite material', 'molecular physics', 'analytical chemistry', 'atomic physics'})
+
+firstname : lin
+lastname : zhu
+middlename : None
+year : 1995
+year_papertitle : ((1995, 'fragmentation mechanism and sequence analysis of nucleic acids by matrix assisted laser desorption ionization mass spectrometry'),)
+keywords : frozenset({'analytical chemistry', 'biochemistry'})
+
+16/10 positive, 18/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+Finished labeling
+INFO:rlr.crossvalidation:using cross validation to find optimum alpha...
+INFO:rlr.crossvalidation:optimum alpha: 0.100000, score 0.6188583916295786
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (sameSevenCharStartPredicate, lastname)
+Done in 903.4447458187739 minutes.
