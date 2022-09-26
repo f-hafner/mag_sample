@@ -1,0 +1,787 @@
+/home/christoph/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/numpy/core/getlimits.py:500: UserWarning: The value of the smallest subnormal for <class 'numpy.float64'> type is zero.
+  setattr(self, word, getattr(machar, word).flat[0])
+/home/christoph/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/numpy/core/getlimits.py:89: UserWarning: The value of the smallest subnormal for <class 'numpy.float64'> type is zero.
+  return self._float_to_str(self.smallest_subnormal)
+/home/christoph/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/numpy/core/getlimits.py:500: UserWarning: The value of the smallest subnormal for <class 'numpy.float32'> type is zero.
+  setattr(self, word, getattr(machar, word).flat[0])
+/home/christoph/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/numpy/core/getlimits.py:89: UserWarning: The value of the smallest subnormal for <class 'numpy.float32'> type is zero.
+  return self._float_to_str(self.smallest_subnormal)
+Namespace(testing=False, verbose=1, field=['environmental science'], train_name='christoph_fielddegree0', startyear=1985, endyear=2015, mergemode='1:1', recall=0.9, institution='False', fieldofstudy_cat='False', fieldofstudy_str='False', keywords='True', retrain='True', linking_type='graduates', samplesize=50000)
+Have max 6 cores available
+Testing is False 
+
+finished setup ... 
+Time elapsed: 0.0031557242075602216 minutes 
+
+
+    SELECT goid
+            , year
+            , firstname 
+            , lastname
+            , CASE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                WHEN 
+                    "" THEN NULL 
+                    ELSE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                END AS middlename
+            , fieldofstudy
+            , keywords
+            , institution
+            , coauthors
+            , year_papertitle
+    FROM (
+        SELECT goid
+            , degree_year AS year 
+            , fullname 
+            , SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) AS firstname
+            , REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "") AS lastname 
+            , TRIM(SUBSTR(fullname, length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1)) + 1)) AS middle_lastname 
+            , length(fullname) AS l_fullname 
+            , length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) ) AS l_firstname
+            , length(REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "")) AS l_lastname
+            , fieldname AS fieldofstudy
+            , university_id
+            , degree_year || "//" || thesistitle as year_papertitle 
+        FROM pq_authors 
+        INNER JOIN (
+            SELECT goid, fieldname 
+            FROM pq_fields_mag
+            WHERE mag_field0 IN (?)
+        ) USING (goid)
+    )
+    -- ## NOTE: use left join here as not all graduates have advisor (particularly pre-1980) and possibly also keywords
+    LEFT JOIN (
+        SELECT goid
+            , fields as keywords
+            , advisors as coauthors
+        FROm pq_info_linking
+    ) USING(goid)
+    INNER JOIN (
+        SELECT university_id, normalizedname as institution
+        FROM pq_unis
+        WHERE location like "%United States%"
+    ) USING(university_id)
+    WHERE year >= 1985 and year <= 2015 AND length(firstname) > 1
+     
+
+
+    SELECT f.AuthorId
+        , f.year
+        , f.firstname
+        , f.lastname
+        , CASE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            WHEN 
+                "" THEN NULL 
+                ELSE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            END as middlename 
+            -- ## NOTE this gives "" for middlename when it is missing 
+        , f.fieldofstudy
+        , g.keywords
+        , g.coauthors
+        , g.institution
+        , g.year_papertitle
+    FROM (
+        SELECT a.AuthorId
+            , a.YearFirstPub AS year
+            , a.FirstName AS firstname
+            , REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "") AS lastname 
+                    -- https://stackoverflow.com/questions/21388820/how-to-get-the-last-index-of-a-substring-in-sqlite
+            , TRIM(SUBSTR(b.NormalizedName, length(a.FirstName) + 1)) AS middle_lastname 
+                    -- this gives all except the first name 
+            , length(b.NormalizedName) as l_fullname 
+            , length(a.FirstName) as l_firstname
+            , length(REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "")) as l_lastname
+            , e.NormalizedName AS fieldofstudy
+        FROM author_sample AS a
+        INNER JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM Authors
+        ) AS b USING(AuthorId)
+        INNER JOIN (
+            SELECT AuthorId
+            FROM author_field0
+            WHERE FieldOfStudyId_lvl0 IN (?)
+                AND Degree <= 0
+        ) USING(AuthorId)
+        LEFT JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM author_fields c
+            INNER JOIN (
+                SELECT FieldOfStudyId, NormalizedName
+                FROM FieldsOfStudy
+            ) AS d USING(FieldOfStudyId)
+            -- ## Condition on fieldofstudy being in the level 0 id_field
+            INNER JOIN (
+                SELECT ParentFieldOfStudyId, ChildFieldOfStudyId
+                FROM crosswalk_fields
+                WHERE ParentLevel = 0
+                    AND ParentFieldOfStudyId IN (?)
+            ) AS e ON (e.ChildFieldOfStudyId = c.FieldOfStudyId)
+            WHERE FieldClass = 'first'
+        ) AS e USING(AuthorId)
+    ) f
+    LEFT JOIN (
+        SELECT AuthorId
+                , institutions as institution
+                , main_us_institutions_career
+                , coauthors
+                , keywords
+                , year_papertitle
+        FROM author_info_linking
+    ) AS g USING(AuthorId)
+    WHERE length(firstname) > 1 AND year >= 1985 - 5 AND year <= 2015 + 5 
+        -- ## use this to condition on people that have at least at some point their main affiliation in the US
+        AND g.main_us_institutions_career IS NOT NULL
+        AND g.institution != "chinese academy of sciences"
+     
+
+Time elapsed: 165.98817818959554 minutes 
+
+Starting active labeling...
+firstname : michelle
+lastname : simon
+middlename : None
+year : 2006
+year_papertitle : ((2006, 'method for measuring air immiscible liquid partition coefficients'), (2007, 'analysis of a gas phase partitioning tracer test conducted in an unsaturated fractured clay formation'), (2007, 'concentration of tetrachloroethylene in indoor air at a former dry cleaner facility as a function of subsurface contamination a case study'), (2007, 'evaluation of groundwater flow patterns around a dual screened groundwater circulation well'), (2011, 'treatment of polychlorinated biphenyls in two surface soils using catalyzed h2o2 propagations'))
+keywords : frozenset({'mineralogy', 'soil science', 'hydrology', 'analytical chemistry', 'environmental chemistry', 'environmental engineering'})
+
+firstname : michelle
+lastname : simon
+middlename : anne
+year : 2004
+year_papertitle : ((2004, 'analysis of a gas phase partitioning tracer test conducted in fractured media'),)
+keywords : frozenset({'hydrology', 'environmental science', 'chemical engineering'})
+
+0/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished
+firstname : hongkyu
+lastname : yoon
+middlename : None
+year : 2002
+year_papertitle : ((2002, 'effect of water content on transient nonequilibrium napl gas mass transfer during soil vapor extraction'), (2003, 'modeling the influence of water content on soil vapor extraction'), (2004, 'impact of spatially distributed nonaqueous phase liquid saturation and water content on soil vapor extraction in heterogeneous porous media'), (2004, 'magnetic resonance imaging of nonaqueous phase liquid during soil vapor extraction in heterogeneous porous media'), (2007, 'effect of soil moisture dynamics on dense nonaqueous phase liquid dnapl spill zone architecture in heterogeneous porous media'), (2008, 'evaluation of simplified mass transfer models to simulate the impacts of source zone architecture on nonaqueous phase liquid dissolution in heterogeneous porous media'), (2008, 'impact of nonaqueous phase liquid napl source zone architecture on mass removal mechanisms in strongly layered heterogeneous porous media during soil vapor extraction'), (2008, 'numerical simulation of water flow in three dimensional heterogeneous porous media observed in a magnetic resonance imaging experiment'), (2009, 'an environmental screening model to assess the consequences to soil and groundwater from railroad tank car spills of light non aqueous phase liquids'), (2009, 'surface and interfacial properties of nonaqueous phase liquid mixtures released to the subsurface at the hanford site'))
+keywords : frozenset({'chemical engineering', 'geotechnical engineering', 'mineralogy', 'thermodynamics', 'soil science', 'hydrology', 'chromatography', 'analytical chemistry', 'environmental chemistry', 'environmental engineering'})
+
+firstname : hongkyu
+lastname : yoon
+middlename : None
+year : 2005
+year_papertitle : ((2005, 'influence of soil moisture dynamics on dnapl spill zone architecture and its impact on mass removal mechanisms during soil vapor extraction in heterogeneous porous media'),)
+keywords : frozenset({'hydrology', 'environmental science'})
+
+1/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : yovanna
+lastname : lena
+middlename : cortes di
+year : 2013
+year_papertitle : ((2013, 'effectiveness of capture zones generated by intermittent pumping of a pv powered pump and treat system without energy storage'), (2014, 'performance evaluation of pv powered pump and treat systems using typical meteorological year three data'), (2015, 'general method for predicting capture zone widths for pv powered pump and treat systems using pvwatts and basic hydrogeologic data'))
+keywords : frozenset({'hydrology', 'environmental engineering', 'soil science'})
+
+firstname : yovanna
+lastname : lena
+middlename : cortes di
+year : 2014
+year_papertitle : ((2014, 'performance assessment of capture zones generated by pv powered pump and treat systems'),)
+keywords : frozenset({'hydrologic sciences', 'geological', 'environmental engineering'})
+
+2/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : aaron
+lastname : levine
+middlename : f z
+year : 2009
+year_papertitle : ((2009, 'student proposed cruise captured wakes of oahu and kauai islands'), (2010, 'noise induced instability in the enso recharge oscillator'), (2014, 'a systematic approach to quantifying the noise enso relationship and its effect on extreme el nino events'), (2015, 'the annual cycle in enso growth rate as a cause of the spring predictability barrier'), (2016, 'extreme noise extreme el nino how state dependent noise forcing creates el nino la nina asymmetry'), (2016, 'how the july 2014 easterly wind burst gave the 2015 2016 el nino a head start'))
+keywords : frozenset({'meteorology', 'atmospheric sciences', 'oceanography', 'climatology'})
+
+firstname : aaron
+lastname : levine
+middlename : f z
+year : 2014
+year_papertitle : ((2014, 'a systematic approach to quantifying the noise enso relationship and its effect on extreme el nino events'),)
+keywords : frozenset({'meteorology', 'atmospheric sciences'})
+
+3/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : fernando
+lastname : sales
+middlename : de
+year : 2006
+year_papertitle : ((2006, 'investigation of seasonal prediction of the south american regional climate using the nested model system'), (2008, 'the west african monsoon modeling and evaluation project wamme and its first model intercomparison experiment'), (2009, 'analysis of climate and vegetation characteristics along the savanna desert ecotone in mali using modis data'), (2010, 'global and seasonal assessment of interactions between climate and vegetation biophysical processes a gcm study with different land vegetation representations'), (2010, 'intercomparison and analyses of the climatology of the west african monsoon in the west african monsoon modeling and evaluation project wamme first model intercomparison experiment'), (2013, 'dynamic downscaling of 22 year cfs winter seasonal hindcasts with the ucla eta regional climate model over the united states'))
+keywords : frozenset({'remote sensing', 'physical geography', 'meteorology', 'atmospheric sciences', 'climatology'})
+
+firstname : fernando
+lastname : sales
+middlename : henrique de
+year : 2006
+year_papertitle : ((2006, 'examining the impacts of dynamic downscaling method and vegetation biophysical processes on the south american regional climate simulation'),)
+keywords : frozenset({'physical geography', 'atmospheric sciences'})
+
+4/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : christina
+lastname : kellogg
+middlename : a
+year : 1993
+year_papertitle : ((1993, 'distribution of viral abundance in the reef environment of key largo florida'), (1993, 'viruses bacterioplankton and phytoplankton in the southeastern gulf of mexico distribution and contribution to oceanic dna pools'), (1995, 'genetic diversity of related vibriophages isolated from marine environments around florida and hawaii usa'), (1995, 'occurrence of fecal indicator bacteria in surface waters and the subsurface aquifer in key largo florida'), (1997, 'coliphage and indigenous phage in mamala bay oahu hawaii'), (1997, 'evidence for groundwater and surface marine water contamination by waste disposal wells in the florida keys'), (1998, 'characterization of marine temperate phage host systems isolated from mamala bay oahu hawaii'), (1998, 'prophage induction of indigenous marine lysogenic bacteria by environmental pollutants'), (2000, '5 ecology of bacteriophages in nature'))
+keywords : frozenset({'zoology', 'oceanography', 'ecology', 'hydrology', 'microbiology', 'environmental engineering'})
+
+firstname : christina
+lastname : kellogg
+middlename : anne
+year : 1998
+year_papertitle : ((1998, 'genetic diversity and dna repair of marine vibriophages'),)
+keywords : frozenset({'oceanography', 'ecology', 'molecular biology', 'microbiology', 'environmental science'})
+
+5/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : yi
+lastname : hu
+middlename : None
+year : 2009
+year_papertitle : ((2009, 'research of effect of wind blown rain on power frequency flashover characteristic of conductor tower air gap'), (2009, 'research on minimum approach distance for live working on 1000kv ultra high voltage ac transmission line'), (2010, 'experimental investigation on live working requirements for 1000kv ultra high voltage ac transmission line'), (2010, 'research of safety protection for live working on 1000kv ac ultra high voltage transmission line'), (2014, 'influence of tower width and ion current on gap flashover characteristics of ehv uhv ac and dc hybrid transmission lines during live working'), (2014, 'key technology research and application of live working technology on ehv uhv transmission lines in china'))
+keywords : frozenset({'telecommunications', 'electrical engineering', 'electronic engineering', 'engineering physics', 'meteorology', 'atmospheric sciences'})
+
+firstname : yi
+lastname : huang
+middlename : None
+year : 2008
+year_papertitle : ((2008, 'satellite observed and model simulated outgoing longwave radiation spectra'),)
+keywords : frozenset({'atmospheric sciences', 'remote sensing'})
+
+6/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : matthew
+lastname : weis
+middlename : None
+year : 2010
+year_papertitle : ((2010, 'arborz photometric redshifts using boosted decision trees'), (2011, 'anisotropy and feedthrough in magneto rayleigh taylor instabilities'), (2011, 'anisotropy and feedthrough in magneto rayleigh taylor instability'), (2011, 'effect of magnetic shear on magneto rayleigh taylor instability'), (2011, 'experiments on ma linear transformer drivers'), (2011, 'planar foil mrt instability measurements using a 1 ma ltd'), (2011, 'plasma instability measurements on planar al foil loads driven using the maize 1 ma ltd facility'), (2011, 'spectroscopic analysis of foil plasmas on a 1 ma linear transformer driver'), (2012, 'effects of magnetic shear on magneto rayleigh taylor instability'), (2012, 'magneto rayleigh taylor experiments on a megaampere linear transformer driver'))
+keywords : frozenset({'optics', 'classical mechanics', 'mechanics', 'nuclear engineering', 'condensed matter physics', 'astrophysics'})
+
+firstname : matthew
+lastname : weiss
+middlename : isaac
+year : 2011
+year_papertitle : ((2011, 'the definition of the situation and negotiations over freshwater conflicts in the middle east'),)
+keywords : frozenset({'international relations', 'water resource management', 'political science'})
+
+6/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : daniel
+lastname : herman
+middlename : a
+year : 2007
+year_papertitle : ((2007, 'erosion processes of the discharge cathode assembly of ring cusp gridded ion thrusters'), (2008, 'an ion thruster internal discharge chamber electrostatic probe diagnostic technique using a high speed probe positioning system'), (2012, 'nasa s evolutionary xenon thruster next long duration test results'), (2013, 'discharge chamber plasma structure of a 30 cm nstar type ion engine'), (2013, 'ion current density study of the nasa 300m and nasa 457mv2 hall thrusters'), (2013, 'nasa s evolutionary xenon thruster next long duration test as of 736 kg of propellant throughput'), (2013, 'performance test results of the nasa 457m v2 hall thruster'), (2013, 'plasma potential and langmuir probe measurements in the near field plume of the nasa 457mv2 hall thruster'))
+keywords : frozenset({'optics', 'electrical engineering', 'mechanics', 'aerospace engineering', 'atomic physics', 'nuclear engineering', 'analytical chemistry'})
+
+firstname : diane
+lastname : hermann
+middlename : m
+year : 1988
+year_papertitle : ((1988, 'receptor modeling of globally circulating airborne particles collected at mauna loa observatory hawaii'),)
+keywords : frozenset({'analytical chemistry', 'environmental science'})
+
+6/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : callum
+lastname : roberts
+middlename : m
+year : 1987
+year_papertitle : ((1986, 'aspects of coral reef fish community structure in the saudi arabian red sea and on the great barrier reef'), (1987, 'experimental analysis of resource sharing between herbivorous damselfish and blennies on the great barrier reef'), (1987, 'habitat complexity and coral reef fish diversity and abundance on red sea fringing reefs'), (1988, 'oil spill at sharm el sheikh'), (1989, 'confirmation of the specific status of abudefduf natalensis hensley and randall pisces pomacentridae'), (1991, 'are marine reserves effective in management of reef fisheries'), (1991, 'effects of a phosphate ship grounding on a red sea coral reef'), (1991, 'kingdom of the deep'), (1991, 'trophic relationships in the marine environment'), (1992, 'marine ecology of the arabian region'))
+keywords : frozenset({'fishery', 'ancient history', 'oceanography', 'ecology'})
+
+firstname : tish
+lastname : robertson
+middlename : l
+year : 2004
+year_papertitle : ((2004, 'an analysis of epifaunal communities associated with the salt marsh grasses i phragmites australis i and i spartina alterniflora i'),)
+keywords : frozenset({'environmental science', 'ecology'})
+
+6/10 positive, 3/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : qinku
+lastname : zhang
+middlename : None
+year : 2019
+year_papertitle : ((2019, 'effects of calcination temperature on crystal structure and photocatalytic activity of cain2o4 in2o3 composites'), (2019, 'enhanced visible light photocatalytic activity of one dimensional in2o3 in2tio5 nanobelts'), (2019, 'preparation and properties of visible light responsive rgo in2tio5 nanobelts for photocatalytic degradation of organic pollutants'), (2019, 'synthesis of cawo4 biochar nanocomposites for organic dye removal'), (2020, 'a novel laboratory simulation system to uncover the mechanisms of uranium upward transport in a desert landscape'), (2020, 'a simple method for the synthesis of biochar nanodots using hydrothermal reactor'), (2020, 'laboratory simulation of uranium metal corrosion in different soil moisture regimes'), (2020, 'synthesis of γ fe2o3 zno biochar nanocomposites for rhodamine b removal'), (2021, 'functionalization of clay surface for the removal of uranium from water'), (2021, 'uranium metal corrosion in soils with different soil moisture regimes'))
+keywords : frozenset({'chemical engineering', 'metallurgy', 'composite material', 'environmental chemistry', 'nuclear chemistry'})
+
+firstname : li
+lastname : zhang
+middlename : None
+year : 2012
+year_papertitle : ((2012, 'remote sensing of water quality in lake erie using modis imagery data'),)
+keywords : frozenset({'limnology', 'civil engineering', 'water resource management'})
+
+6/10 positive, 4/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : yu
+lastname : chen
+middlename : None
+year : 2009
+year_papertitle : ((2009, 'the lattice boltzmann method based on quadtree mesh'), (2011, 'lattice boltzmann method on quadtree grids'), (2013, 'momentum exchange method in lattice boltzmann simulations of particle fluid interactions'), (2015, 'comparisons of different implementations of turbulence modelling in lattice boltzmann method'), (2015, 'lattice boltzmann simulation of particle motion in binary immiscible fluids'), (2016, 'continuous inertial microparticle and blood cell separation in straight channels with local microstructures'), (2016, 'correction continuous inertial microparticle and blood cell separation in straight channels with local microstructures lab chip 2016 16 532 542'))
+keywords : frozenset({'mathematical analysis', 'computational physics', 'mechanics', 'applied mathematics', 'statistical physics', 'optoelectronics', 'analytical chemistry'})
+
+firstname : xunhong
+lastname : chen
+middlename : None
+year : 1994
+year_papertitle : ((1994, '1 finite element transport modeling of biodegradable contaminant in heterogeneous porous media and 2 geostatistical methods for the study of pressure compartments a case study in the hilight oil field powder river basin wyoming'),)
+keywords : frozenset({'hydrology', 'mathematics', 'biogeochemistry'})
+
+6/10 positive, 5/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jianan
+lastname : zhou
+middlename : None
+year : 2018
+year_papertitle : ((2018, 'estimating passenger car equivalents on level freeway segments experiencing high truck percentages and differential average speeds'), (2019, 'estimating passenger car equivalent using the hcm 6 pce methodology on four lane level freeway segments in western u s'), (2019, 'sensitivity analysis of speed limit truck lane restrictions and data aggregation level on the hcm 6 passenger car equivalent estimation methodology for western u s conditions'))
+keywords : frozenset({'transport engineering', 'automotive engineering'})
+
+firstname : jian
+lastname : zhou
+middlename : None
+year : 2004
+year_papertitle : ((2004, 'using rainfall simulation tdr and tracer anions to determine effects of soil properties on nitrate leaching'),)
+keywords : frozenset({'agricultural engineering', 'soil sciences'})
+
+6/10 positive, 6/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : mohammad
+lastname : islam
+middlename : maksimul
+year : 2015
+year_papertitle : ((2015, 'development of idf curve for dhaka city based on scaling theory under future precipitation variability due to climate change'), (2020, 'adequacy assessment of an urban drainage system considering future land use and climate change scenario'), (2021, 'a meteorology based particulate matter prediction model for megacity dhaka'), (2021, 'in use emissions from biomass and lpg stoves measured during a large multi year cookstove intervention study in rural india'), (2021, 'reliability and financial feasibility assessment of a community rainwater harvesting system considering precipitation variability due to climate change'))
+keywords : frozenset({'meteorology', 'water resource management', 'environmental engineering', 'climatology'})
+
+firstname : md
+lastname : islam
+middlename : nazrul
+year : 2003
+year_papertitle : ((2003, 'lowering of the water table irrigation policy change and its influence on the groundwater arsenic contamination problem in bangladesh'),)
+keywords : frozenset({'agricultural engineering', 'environmental engineering'})
+
+6/10 positive, 7/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : lucie
+lastname : maranda
+middlename : None
+year : 1985
+year_papertitle : ((1985, 'comparison of toxicity between populations of gonyaulax tamarensis of eastern north american waters'), (1987, 'diarrhetic shellfish poisoning in narragansett bay'))
+keywords : frozenset({'zoology', 'ecology'})
+
+firstname : lucie
+lastname : maranda
+middlename : None
+year : 1987
+year_papertitle : ((1987, 'photoacclimation in the marine dinoflagellate protogonyaulax tamarensis'),)
+keywords : frozenset({'oceanography'})
+
+6/10 positive, 8/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ming
+lastname : li
+middlename : None
+year : 2012
+year_papertitle : ((2012, 'seasonal variation of eddy kinetic energy in the south china sea'), (2013, 'river flow control on the phytoplankton dynamics of chesapeake bay'), (2013, 'role of ekman transport versus ekman pumping in driving summer upwelling in the south china sea'))
+keywords : frozenset({'oceanography', 'climatology'})
+
+firstname : ming
+lastname : li
+middlename : None
+year : 1990
+year_papertitle : ((1990, 'interactions of heptanol and pressure on sodium and chloride transport in the toad skin'),)
+keywords : frozenset({'physiology', 'pharmacology', 'environmental science'})
+
+7/10 positive, 8/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ken
+lastname : eng
+middlename : None
+year : 1999
+year_papertitle : ((1999, 'generality of drought flow characteristics within the arkansas river basin'), (2003, 'vertical velocity variance in the mixed layer from radar wind profilers'), (2005, 'an analysis of region of influence methods for flood regionalization in the gulf atlantic rolling plains'))
+keywords : frozenset({'physical geography', 'hydrology', 'remote sensing'})
+
+firstname : kenny
+lastname : eng
+middlename : None
+year : 2001
+year_papertitle : ((2001, 'characterization of the atmospheric boundary layer with remotely sensed variables'),)
+keywords : frozenset({'atmospheric sciences', 'civil engineering', 'hydrologic sciences', 'remote sensing'})
+
+7/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : xiaoping
+lastname : wang
+middlename : None
+year : 1991
+year_papertitle : ((1991, 'singular solutions of the zakharov equations for langmuir turbulence'), (1992, 'stability of isotropic self similar dynamics for scalar wave collapse'), (1992, 'structural study of sputtered pd si multilayers'), (1994, 'electrical properties of periodic pd mo bimetal films'), (1994, 'photoemission studies of k promoted nitridation of inp 100 surface using synchrotron radiation'), (1994, 'the focusing singularity of the davey stewartson equations for gravity capillary surface waves'), (1994, 'wave collapse and instability of solitary waves of a generalized kadomtsev petviashvili equation'), (1996, 'on hydrodynamic instabilities chaos and phase transition'), (1996, 'the results of tympanoplasty with titanium prostheses'), (1997, 'nonlinear stability of solitary waves of a generalized kadomtsev petviashvili equation'))
+keywords : frozenset({'mathematical analysis', 'classical mechanics', 'optics', 'mechanics', 'mathematical physics', 'atomic physics', 'analytical chemistry', 'dentistry'})
+
+firstname : xiaoping
+lastname : wang
+middlename : None
+year : 2004
+year_papertitle : ((2004, 'evaluating impacts of air pollution in china on agriculture and public health implications for air pollution and energy policies'),)
+keywords : frozenset({'energy', 'public health', 'public administration', 'agriculture', 'environmental science'})
+
+7/10 positive, 10/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jennifer
+lastname : howardgrenville
+middlename : None
+year : 2003
+year_papertitle : ((2003, 'the importance of cultural framing to the success of social initiatives in business'), (2005, 'explaining shades of green why do companies act differently on similar environmental issues'), (2005, 'greening the industrial facility'), (2005, 'the persistence of flexible organizational routines the role of agency and organizational context'), (2006, 'inside the black box how organizational culture and subcultures inform interpretations and actions on environmental issues'), (2006, 'the incompatibility of knowledge regimes consequences of the material world for cross domain work'), (2007, 'corporate culture and environmental practice'), (2007, 'corporate culture and environmental practice making change at a high technology manufacturer'), (2007, 'developing issue selling effectiveness over time issue selling as resourcing'), (2007, 'environmental protection and the social responsibility of firms perspectives from law economics and business bruce l hay robert n stavins richard h k vietor eds resources for the future press 2005 240 pp isbn 1 933115 03 3'))
+keywords : frozenset({'knowledge management', 'law', 'public relations', 'waste management', 'engineering ethics', 'accounting', 'market economy'})
+
+firstname : jennifer
+lastname : howardgrenville
+middlename : a
+year : 2000
+year_papertitle : ((2000, 'inside out a cultural study of environmental work in semiconductor manufacturing'),)
+keywords : frozenset({'management', 'environmental science'})
+
+7/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ryan
+lastname : winston
+middlename : j
+year : 2010
+year_papertitle : ((2010, 'runoff volume reduction by a level spreader vegetated filter strip system in suburban charlotte n c'), (2011, 'evaluation of undersized bioretention stormwater control measures for treatment of highway bridge deck runoff'), (2011, 'field evaluation of four level spreader vegetative filter strips to improve urban storm water quality'), (2011, 'thermal mitigation of urban storm water by level spreader vegetative filter strips'), (2012, 'effect of urban catchment composition on runoff temperature'), (2012, 'erratum for thermal mitigation of urban storm water by level spreader vegetative filter strips by r j winston w f hunt and w g lord'), (2012, 'field evaluation of storm water control measures for highway runoff treatment'), (2012, 'water quality of drainage from permeable friction course'), (2013, 'internal water storage enhances exfiltration and thermal load reduction from permeable pavement in the north carolina mountains'), (2013, 'side by side evaluation of four level spreader vegetated filter strips and a swale in eastern north carolina'))
+keywords : frozenset({'geotechnical engineering', 'meteorology', 'hydrology', 'environmental engineering'})
+
+firstname : ryan
+lastname : winston
+middlename : joseph
+year : 2015
+year_papertitle : ((2015, 'resilience of green infrastructure under extreme conditions'),)
+keywords : frozenset({'civil engineering', 'water resource management'})
+
+8/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : john
+lastname : felkner
+middlename : None
+year : 2009
+year_papertitle : ((2009, 'impact of climate change on rice production in thailand'), (2011, 'the geographic concentration of enterprise in developing countries'))
+keywords : frozenset({'economy', 'economic geography', 'natural resource economics'})
+
+firstname : john
+lastname : felkner
+middlename : sames
+year : 2000
+year_papertitle : ((2000, 'a digital spatial predictive model of land use change using economic and environmental inputs and a statistical tree classification approach thailand 1970s 1990s'),)
+keywords : frozenset({'geography', 'remote sensing', 'landscaping services', 'economics', 'urban planning', 'administration of urban planning and community and rural development', 'landscape architecture', 'environmental science'})
+
+9/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : kristi
+lastname : metzger
+middlename : busico
+year : 2000
+year_papertitle : ((2000, 'interim results of the study of particulates and health in atlanta sophia'), (2003, 'case crossover analyses of cardiovascular emergency department visits and ambient air quality atlanta georgia 1993 2000 isee 333'), (2003, 'further results from a time series analysis examining the relationship between ambient air pollution and asthma emergency department visits in atlanta 1993 2000 isee 355'), (2004, 'ambient air pollution and cardiovascular emergency department visits'), (2005, 'ambient air pollution and respiratory emergency department visits'), (2006, 'ambient air pollution and cardiorespiratory emergency department visits in potentially sensitive groups'), (2006, 'short term associations between ambient air pollution and arrhythmic events in patients with implanted cardioverter defibrillators 1993 2002'), (2006, 'speciated ambient air pollution and cardiorespiratory emergency department visits'), (2007, 'ambient air pollution and cardiovascular emergency department visits in potentially sensitive groups'))
+keywords : frozenset({'medical emergency', 'pediatrics', 'emergency medicine', 'environmental health', 'intensive care medicine'})
+
+firstname : kristina
+lastname : metzger
+middlename : busico
+year : 2002
+year_papertitle : ((2002, 'cardiovascular morbidity and ambient air pollution in atlanta 1993 2000'),)
+keywords : frozenset({'public health', 'biostatistics', 'environmental science'})
+
+10/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : tim
+lastname : abbe
+middlename : b
+year : 1996
+year_papertitle : ((1996, 'distribution of bedrock and alluvial channels in forested mountain drainage basins'), (2003, 'patterns and processes of wood debris accumulation in the queets river basin washington'))
+keywords : frozenset({'hydrology'})
+
+firstname : timothy
+lastname : abbe
+middlename : best
+year : 2000
+year_papertitle : ((2000, 'patterns mechanics and geomorphic effects of wood debris accumulations in a forest river system'),)
+keywords : frozenset({'environmental science', 'geography', 'geology'})
+
+11/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : frank
+lastname : sorte
+middlename : a la
+year : 2006
+year_papertitle : ((2006, 'compositional similarity and the distribution of geographical range size for assemblages of native and non native species in urban floras'), (2006, 'geographical expansion and increased prevalence of common species in avian assemblages implications for large scale patterns of species richness'), (2007, 'compositional changes over space and time along an occurrence abundance continuum anthropogenic homogenization of the north american avifauna'), (2007, 'compositional similarity among urban floras within and across continents biogeographical consequences of human mediated biotic interchange'), (2007, 'invasiveness and homogenization synergism of wide dispersal and high local abundance'), (2007, 'poleward shifts in winter ranges of north american birds'), (2007, 'range maps and species richness patterns errors of commission and estimates of uncertainty'), (2008, 'comparison of methods for estimating bird abundance and trends from historical count data'), (2008, 'distance decay of similarity among european urban floras the impact of anthropogenic activities on β diversity'), (2009, 'extra regional residence time as a correlate of plant invasiveness european archaeophytes in north america'))
+keywords : frozenset({'cartography', 'statistics', 'ecology'})
+
+firstname : francesco
+lastname : sorte
+middlename : a la
+year : 2005
+year_papertitle : ((2005, 'changes in avian diversity structure in north america patterns causes and implications'),)
+keywords : frozenset({'environmental science', 'ecology'})
+
+12/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jose
+lastname : villaescusanadal
+middlename : luis
+year : 2018
+year_papertitle : ((2018, 'toward landsat and sentinel 2 brdf normalization and albedo estimation a case study in the peruvian amazon forest'), (2019, 'a method for landsat and sentinel 2 hls brdf normalization'), (2019, 'improving the avhrr long term data record brdf correction'), (2019, 'improving the avhrr s brdf correction using modis'), (2019, 'spectral adjustment model s analysis and application to remote sensing data'), (2021, 'modis based avhrr cloud and snow separation algorithm'))
+keywords : frozenset({'artificial intelligence', 'pattern recognition', 'remote sensing'})
+
+firstname : jose
+lastname : calle
+middlename : luis
+year : 1994
+year_papertitle : ((1994, 'use of the crop critical temperature in irrigation scheduling of corn and soybean'),)
+keywords : frozenset({'agricultural engineering', 'biostatistics', 'agronomy'})
+
+13/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : nizam
+lastname : ahamed
+middlename : uddin
+year : 2011
+year_papertitle : ((2011, 'real time robot human interaction by tracking hand movement orientation based on morphology'), (2011, 'recent survey of automated rehabilitation systems using emg biosensors'), (2012, 'a framework for the development of measurement and quality assurance in software based medical rehabilitation systems'), (2012, 'analysis of right arm biceps brachii muscle activity with varying the electrode placement on three male age groups during isometric contractions using a wireless emg sensor'), (2012, 'analysis of the effect on electrode placement on an adolescent s biceps brachii during muscle contractions using a wireless emg sensor'), (2012, 'biosensors assisted automated rehabilitation systems a systematic review'), (2012, 'electromyographic responses during elbow movement at two angles with voluntary contraction influences of muscle activity on upper arm biceps brachii'), (2012, 'gait disorder rehabilitation using vision and non vision based sensors a systematic review'), (2012, 'non invasive electromyography based fatigue detection and performance analysis on m biceps brachii muscle'), (2012, 'vision based motion tracking rehabilitation system for gait disorder'))
+keywords : frozenset({'physical medicine and rehabilitation', 'anatomy', 'biomedical engineering', 'engineering management', 'orthodontics', 'computer vision', 'artificial intelligence', 'software engineering', 'systems engineering', 'simulation', 'human computer interaction'})
+
+firstname : nizam
+lastname : ahmed
+middlename : uddin
+year : 1989
+year_papertitle : ((1989, 'convective boundary layer and modeling of dispersion'),)
+keywords : frozenset({'atmospheric sciences'})
+
+13/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : doug
+lastname : burns
+middlename : None
+year : 2005
+year_papertitle : ((2005, 'what do hydrologists mean when they use the term flushing'), (2011, 'comparisons of watershed sulfur budgets in southeast canada and northeast us new approaches and implications'))
+keywords : frozenset({'hydrology'})
+
+firstname : douglas
+lastname : burns
+middlename : alan
+year : 1999
+year_papertitle : ((1999, 'the hydrochemical evolution of stormflow in a forested piedmont catchment'),)
+keywords : frozenset({'hydrology', 'biogeochemistry', 'environmental science', 'geochemistry'})
+
+13/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : michael
+lastname : foster
+middlename : p
+year : 1992
+year_papertitle : ((1992, 'verification of mesoscale forecasts made during map 88 and map 89'), (1994, 'the operational recognition of supercell thunderstorm environments and storm structures'), (1997, 'stormtipe 95 results from a convective storm forecast experiment'))
+keywords : frozenset({'meteorology', 'climatology'})
+
+firstname : michael
+lastname : foster
+middlename : j
+year : 2008
+year_papertitle : ((2008, 'effect of cloud macroscale properties on climate forecasting in the tropics'),)
+keywords : frozenset({'atmospheric sciences'})
+
+13/10 positive, 14/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : sara
+lastname : lewis
+middlename : m
+year : 1982
+year_papertitle : ((1982, 'notes on the ecology and behaviour of pseudamphithoides incurvaria just crustacea amphipoda ampithoidae'), (1983, 'north carolina marine algae xi a new species of helminthocladia liagoraceae nemaliales rhodophyta with a reappraisal of the generic limits of helminthocladia and helminthora1'), (1984, 'dietary shifts in the queen triggerfish balistes vetula in the absence of its primary food item diadema antillarum'), (1985, 'herbivore abundance and grazing intensity on a caribbean coral reef'), (1985, 'herbivory on coral reefs algal susceptibility to herbivorous fishes'), (1986, 'social behaviour foraging efficiency and habitat utilization in a group of tropical herbivorous fish'), (1986, 'the role of herbivorous fishes in the organization of a caribbean reef community'), (1987, 'the regulation of morphological plasticity in tropical reef algae by herbivory'), (1988, 'can tropical seaweeds reduce herbivory by growing at night diel patterns of growth nitrogen content herbivory and chemical versus morphological defenses'))
+keywords : frozenset({'fishery', 'botany', 'ecology'})
+
+firstname : sarah
+lastname : lewis
+middlename : elaine
+year : 2010
+year_papertitle : ((2010, 'perception vs reality stakeholder perception of and willingness to pay for watershed ecosystem integrity'),)
+keywords : frozenset({'environmental studies', 'environmental science', 'environmental economics'})
+
+13/10 positive, 15/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : susan
+lastname : richardson
+middlename : d
+year : 1988
+year_papertitle : ((1988, 'chain substituted lipids in monolayer films a study of molecular packing'), (1989, 'chain substituted lipids in monomolecular films the effect of polar substituents on molecular packing'), (1991, 'application of multispectral techniques to the precise identification of aldehydes in the environment'), (1991, 'influence of experimental conditions on the liquid secondary ion mass spectra of sulfonated azo dyes'), (1991, 'multispectral identiftcation of alkyl and chloroalkyl phosphates from an industrial effluent'), (1992, 'ozonation byproducts identification of bromohydrins from the ozonation of natural waters with enhanced bromide levels'), (1992, 'structural characterization of sulfonated azo dyes using liquid secondary ion mass spectrometry tandem mass spectrometry'), (1993, 'structural characterization of reactive dyes using liquid secondary ion mass spectrometry tandem mass spectrometry'), (1994, 'identification of bromohydrins in ozonated waters'), (1994, 'multispectral identification of chlorine dioxide disinfection byproducts in drinking water'))
+keywords : frozenset({'crystallography', 'polymer chemistry', 'mineralogy', 'organic chemistry', 'photochemistry', 'chromatography', 'stereochemistry', 'analytical chemistry', 'environmental chemistry'})
+
+firstname : susan
+lastname : richardson
+middlename : lynn
+year : 2000
+year_papertitle : ((2000, 'the phylogeny of recent and fossil i soritacea i i foraminifera i the evolutionary significance of photosymbiosis and a revision of the foraminiferal life cycle'),)
+keywords : frozenset({'oceanography', 'paleontology'})
+
+13/10 positive, 16/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : robert
+lastname : young
+middlename : j
+year : 1982
+year_papertitle : ((1982, 'a method for the enumeration of zooplankton subsamples'), (1982, 'open ocean disposal of materials dredged from a highly industrialized estuary an evaluation of potential lethal effects'), (1988, 'toxicity testing of sublethal effects of dredged materials'))
+keywords : frozenset({'statistics', 'environmental chemistry', 'ecology'})
+
+firstname : robert
+lastname : young
+middlename : steven
+year : 1995
+year_papertitle : ((1995, 'coastal wetland dynamics in response to sea level rise transgression and erosion'),)
+keywords : frozenset({'biogeochemistry', 'environmental science', 'geology'})
+
+13/10 positive, 17/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : heidi
+lastname : manning
+middlename : l k
+year : 2003
+year_papertitle : ((2003, 'hypervelocity microparticle impact studies using a novel cosmic dust mass spectrometer'), (2004, 'a compact time of flight mass spectrometer for high flux cosmic dust analysis'), (2004, 'a compact time of flight mass spectrometer for high flux cosmic dust analysis space simulations in laboratory experiments instrumentation and modeling'))
+keywords : frozenset({'atomic physics', 'optics', 'astronomy', 'computational physics'})
+
+firstname : heidi
+lastname : manning
+middlename : lynn kennedy
+year : 1995
+year_papertitle : ((1995, 'the development and calibration of a new mass spectrometer for upper atmospheric research'),)
+keywords : frozenset({'atmospheric sciences'})
+
+13/10 positive, 18/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : julia
+lastname : coonrod
+middlename : e allred
+year : 2002
+year_papertitle : ((2002, 'evapotranspiration at the land water interface in a semi arid drainage basin'), (2004, 'long term vegetation monitoring with ndvi in a diverse semi arid setting central new mexico usa'), (2004, 'seasonal and inter annual relationships between vegetation and climate in central new mexico usa'), (2009, 'total soil water evaporation in a riparian environment model development and application'))
+keywords : frozenset({'soil science', 'hydrology', 'ecology', 'climatology'})
+
+firstname : julia
+lastname : coonrod
+middlename : ellen allred
+year : 1998
+year_papertitle : ((1998, 'suspended sediment yield in texas watersheds'),)
+keywords : frozenset({'civil engineering', 'hydrology', 'environmental science', 'remote sensing'})
+
+14/10 positive, 18/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : adam
+lastname : smith
+middlename : n
+year : 2011
+year_papertitle : ((2011, 'double electron electron resonance and 1h 15n hsqc spectral analysis as means to understand the effects of single and multiple site mutations in the hiv 1 protease'), (2013, 'elucidating a relationship between conformational sampling and drug resistance in hiv 1 protease'), (2014, 'effects of pre and post therapy drug pressure selected mutations on hiv 1 protease conformational sampling'), (2015, 'a method for dynamic nuclear polarization enhancement of membrane proteins'), (2015, 'delineation of the dynamic properties of individual lipid species in native and synthetic pulmonary surfactants'), (2016, 'dynamic nuclear polarization as an enabling technology for solid state nuclear magnetic resonance spectroscopy'), (2016, 'expeditious dissolution dynamic nuclear polarization without glassing agents'), (2016, 'molecular rationale for improved dynamic nuclear polarization of biomembranes'), (2016, 'specific binding of a naturally occurring amyloidogenic fragment of streptococcus mutans adhesin p1 to intact p1 on the cell surface characterized by solid state nmr spectroscopy'), (2017, 'chemical composition of soil organic matter in a subarctic peatland influence of shifting vegetation communities'))
+keywords : frozenset({'crystallography', 'combinatorial chemistry', 'soil science', 'molecular biology', 'nuclear magnetic resonance', 'biochemistry', 'biophysics', 'genetics', 'microbiology', 'analytical chemistry'})
+
+firstname : adam
+lastname : smith
+middlename : berrigan
+year : 2009
+year_papertitle : ((2009, 'facets of biological conservation appropriate ecology policy and ethics for ensuring the perpetuity of biodiversity'),)
+keywords : frozenset({'international law', 'environmental science', 'ecology'})
+
+15/10 positive, 18/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : gary
+lastname : wolff
+middlename : a
+year : 1989
+year_papertitle : ((1989, 'sample variability of zooplankton in the nearshore off louisiana with consideration of sampling design'),)
+keywords : frozenset({'oceanography'})
+
+firstname : gary
+lastname : wolff
+middlename : hartman
+year : 1997
+year_papertitle : ((1997, 'waiting for pigou a qualitative approach to environmental taxation'),)
+keywords : frozenset({'finance', 'economics', 'environmental science', 'political science'})
+
+15/10 positive, 19/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : pete
+lastname : riley
+middlename : None
+year : 1992
+year_papertitle : ((1992, 'comparison of diffusion and particle drift descriptions of radial transport in the earth s inner magnetosphere'), (1996, 'properties of arc polarized alfven waves in the ecliptic plane ulysses observations'), (1996, 'the acceleration of slow coronal mass ejections in the high speed solar wind'), (1996, 'the tilts of corotating interaction regions at midheliographic latitudes'), (1997, 'a two dimensional simulation of the radial and latitudinal evolution of a solar wind disturbance driven by a fast high pressure coronal mass ejection'), (1997, 'the northern edge of the band of solar wind variability ulysses at 4 5 au'), (1997, 'ulysses solar wind plasma observations at high latitudes'), (1998, 'overexpanding coronal mass ejections at high heliographic latitudes observations and simulations'), (1998, 'ulysses observations of a density hole in the high speed solar wind'), (1998, 'ulysses return to the slow solar wind'))
+keywords : frozenset({'classical mechanics', 'astrophysics', 'computational physics', 'geodesy', 'atmospheric sciences', 'astronomy', 'geophysics'})
+
+firstname : peter
+lastname : riley
+middlename : None
+year : 1994
+year_papertitle : ((1994, 'electrodynamics of the low latitude ionosphere'),)
+keywords : frozenset({'atmospheric sciences', 'plasma physics'})
+
+15/10 positive, 20/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : aarin
+lastname : teague
+middlename : None
+year : 2011
+year_papertitle : ((2011, 'targeted application of seasonal load duration curves using multivariate analysis in two watersheds flowing into lake houston1'), (2013, 'uncertainty in floodplain delineation expression of flood hazard and risk in a gulf coast watershed'))
+keywords : frozenset({'hydrology'})
+
+firstname : aarin
+lastname : teague
+middlename : None
+year : 2012
+year_papertitle : ((2012, 'development of a distributed water quality model using advanced hydrologic simulation'),)
+keywords : frozenset({'water resource management', 'environmental engineering'})
+
+16/10 positive, 20/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jianying
+lastname : gong
+middlename : None
+year : 2011
+year_papertitle : ((2011, 'heat transfer research on a certain gas turbine blade'), (2011, 'modeling the airside dynamic behavior of a heat exchanger under frosting conditions'), (2011, 'numerical and experimental study on a new separation device for gas solid two phase flows'), (2013, 'lattice boltzmann simulation of frost formation process'), (2013, 'numerical simulation of flow and heat transfer characteristics in wavy fin and tube heat exchanger with combined longitudinal vortex generators'), (2013, 'performance analysis of 15 kw closed cycle ocean thermal energy conversion system with different working fluids'), (2014, 'contrastive experimental study on heat transfer and friction characteristics in steam cooled and air cooled rectangular channels with rib turbulators'), (2014, 'heat transfer and friction characteristics in steam cooled rectangular channels with rib turbulators'), (2015, 'a lattice boltzmann model for solidification of water droplet on cold flat plate'), (2017, 'hybrid dielectric loaded nanoridge plasmonic waveguide for low loss light transmission at the subwavelength scale'))
+keywords : frozenset({'mechanics', 'thermodynamics', 'structural engineering', 'composite material', 'mechanical engineering', 'optoelectronics', 'petroleum engineering'})
+
+firstname : li
+lastname : gong
+middlename : None
+year : 1992
+year_papertitle : ((1992, 'a theoretical numerical and experimental study of heat and mass transfer in wood during drying'),)
+keywords : frozenset({'technology', 'agricultural engineering', 'wood', 'mechanical engineering'})
+
+17/10 positive, 20/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+Finished labeling
+Done in 1166.6080036799112 minutes.

@@ -1,0 +1,651 @@
+/home/christoph/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/numpy/core/getlimits.py:500: UserWarning: The value of the smallest subnormal for <class 'numpy.float64'> type is zero.
+  setattr(self, word, getattr(machar, word).flat[0])
+/home/christoph/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/numpy/core/getlimits.py:89: UserWarning: The value of the smallest subnormal for <class 'numpy.float64'> type is zero.
+  return self._float_to_str(self.smallest_subnormal)
+/home/christoph/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/numpy/core/getlimits.py:500: UserWarning: The value of the smallest subnormal for <class 'numpy.float32'> type is zero.
+  setattr(self, word, getattr(machar, word).flat[0])
+/home/christoph/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/numpy/core/getlimits.py:89: UserWarning: The value of the smallest subnormal for <class 'numpy.float32'> type is zero.
+  return self._float_to_str(self.smallest_subnormal)
+Namespace(testing=False, verbose=1, field=['physics'], train_name='christoph_fielddegree0', startyear=1985, endyear=2015, mergemode='1:1', recall=0.9, institution='False', fieldofstudy_cat='False', fieldofstudy_str='False', keywords='True', retrain='True', linking_type='graduates', samplesize=50000)
+Have max 6 cores available
+Testing is False 
+
+finished setup ... 
+Time elapsed: 0.0008817036946614583 minutes 
+
+
+    SELECT goid
+            , year
+            , firstname 
+            , lastname
+            , CASE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                WHEN 
+                    "" THEN NULL 
+                    ELSE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                END AS middlename
+            , fieldofstudy
+            , keywords
+            , institution
+            , coauthors
+            , year_papertitle
+    FROM (
+        SELECT goid
+            , degree_year AS year 
+            , fullname 
+            , SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) AS firstname
+            , REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "") AS lastname 
+            , TRIM(SUBSTR(fullname, length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1)) + 1)) AS middle_lastname 
+            , length(fullname) AS l_fullname 
+            , length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) ) AS l_firstname
+            , length(REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "")) AS l_lastname
+            , fieldname AS fieldofstudy
+            , university_id
+            , degree_year || "//" || thesistitle as year_papertitle 
+        FROM pq_authors 
+        INNER JOIN (
+            SELECT goid, fieldname 
+            FROM pq_fields_mag
+            WHERE mag_field0 IN (?)
+        ) USING (goid)
+    )
+    -- ## NOTE: use left join here as not all graduates have advisor (particularly pre-1980) and possibly also keywords
+    LEFT JOIN (
+        SELECT goid
+            , fields as keywords
+            , advisors as coauthors
+        FROm pq_info_linking
+    ) USING(goid)
+    INNER JOIN (
+        SELECT university_id, normalizedname as institution
+        FROM pq_unis
+        WHERE location like "%United States%"
+    ) USING(university_id)
+    WHERE year >= 1985 and year <= 2015 AND length(firstname) > 1
+     
+
+
+    SELECT f.AuthorId
+        , f.year
+        , f.firstname
+        , f.lastname
+        , CASE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            WHEN 
+                "" THEN NULL 
+                ELSE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            END as middlename 
+            -- ## NOTE this gives "" for middlename when it is missing 
+        , f.fieldofstudy
+        , g.keywords
+        , g.coauthors
+        , g.institution
+        , g.year_papertitle
+    FROM (
+        SELECT a.AuthorId
+            , a.YearFirstPub AS year
+            , a.FirstName AS firstname
+            , REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "") AS lastname 
+                    -- https://stackoverflow.com/questions/21388820/how-to-get-the-last-index-of-a-substring-in-sqlite
+            , TRIM(SUBSTR(b.NormalizedName, length(a.FirstName) + 1)) AS middle_lastname 
+                    -- this gives all except the first name 
+            , length(b.NormalizedName) as l_fullname 
+            , length(a.FirstName) as l_firstname
+            , length(REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "")) as l_lastname
+            , e.NormalizedName AS fieldofstudy
+        FROM author_sample AS a
+        INNER JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM Authors
+        ) AS b USING(AuthorId)
+        INNER JOIN (
+            SELECT AuthorId
+            FROM author_field0
+            WHERE FieldOfStudyId_lvl0 IN (?)
+                AND Degree <= 0
+        ) USING(AuthorId)
+        LEFT JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM author_fields c
+            INNER JOIN (
+                SELECT FieldOfStudyId, NormalizedName
+                FROM FieldsOfStudy
+            ) AS d USING(FieldOfStudyId)
+            -- ## Condition on fieldofstudy being in the level 0 id_field
+            INNER JOIN (
+                SELECT ParentFieldOfStudyId, ChildFieldOfStudyId
+                FROM crosswalk_fields
+                WHERE ParentLevel = 0
+                    AND ParentFieldOfStudyId IN (?)
+            ) AS e ON (e.ChildFieldOfStudyId = c.FieldOfStudyId)
+            WHERE FieldClass = 'first'
+        ) AS e USING(AuthorId)
+    ) f
+    LEFT JOIN (
+        SELECT AuthorId
+                , institutions as institution
+                , main_us_institutions_career
+                , coauthors
+                , keywords
+                , year_papertitle
+        FROM author_info_linking
+    ) AS g USING(AuthorId)
+    WHERE length(firstname) > 1 AND year >= 1985 - 5 AND year <= 2015 + 5 
+        -- ## use this to condition on people that have at least at some point their main affiliation in the US
+        AND g.main_us_institutions_career IS NOT NULL
+        AND g.institution != "chinese academy of sciences"
+     
+
+Time elapsed: 154.1424184123675 minutes 
+
+Starting active labeling...
+firstname : fulai
+lastname : guo
+middlename : None
+year : 2008
+year_papertitle : ((2008, 'a global stability analysis of clusters of galaxies with conduction and agn feedback heating'), (2008, 'feedback heating by cosmic rays in clusters of galaxies'), (2009, 'could agn outbursts transform cool core clusters'), (2010, 'removing cool cores and central metallicity peaks in galaxy clusters with powerful active galactic nucleus outbursts'), (2010, 'self consistent evolution of gas and cosmic rays in cygnus a and similar fr ii classical double radio sources'), (2010, 'simulating x ray supercavities and their impact on galaxy clusters'), (2011, 'cosmic ray diffusion fronts in the virgo cluster'), (2011, 'cosmic ray dominated agn jets and the formation of x ray cavities in galaxy clusters'), (2011, 'estimate of the total mechanical feedback energy from galaxy cluster centered black holes implications for black hole evolution cluster gas fraction and entropy'), (2012, 'dynamics inside the radio and x ray cluster cavities of cygnus a and similar frii sources'))
+keywords : frozenset({'astronomy', 'astrophysics'})
+
+firstname : fulai
+lastname : guo
+middlename : None
+year : 2008
+year_papertitle : ((2008, 'agn feedback heating in clusters of galaxies'),)
+keywords : frozenset({'astronomy'})
+
+0/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished
+firstname : tao
+lastname : lin
+middlename : None
+year : 2009
+year_papertitle : ((2009, 'ferromagnetic spin state of manganite srtio _ 3 interfaces in 110 orientation'), (2009, 'interface ferromagnetism in 110 oriented la 0 7 sr 0 3 mno 3 srtio 3 ultrathin superlattices'), (2010, 'epitaxial euo thin films on gaas'), (2010, 'erratum tuning carrier type and density in bi2se3 by ca doping appl phys lett 97 042112 2010'), (2010, 'infrared reflectance of single crystal bismuth in high magnetic fields strongly correlated physics in the extreme quantum limit'), (2010, 'magnetoresistance sign reversal in la1 xsrxmno3 nanoparticle samples'), (2010, 'optical characterization of bi 2 se 3 in a magnetic field infrared evidence for magnetoelectric coupling in a topological insulator material'), (2010, 'tuning carrier type and density in bi2se3 by ca doping'), (2011, 'tuning optical and electrical transport properties of bi2se3 with ca'), (2013, 'epitaxial growth of atomically flat yttrium iron garnet thin films on gadolinium gallium garnet by pulse laser deposition'))
+keywords : frozenset({'nuclear magnetic resonance', 'optics', 'condensed matter physics', 'optoelectronics'})
+
+firstname : yenhsiang
+lastname : lin
+middlename : None
+year : 2011
+year_papertitle : ((2011, 'electrical transport properties of ultrathin amorphous bismuth films near the superconductor insulator transition'),)
+keywords : frozenset({'materials science', 'electromagnetics', 'condensed matter physics'})
+
+1/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : robert
+lastname : singleton
+middlename : None
+year : 1990
+year_papertitle : ((1990, 'analysis of semileptonic decays of mesons containing heavy quarks'), (1990, 'do weak interactions become strong at 10 tev'), (1991, 'creating the baryon asymmetry at the electroweak phase transition'), (1991, 'semileptonic baryon decays with a heavy quark'), (1992, 'baryogenesis at the electroweak scale'), (1993, 'minkowski space non abelian classical solutions with noninteger winding number change'), (1994, 'spherical shells of a classical gauge field and their topological charge as a perturbative expansion'), (1995, 'fermion production in the background of minkowski space classical solutions in spontaneously broken gauge theory'), (1995, 'gauge invariant variables for spontaneously broken su 2 gauge theory in the spherical ansatz'), (1996, 'computational study of baryon number violation in high energy electroweak collisions'))
+keywords : frozenset({'theoretical physics', 'nuclear physics', 'quantum electrodynamics', 'particle physics', 'classical mechanics', 'mathematical physics'})
+
+firstname : robert
+lastname : singleton
+middlename : louis
+year : 1991
+year_papertitle : ((1991, 'anomalous baryogenesis at the weak scale'),)
+keywords : frozenset({'particle physics'})
+
+1/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jae
+lastname : cho
+middlename : yoong
+year : 2007
+year_papertitle : ((2007, 'fabrication of vertical comb electrodes using selective anodic bonding'), (2009, 'a low power oven controlled vacuum package technology for high performance mems'), (2011, 'mems rate and rate integrating gyroscope control with commercial software defined radio hardware'), (2011, 'single crystal silicon vibratory cylinderical rate integrating gyroscope cing'), (2012, 'characterization and control of a high q mems inertial sensor using low cost hardware'), (2012, 'high performance micromachined vibratory rate and rate integrating gyroscopes'), (2012, 'high q 3khz single crystal silicon cylindrical rate integrating gyro cing'), (2012, 'novel mismatch compensation methods for rate integrating gyroscopes'), (2013, 'a high q birdbath resonator gyroscope brg'), (2013, 'high q fused silica birdbath and hemispherical 3 d resonators made by blow torch molding'))
+keywords : frozenset({'acoustics', 'composite material', 'optoelectronics', 'computer hardware', 'electrical engineering', 'electronic engineering', 'nanotechnology', 'optics', 'control theory'})
+
+firstname : jae
+lastname : cho
+middlename : yoong
+year : 2012
+year_papertitle : ((2012, 'high performance micromachined vibratory rate and rate integrating gyroscopes'),)
+keywords : frozenset({'electrical engineering', 'physics', 'mechanical engineering'})
+
+2/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : patrick
+lastname : chu
+middlename : breckow
+year : 1994
+year_papertitle : ((1994, 'analysis of closed loop control of parallel plate electrostatic microgrippers'), (1995, 'gas phase silicon micromachining with xenon difluoride'), (1995, 'optical methods for characterization of mems device motion'), (1996, 'dynamics of polysilicon parallel plate electrostatic actuators'), (1997, 'controlled pulse etching with xenon difluoride'), (1997, 'optical communication using micro corner cube reflectors'), (1998, 'adapting multichip module foundries for mems packaging'), (2001, 'moems enabling technologies for large optical cross connects'))
+keywords : frozenset({'optoelectronics', 'electrical engineering', 'nanotechnology', 'electronic engineering', 'optics', 'analytical chemistry', 'control theory'})
+
+firstname : patrick
+lastname : chu
+middlename : breckow
+year : 1998
+year_papertitle : ((1998, 'optical communication with micromachined corner cube reflectors'),)
+keywords : frozenset({'electrical engineering', 'optics', 'mechanical engineering'})
+
+3/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : rukmini
+lastname : kumar
+middlename : None
+year : 2003
+year_papertitle : ((2003, 'mathematical simulation of post hemorrhage endotoxemia timing is critical for survival 124'), (2003, 'prediction of the acute inflammatory response from a mathematical mode'), (2004, 'in silico clinical trials a method coming of age 393'), (2004, 'in silico design of clinical trials a method coming of age'), (2004, 'predicting the acute inflammatory response in combined trauma hemorrhage and endotoxemia using mathematical simulations 146'), (2004, 'predicting the response to therapy from a mathematical model'), (2004, 'the dynamics of acute inflammation'), (2005, 'mathematical models predict the course of the inflammatory response in rats subjected to trauma hemorrhagic shock and to anti tumor necrosis factor α therapy in endotoxemia'), (2005, 'the acute inflammatory response in diverse shock states'), (2006, 'in silico models of acute inflammation in animals'))
+keywords : frozenset({'anesthesia', 'neuroscience', 'intensive care medicine', 'internal medicine', 'medical physics', 'immunology', 'cardiology', 'bioinformatics'})
+
+firstname : rukmini
+lastname : kumar
+middlename : None
+year : 2004
+year_papertitle : ((2004, 'the dynamics of acute inflammation'),)
+keywords : frozenset({'biology', 'physics'})
+
+4/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : christian
+lastname : mayer
+middlename : s j
+year : 2011
+year_papertitle : ((2011, 'direct numerical simulation of complete transition to turbulence via oblique breakdown at mach 3'), (2011, 'numerical investigation of the nonlinear transition regime in a mach 2 boundary layer'), (2011, 'numerical investigation of wave packets in a mach 3 5 cone boundary layer'), (2011, 'unlocking the limits of sand screen reliability with an innovative and self adapting technology'), (2014, 'an integrated software technology based on research and field application for completion stimulation and fluid placement design in complex wells'), (2014, 'open hole fluid displacement for carbonate stimulation in liner completions'), (2014, 'transition onset predictions for oblique breakdown in a mach 3 boundary layer'))
+keywords : frozenset({'petrology', 'simulation', 'reliability engineering', 'optics', 'mineralogy', 'mechanics', 'classical mechanics'})
+
+firstname : christian
+lastname : mayer
+middlename : s j
+year : 2009
+year_papertitle : ((2009, 'numerical investigation of the nonlinear transition regime in supersonic boundary layers'),)
+keywords : frozenset({'plasma physics', 'aerospace engineering'})
+
+5/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : keith
+lastname : lee
+middlename : s m
+year : 2007
+year_papertitle : ((2007, 'extracting short distance information from b s l l effectively'), (2008, 'subleading shape function effects and the extraction of vub'), (2012, 'quantum algorithms for quantum field theories'), (2014, 'bqp completeness of scattering in scalar quantum field theory nist'), (2014, 'quantum computation of scattering in scalar quantum field theories'))
+keywords : frozenset({'theoretical physics', 'nuclear physics', 'combinatorics', 'particle physics', 'classical mechanics'})
+
+firstname : keith
+lastname : lee
+middlename : s m
+year : 2006
+year_papertitle : ((2006, 'effective field theories for inclusive i b i decays'),)
+keywords : frozenset({'particle physics', 'physics'})
+
+6/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : lianghong
+lastname : yin
+middlename : None
+year : 2011
+year_papertitle : ((2011, 'parallel coupled dual racetrack silicon micro resonators for quadrature amplitude modulation'), (2011, 'ultra high sensitivity in a photonic crystal superprism due to the curvature singularity of a dispersion surface'), (2012, 'fabrication and characterization of compact silicon oxynitride waveguides on silicon chips'), (2012, 'fabrication and characterization of parallel coupled dual racetrack silicon microresonators'))
+keywords : frozenset({'optics', 'optoelectronics'})
+
+firstname : lianghong
+lastname : yin
+middlename : None
+year : 2009
+year_papertitle : ((2009, 'study of nonlinear optical effects in silicon waveguides'),)
+keywords : frozenset({'optics', 'electromagnetics'})
+
+7/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : junegone
+lastname : chay
+middlename : None
+year : 1991
+year_papertitle : ((1991, 'azimuthal asymmetry in lepton proton scattering at high energies'), (1993, 'theta effects in chern simons 2 1 dimensional qed with a four fermi interaction'), (1997, 'cone algorithm jets in e e collisions'), (1998, 'azimuthal correlation in lepton hadron scattering via charged weak current processes'))
+keywords : frozenset({'nuclear physics', 'quantum mechanics', 'particle physics'})
+
+firstname : junegone
+lastname : chay
+middlename : None
+year : 1990
+year_papertitle : ((1990, 'real and imaginary strong interactions'),)
+keywords : frozenset({'particle physics'})
+
+8/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : masoud
+lastname : rostami
+middlename : None
+year : 2007
+year_papertitle : ((2007, 'quantitative comparison of optical and electrical h x and y clock distribution networks'), (2008, 'an analytical model for threshold voltage of finfets'), (2008, 'design centering scheme for robust sram cell design'), (2010, 'dominant critical gate identification for power and yield optimization in logic circuits'), (2010, 'novel dual threshold voltage finfets for circuit design and optimization'), (2010, 'novel dual v th independent gate finfet circuits'), (2011, 'graphene ambipolar multiplier phase detector'), (2011, 'statistical design optimization of finfet sram using back gate voltage'), (2012, 'ambipolar circuits for analog mixed signal and radio frequency applications'), (2012, 'slender puf protocol a lightweight robust and secure authentication by substring matching'))
+keywords : frozenset({'mathematical analysis', 'optoelectronics', 'electrical engineering', 'electronic engineering', 'theoretical computer science', 'embedded system'})
+
+firstname : masoud
+lastname : rostamiangas
+middlename : None
+year : 2015
+year_papertitle : ((2015, 'semi analytic approach for electromagnetic problems of large arrays structures'),)
+keywords : frozenset({'nanotechnology', 'optics', 'electromagnetics'})
+
+9/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : david
+lastname : jacobson
+middlename : None
+year : 2013
+year_papertitle : ((2013, 'demonstration of achromatic cold neutron microscope utilizing axisymmetric focusing mirrors'), (2016, 'contact angle measurement of liquid hydrogen lh2 in stainless steel and aluminum cells'))
+keywords : frozenset({'optics', 'composite material'})
+
+firstname : david
+lastname : jacobs
+middlename : m
+year : 2014
+year_papertitle : ((2014, 'casimir localization'),)
+keywords : frozenset({'particle physics', 'physics'})
+
+9/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : yong
+lastname : li
+middlename : None
+year : 1996
+year_papertitle : ((1996, 'deep wide field spectrophotometry of the open cluster m67'), (1997, 'multiband photometry of selected areas in a study of galactic structure'), (1998, 'ring structure and warp of ngc 5907 interaction with dwarf galaxies'), (1999, 'deep intermediate band surface photometry of ngc 5907'), (2000, 'calibration of the batc survey methodology and accuracy'), (2000, 'spatially resolved spectrophotometry of m81 age metallicity and reddening maps'), (2001, 'the distance to sn 1999em from the expanding photosphere method'), (2002, 'intermediate band surface photometry of the edge on galaxy ngc 4565'), (2003, 'nitrogen overabundance globular cluster and halo formation'))
+keywords : frozenset({'astronomy', 'astrophysics', 'remote sensing'})
+
+firstname : yong
+lastname : liu
+middlename : None
+year : 2006
+year_papertitle : ((2006, 'ion thermalization and wave excitation downstream of earth s bow shock theory and observation'),)
+keywords : frozenset({'fluid dynamics', 'astronomy', 'gases', 'astrophysics'})
+
+9/10 positive, 3/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : gregory
+lastname : mace
+middlename : n
+year : 2014
+year_papertitle : ((2014, 'design and early performance of igrins immersion grating infrared spectrometer'), (2015, 'direct spectral detection an efficient method to detect and characterize binary systems'), (2015, 'high resolution near infrared observations of red horizontal branch stars in the galactic field'), (2016, '300 nights of science with igrins at mcdonald observatory'), (2016, 'a candidate young massive planet in orbit around the classical t tauri star ci tau'), (2016, 'gmtnirs progress toward the giant magellan telescope near infrared spectrograph'), (2016, 'igrins near ir high resolution spectroscopy of multiple jets around lkhα 234'), (2016, 'igrins spectroscopy of class i sources iras 03445 3242 and iras 04239 2436'), (2016, 'the chemical compositions of very metal poor stars hd 122563 and hd 140283 a view from the infrared'), (2016, 'zodiacal exoplanets in time zeit i a neptune sized planet orbiting an m4 5 dwarf in the hyades star cluster'))
+keywords : frozenset({'optics', 'astronomy', 'optoelectronics', 'astrophysics'})
+
+firstname : gregory
+lastname : magel
+middlename : anton
+year : 1990
+year_papertitle : ((1990, 'optical second harmonic generation in lithium niobate fibers'),)
+keywords : frozenset({'optics', 'electrical engineering'})
+
+9/10 positive, 4/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : robert
+lastname : kesterson
+middlename : a
+year : 1988
+year_papertitle : ((1988, 'point mutations in the human vitamin d receptor gene associated with hypocalcemic rickets'), (1993, 'recombinant creatine kinase proteins and proposed standards for creatine kinase isoenzyme and subform assays'), (1993, 'the human osteocalcin promoter directs bone specific vitamin d regulatable gene expression in transgenic mice'), (1993, 'the osteocalcin gene as a molecular model for tissue specific expression and 1 25 dihydroxyvitamin d3 regulation'), (1995, 'cyclic lactam alpha melanotropin analogues of ac nle4 cyclo asp5 d phe7 lys10 alpha melanocyte stimulating hormone 4 10 nh2 with bulky aromatic amino acids at position 7 show high antagonist potency and selectivity at specific melanocortin receptors'), (1995, 'identification of a novel murine receptor for corticotropin releasing hormone expressed in the heart'))
+keywords : frozenset({'molecular biology', 'internal medicine', 'genetics', 'biochemistry', 'stereochemistry', 'endocrinology'})
+
+firstname : robert
+lastname : kester
+middlename : timothy
+year : 2010
+year_papertitle : ((2010, 'a real time snapshot hyperspectral endoscope and miniature endomicroscopy objectives for a two field of view bi fov endoscope'),)
+keywords : frozenset({'optics'})
+
+9/10 positive, 5/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : xinfeng
+lastname : wang
+middlename : None
+year : 2009
+year_papertitle : ((2009, 'continuous observations of water soluble ions in pm2 5 at mount tai 1534 m a s l in central eastern china'), (2009, 'measurement of gas phase total peroxides at the summit of mount tai in china'), (2010, 'air quality during the 2008 beijing olympics secondary pollutants and regional impact'), (2010, 'comparison among filter based impactor based and continuous techniques for measuring atmospheric fine sulfate and nitrate'), (2011, 'aerosol size distributions in urban jinan seasonal characteristics and variations between weekdays and weekends in a heavily polluted atmosphere'), (2011, 'evaluating pm2 5 ionic components and source apportionment in jinan china from 2004 to 2008 using trajectory statistical methods'), (2011, 'integrated evaluation of aerosols from regional brown hazes over northern china in winter concentrations sources transformation and mixing states'), (2011, 'semi continuous measurement of water soluble ions in pm2 5 in jinan china temporal variations and source apportionments'), (2011, 'source and variation of carbonaceous aerosols at mount tai north china results from a semi continuous instrument'), (2012, 'characterization of aerosol acidity at a high mountain site in central eastern china'))
+keywords : frozenset({'environmental engineering', 'environmental chemistry', 'hydrology', 'meteorology', 'mineralogy', 'atmospheric sciences', 'climatology'})
+
+firstname : jinfeng
+lastname : wang
+middlename : None
+year : 2008
+year_papertitle : ((2008, 'characterization and synthesis of nanoscale materials'),)
+keywords : frozenset({'materials science', 'condensed matter physics'})
+
+9/10 positive, 6/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : munkang
+lastname : choi
+middlename : None
+year : 2006
+year_papertitle : ((2006, 'effect of process and layout on strain enhancement from dual stress liners'), (2008, 'diagnosis of optical lithography faults with product test sets'), (2008, 'modeling evolution of temperature stress defects and dopant diffusion in silicon during spike and millisecond annealing'), (2009, 'systematic study of the impact of curved active and poly contours on transistor performance'), (2010, 'comprehensive analysis of the impact of single and arrays of through silicon vias induced stress on high k metal gate cmos performance'), (2010, 'exploring doping options and variability of trigate transistors using atomistic process and device simulations'), (2010, 'intentional distortion of transistor shape to improve circuit performance'), (2011, 'an analytical compact model for estimation of stress in multiple through silicon via configurations'), (2012, 'analysis of microbump induced stress effects in 3d stacked ic technologies'), (2012, 'effectiveness of stressors in aggressively scaled finfets'))
+keywords : frozenset({'composite material', 'optoelectronics', 'electrical engineering', 'nanotechnology', 'electronic engineering', 'optics', 'engineering physics'})
+
+firstname : min
+lastname : choi
+middlename : hwan
+year : 2012
+year_papertitle : ((2012, 'pulsed laser induced melting and solidification of thin metallic films'),)
+keywords : frozenset({'optics', 'inorganic chemistry', 'materials science'})
+
+9/10 positive, 6/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : john
+lastname : miles
+middlename : j
+year : 2003
+year_papertitle : ((2003, 'promiscuous ctl recognition of viral epitopes on multiple human leukocyte antigens biological validation of the proposed hla a24 supertype'), (2004, 'endogenous presentation of cd8 t cell epitopes from epstein barr virus encoded nuclear antigen 1'), (2004, 'potent t cell response to a class i binding 13 mer viral epitope and the influence of hla micropolymorphism in controlling epitope length'), (2004, 'sensitive and specific detection of bovine immunodeficiency virus and bovine syncytial virus by 5 taq nuclease assays with fluorescent 3 minor groove binder dna probes'), (2005, 'antagonism of antiviral and allogeneic activity of a human public ctl clonotype by a single altered peptide ligand implications for allograft rejection'), (2005, 'ctl recognition of a bulged viral peptide involves biased tcr selection'), (2005, 'high resolution structures of highly bulged viral epitopes bound to major histocompatibility complex class i implications for t cell receptor engagement and t cell immunodominance'), (2005, 'the cdr3 regions of an immunodominant t cell receptor dictate the energetic landscape of peptide mhc recognition'), (2005, 'the immunogenicity of a viral cytotoxic t cell epitope is controlled by its mhc bound conformation'))
+keywords : frozenset({'molecular biology', 'virology', 'genetics', 'cell biology', 'immunology'})
+
+firstname : john
+lastname : miles
+middlename : wesley
+year : 1994
+year_papertitle : ((1994, 'mid infrared observations of infrared luminous galaxies'),)
+keywords : frozenset({'astronomy', 'astrophysics'})
+
+9/10 positive, 7/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : xiaomin
+lastname : wang
+middlename : None
+year : 2004
+year_papertitle : ((2004, 'fabrication of two dimensional photonic structure of titanium dioxide with sub micrometer resolution by deep x ray lithography'), (2005, 'fabrication of two and three dimensional photonic crystals of titania with submicrometer resolution by deep x ray lithography'), (2005, 'gene expression in the arachidonic acid pathway due to tissue injury and inflammation an nsaid and coxib in a clinical model of pain'), (2005, 'multiple dimensions of stomatitis related oropharyngeal pain in peripheral blood stem cell transplant oncology patients'), (2005, 'two and three dimensional photonic crystals of titanium dioxide and optical properties'), (2006, '792 changes in gene expression by cox 1 and cox 2 inhibition of inflammation in a clinical model of tissue injury'), (2006, 'genetically mediated interindividual variation in analgesic responses to cyclooxygenase inhibitory drugs'), (2006, 'piii 4gene expression of chemokines and complement component following inflammation and rofecoxib treatment in a clinical model of tissue injury'), (2006, 'rofecoxib regulates the expression of genes related to the matrix metalloproteinase pathway in humans implication for the adverse effects of cyclooxygenase 2 inhibitors'), (2006, 'towards integrated optics for advanced ultra fast all optical signal processing'))
+keywords : frozenset({'pathology', 'optoelectronics', 'intensive care medicine', 'cancer research', 'internal medicine', 'optics', 'immunology', 'pharmacology'})
+
+firstname : xiaoming
+lastname : wang
+middlename : None
+year : 2008
+year_papertitle : ((2008, 'ultrafast optical spectroscopic study of semiconductors in high magnetic fields'),)
+keywords : frozenset({'condensed matter physics'})
+
+9/10 positive, 8/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : steven
+lastname : hughes
+middlename : a
+year : 1999
+year_papertitle : ((1999, 'a locally nonlinear interpretation of puv measurements'), (2002, 'review of introduction to bed bank and shore protection by gerrit j schiereck'), (2003, 'review of the mechanics of scour in the marine environment by b mutlu sumer and jorgen fredsoe'), (2004, 'estimation of wave run up on smooth impermeable slopes using the wave momentum flux parameter'), (2004, 'wave momentum flux parameter a descriptor for nearshore waves'))
+keywords : frozenset({'geotechnical engineering', 'forensic engineering', 'geodesy', 'civil engineering', 'optics', 'mechanics', 'classical mechanics'})
+
+firstname : steven
+lastname : hughes
+middlename : michael
+year : 2007
+year_papertitle : ((2007, 'an integrated optical holographic chemical vapor sensor'),)
+keywords : frozenset({'electrical engineering', 'optics'})
+
+9/10 positive, 8/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : luis
+lastname : araujo
+middlename : e e de
+year : 1993
+year_papertitle : ((1993, 'phase measurements of the fifth order susceptibility of cd s se doped glasses'), (1994, 'frequency upconversion of orange light into blue light in pr3 doped fluoroindate glasses'), (1998, 'analytic solution for strong field quantum control of atomic wave packets'), (1999, 'quantum control of molecular wavepackets an approximate analytic solution for the strong response regime'))
+keywords : frozenset({'optoelectronics', 'statistical physics', 'optics', 'quantum mechanics', 'condensed matter physics', 'analytical chemistry'})
+
+firstname : luis
+lastname : araujo
+middlename : eduardo e de
+year : 2001
+year_papertitle : ((2001, 'quantum control of atoms and molecules'),)
+keywords : frozenset({'optics', 'atomic physics', 'molecular physics'})
+
+9/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : joao
+lastname : costa
+middlename : barreiro guimaraes da
+year : 2001
+year_papertitle : ((2001, 'standard model higgs combined result from cdf'), (2004, 'a precise measurement of the b b 0 and mean b hadron lifetime with the delphi detector at lep i'), (2004, 'search for susy in the amsb scenario with the delphi detector'), (2005, 'bose einstein correlations in w w events at lep2'), (2006, 'observation of b 0_s bar b 0_s oscillations'), (2007, 'measurement of the inclusive jet cross section using the boldmath k_ rm t algorithmin boldmath p overline p collisions at boldmath sqrt s 1 96 tev with the cdf ii detector'))
+keywords : frozenset({'nuclear physics', 'particle physics'})
+
+firstname : joao
+lastname : costa
+middlename : pedro barreiro guimaraes da
+year : 2000
+year_papertitle : ((2000, 'search for a fourth generation quark more massive than the z 0 boson in proton antiproton collisions at sqrt s 18 tev'),)
+keywords : frozenset({'particle physics'})
+
+10/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jana
+lastname : strasburg
+middlename : d
+year : 2009
+year_papertitle : ((2009, 'simulation and theory of speckle noise for an annular aperture frequency modulation differential absorption lidar fm dial system'),)
+keywords : frozenset({'optics'})
+
+firstname : jana
+lastname : strasburg
+middlename : dee
+year : 2004
+year_papertitle : ((2004, 'characterization of avalanche photodiode arrays for temporally resolved photon counting'),)
+keywords : frozenset({'condensation', 'astronomy', 'astrophysics'})
+
+11/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : david
+lastname : finley
+middlename : t
+year : 2004
+year_papertitle : ((2004, 'equivalent static vs response spectrum a comparison of two methods'), (2006, 'the concept design of the cornell caltech atacama telescope mount'), (2008, 'design of the discovery channel telescope mount'), (2010, 'the discovery channel telescope early integration'))
+keywords : frozenset({'acoustics', 'remote sensing', 'simulation', 'aerospace engineering', 'optics', 'systems engineering', 'astronomy'})
+
+firstname : david
+lastname : finley
+middlename : starr
+year : 1988
+year_papertitle : ((1988, 'studies of hot white dwarfs and instrumentation for stellar extreme ultraviolet astronomy'),)
+keywords : frozenset({'astronomy', 'astrophysics'})
+
+12/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : stephen
+lastname : wilson
+middlename : d
+year : 2001
+year_papertitle : ((2001, 'a splicing switch and gain of function mutation in fgfr2 iiic hemizygotes causes apert pfeiffer syndrome like phenotypes'), (2005, 'quantum critical scaling and the origin of non fermi liquid behavior in sc1 xuxpd3'), (2005, 'spin charge coupling in lightly doped nd2 xcexcuo4'), (2005, 'the effect of annealing to the transport and magnetic properties of electron doped pr _ 0 88 lace _ 0 12 cuo _ 4'), (2005, 'thin film flow on a stationary or uniformly rotating cylinder subject to a prescribed uniform surface shear stress'), (2006, 'evolution of low energy spin dynamics in the electron doped high transition temperature superconductor pr 0 88 lace 0 12 cuo 4 δ'), (2006, 'high energy spin dynamics in the electron doped high t _ c cuprate pr _ 88 lace _ 12 cuo _ 4 t _ c 21k'), (2006, 'high energy spin excitations in the electron doped superconductor pr 0 88 lace 0 12 cuo 4 delta with t c 21 k'), (2006, 'non fermi liquid behavior and quantum criticality in sc1 xuxpd3 and uru2 xrexsi2'), (2006, 'resonance in the electron doped high transition temperature superconductor pr 0 88 lace 0 12 cuo 4 δ'))
+keywords : frozenset({'nuclear magnetic resonance', 'cancer research', 'internal medicine', 'condensed matter physics', 'mechanics', 'crystallography', 'classical mechanics', 'endocrinology'})
+
+firstname : stephen
+lastname : wilson
+middlename : christian
+year : 2006
+year_papertitle : ((2006, 'development and implementation of a finite element solution of the coupled neutron transport and thermoelastic equations governing the behavior of small nuclear assemblies'),)
+keywords : frozenset({'nuclear physics'})
+
+12/10 positive, 10/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : myung
+lastname : kim
+middlename : joon
+year : 1987
+year_papertitle : ((1987, 'a radiological study of the patella and the cartilage of patella by computed tomography following double contrast arthrography'), (1987, 'assessment of anterior shoulder instability by ct arthrography'), (1988, 'coexistence of venous angioma and deep seated avm with draining venous occlusion'), (1988, 'ct characteristics of peripheral organizing pneumonia'), (1988, 'histiocytic medullary reticulosis radiologic diagnosis of splenic infarction a case report'), (1988, 'radiologic imaging of bile duct changes by clonorchiasis'), (1989, 'ct findings of the nose and paranasal sinuses in chromium intoxication'), (1989, 'extracorporeal shock wave lithotripsy of bile duct stones'), (1990, 'metachronous osteosarcoma a case report'), (1991, 'primary leiomyosarcoma of the greater omentum ct findings'))
+keywords : frozenset({'radiology', 'pathology', 'urology', 'anatomy', 'nuclear medicine'})
+
+firstname : myungkeun
+lastname : kim
+middlename : None
+year : 1986
+year_papertitle : ((1986, 'infrared photon echo studies in methyl fluoride stark rotary carr purcell'),)
+keywords : frozenset({'optics'})
+
+12/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jianxi
+lastname : gao
+middlename : None
+year : 2009
+year_papertitle : ((2009, 'an approach to enhance convergence efficiency of self propelled agent system'), (2009, 'evolutionary prisoner s dilemma game in flocks'), (2010, 'enhancing the convergence efficiency of a self propelled agent system via a weighted model'), (2011, 'angle restriction enhances synchronization of self propelled objects'), (2011, 'evolution of cooperation among mobile agents'), (2011, 'robustness of a network of networks'), (2011, 'robustness of interdependent networks under targeted attack'), (2011, 'study on robust h filtering in networked environments'), (2012, 'networks formed from interdependent networks'))
+keywords : frozenset({'mathematical analysis', 'mathematical optimization', 'combinatorics', 'mathematical economics', 'microeconomics', 'distributed computing', 'topology', 'management science', 'control theory'})
+
+firstname : jian
+lastname : gao
+middlename : None
+year : 2012
+year_papertitle : ((2012, 'fluorescence enhancement using one dimensional photonic band gap multilayer structure'),)
+keywords : frozenset({'optics', 'electromagnetics'})
+
+12/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : min
+lastname : wang
+middlename : None
+year : 2011
+year_papertitle : ((2011, 'mass measurements of very neutron deficient mo and tc isotopes and their impact on rp process nucleosynthesis'), (2013, 'fabrication of a liquid crystal light modulator by use of femtosecond laser induced nanoripples'), (2013, 'magnetic topology changes induced by lower hybrid waves and their profound effect on edge localized modes in the east tokamak'), (2014, 'density modification in the scrape off layer during lhw coupling at east'), (2015, 'femtosecond laser direct writing of high q microresonators in glass and crystals'), (2015, 'second harmonic generation in a high q lithium niobate microresonator fabricated by femtosecond laser micromachining'), (2017, 'evidence and modeling of 3d divertor footprint induced by lower hybrid waves on east with tungsten divertor operations'), (2018, 'long low loss litium niobate on insulator waveguides with sub nanometer surface roughness'))
+keywords : frozenset({'nuclear physics', 'optoelectronics', 'optics', 'nanotechnology', 'atomic physics', 'topology', 'computational physics'})
+
+firstname : ming
+lastname : wang
+middlename : matthew
+year : 1992
+year_papertitle : ((1992, 'optical coherence and spectral irradiance measurements'),)
+keywords : frozenset({'optics', 'radiation'})
+
+12/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : george
+lastname : farquar
+middlename : r
+year : 2003
+year_papertitle : ((2003, 'x ray spectroscopic studies of the high temperature reduction of cu ii o by 2 chlorophenol on a simulated fly ash surface'), (2005, 'an infrared and x ray spectroscopic study of the reactions of 2 chlorophenol 1 2 dichlorobenzene and chlorobenzene with model cuo silica fly ash surfaces'), (2007, 'identification of high explosives using single particle aerosol mass spectrometry'), (2007, 'modular sampling and analysis techniques for the real time analysis of human breath'), (2007, 'single particle aerosol mass spectrometry for the detection and identification of chemical warfare agent simulants'), (2007, 'the non destructive identification of solid over the counter medications using single particle aerosol mass spectrometry'), (2008, 'autonomous broad spectrum detection of hazardous aerosols in seconds'), (2008, 'supramicrometer particle shadowgraph imaging in the ionization region of a single particle aerosol mass spectrometer'), (2008, 'wavelength and size dependence in single particle laser aerosol mass spectra'), (2009, 'use of single particle aerosol mass spectrometry for the automated nondestructive identification of drugs in multicomponent samples'))
+keywords : frozenset({'real time computing', 'nuclear chemistry', 'chromatography', 'organic chemistry', 'environmental chemistry', 'optics', 'inorganic chemistry', 'analytical chemistry'})
+
+firstname : george
+lastname : farquar
+middlename : roy
+year : 2003
+year_papertitle : ((2003, 'synchrotron radiation as a probe of chemical information using novel experimental configurations'),)
+keywords : frozenset({'nuclear physics'})
+
+12/10 positive, 14/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : fei
+lastname : li
+middlename : None
+year : 2008
+year_papertitle : ((2008, 'domain switching contribution to piezoelectric response in batio3 single crystals'), (2009, 'applications of the rotating orientation xrd method to oriented materials'), (2009, 'determination of temperature dependence of piezoelectric coefficients matrix of lead zirconate titanate ceramics by quasi static and resonance method'), (2009, 'determination of three dimensional orientations of ferroelectric single crystals by an improved rotating orientation x ray diffraction method'), (2009, 'evolution of transverse piezoelectric response of lead zirconate titanate ceramics under hydrostatic pressure'), (2009, 'theoretical investigation of a element atom diffusion in ti2ac a sn ga cd in and pb'), (2010, 'characterization and piezoelectric thermal stability of pin pmn pt ternary ceramics near the morphotropic phase boundary'), (2010, 'electromechanical properties of tetragonal pb in1 2nb1 2 o3 pb mg1 3nb2 3 o3 pbtio3 ferroelectric crystals'), (2010, 'investigation of zero temperature compensated cuts in langasite type piezocrystals for high temperature applications'), (2010, 'piezoelectric activity of relaxor pbtio3 based single crystals and polycrystalline ceramics at cryogenic temperatures intrinsic and extrinsic contributions'))
+keywords : frozenset({'composite material', 'nuclear magnetic resonance', 'optics', 'inorganic chemistry', 'condensed matter physics', 'nanotechnology', 'analytical chemistry', 'mineralogy', 'crystallography', 'engineering physics'})
+
+firstname : fei
+lastname : li
+middlename : None
+year : 2001
+year_papertitle : ((2001, 'assessment of pressure vessel failure due to pressurized thermal shock with consideration of probabilistic deterministic screening and uncertainty analysis'),)
+keywords : frozenset({'nuclear physics', 'mechanical engineering'})
+
+13/10 positive, 14/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+Finished labeling
+Done in 1007.0245896379153 minutes.

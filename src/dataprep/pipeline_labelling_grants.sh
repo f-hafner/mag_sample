@@ -33,7 +33,7 @@ if ! grep -q "$NECESSARYVERSION" <<< $DEDUPEVERSION; then
   conda deactivate
 else
     conda activate $NECESSARYENV
-    # ## 2. Link NSF grants to MAG advisors
+    # ## 2. Link NSF grants to MAG authors
     echo "Starting main script"
     bash $script_path/link/grants.sh $logfile_path
     # ## 3. Finish

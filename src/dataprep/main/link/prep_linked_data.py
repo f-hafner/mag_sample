@@ -28,12 +28,18 @@ import time
 import pandas as pd
 from helpers.functions import print_elapsed_time, analyze_db
 from helpers.variables import db_file, insert_questionmark_doctypes, keep_doctypes
+import pdb 
+import argparse
 
 # ## Arguments
-# parser = argparse.ArgumentParser()
-# parser.set_defaults(use_links = True)
-# args = parser.parse_args()
-
+# ## Arguments
+parser = argparse.ArgumentParser(description = 'Inputs for author_collab')
+parser.add_argument("--filter_trainname", 
+                    type=str,
+                    dest = "filter_trainname", 
+                    default=None,
+                    help = "Filter the linking iterations by train name. If not given, use default settings defined in script.") 
+args = parser.parse_args()
 
 # ## Variables; connect to db
 max_yeardiff = 5
@@ -51,38 +57,41 @@ tables_to_delete = ["author_citations", "author_output", "author_panel",
                     "current_links", "current_links_advisors",
                     "links_currentfield"] # links_currentfield is from extract_field.py
 for tbl in tables_to_delete:
-    con.execute(f"""DROP TABLE IF EXISTS {tbl}""")
+    with con:
+        con.execute(f"""DROP TABLE IF EXISTS {tbl}""")
 
+
+if args.filter_trainname is not None:
+    where_stmt_iterations = f"""
+    WHERE train_name like '%{args.filter_trainname}%'
+    """
+
+print(f"where_stmt_iterations is {where_stmt_iterations}", flush=True)
 
 # ## (1) Get linked ids for given specs.
     # NOTE: count(distinct authorid) not possible and not necessary: because each authorid is uniquely in one field0, any goid that has multiple links
         # will be linked to different authorids because they come from different fields.
 print("current_links for graduates", flush = True)
-con.execute("""
+con.execute(f"""
 CREATE TEMP TABLE current_links_temp AS 
 SELECT AuthorId, goid, link_score, iteration_id 
 FROM (
-    SELECT a.*, COUNT(AuthorId) OVER(PARTITION BY goid) AS n_links  
+    SELECT a.*, COUNT(AuthorId) OVER(PARTITION BY goid) AS n_links,
+    count(goid) over(partition by authorid) as n_links_authors  
     FROM linked_ids a
     INNER JOIN (
         SELECT iteration_id 
         FROM (
             SELECT iteration_id, MAX(iteration_id) AS max_id 
             FROM linking_info
-            WHERE  mergemode = '1:1'
-                AND fieldofstudy_str = 'False'
-                AND fieldofstudy_cat = 'False'
-                AND institution = 'False'
-                AND keywords = 'False'
-                AND testing = 0 
-                AND recall = 0.9
+            {where_stmt_iterations}
             GROUP BY field
         )
         WHERE iteration_id = max_id 
     ) b USING(iteration_id)
     WHERE link_score > 0.7
 )
-WHERE n_links = 1
+WHERE n_links = 1 and n_links_authors = 1
 """)
 
 con.execute("CREATE UNIQUE INDEX idx_lcf_AuthorIdgoid ON current_links_temp (AuthorId ASC, goid ASC)")
@@ -113,7 +122,7 @@ con.execute("CREATE UNIQUE INDEX idx_t_goid ON current_links (goid ASC)") # this
 
 # ## (1) Get linked advisors for given specs.
 print("current_links for advisors", flush = True)
-con.execute("""
+con.execute(f"""
 CREATE TABLE current_links_advisors AS 
 SELECT AuthorId, relationship_id, link_score, iteration_id 
 FROM (
@@ -124,13 +133,7 @@ FROM (
         FROM (
             SELECT iteration_id, MAX(iteration_id) AS max_id 
             FROM linking_info_advisors
-            WHERE  mergemode = 'm:1'
-                AND fieldofstudy_str = 'False'
-                AND fieldofstudy_cat = 'False'
-                AND institution = 'True'
-                AND keywords = 'False'
-                AND testing = 0 
-                AND recall = 0.9
+            {where_stmt_iterations}
             GROUP BY field
         )
         WHERE iteration_id = max_id 

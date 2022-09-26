@@ -20,7 +20,7 @@ import dedupe.backport
 from collections import OrderedDict
 
 from helpers.variables import db_file, datapath
-from helpers.functions import analyze_db, tupelize_links, dict_factory, custom_enumerate
+from helpers.functions import analyze_db, tupelize_links, dict_factory, custom_enumerate, print_elapsed_time
 import helpers.comparator_functions as cf
 
 start_time = time.time()
@@ -65,6 +65,10 @@ parser.add_argument("--start", dest = "startyear", type = int,
                     default = 1950, help = "Start year for records")
 parser.add_argument("--end", dest = "endyear", type = int, 
                     default = 2015, help = "End year for records")
+parser.add_argument("--loadstart", dest = "loadstartyear", type = int, 
+                    default = 0, help = "Load Start year for records, 0 for using startyear")
+parser.add_argument("--loadend", dest = "loadendyear", type = int, 
+                    default = 0, help = "Load End year for records, 0 for using endyear")
 parser.add_argument("--mergemode", dest = "mergemode", type = str, 
                     default = "1:1", help = "m:1 or 1:1")
 parser.add_argument("--recall", dest = "recall", type = float,
@@ -77,6 +81,11 @@ parser.add_argument("--keywords", type=str, help = "use keywords for learning?")
 parser.add_argument("--retrain", type = str, default = "True", help = "force retrain!?")   
 parser.add_argument("--linking_type", type = str, default = "graduates",
                     help = "Are we linking graduates or advisors?", choices = {"graduates", "advisors", "grants"}) 
+parser.add_argument("--ntrain", type=int, default=100000, dest="samplesize",
+                    help="Sample size argument for dedupe.prepare_training()")
+parser.add_argument("--to", type=str, default="database", dest="write_to", 
+                    choices={"database", "csv"},
+                    help="Write to database or csv?")
         
 parser.set_defaults(testing="True")
 parser.set_defaults(institution="False")
@@ -85,6 +94,11 @@ parser.set_defaults(fieldofstudy_str="False")
 parser.set_defaults(keywords="False")
 
 args = parser.parse_args()
+if args.loadstartyear==0:
+    args.loadstart=args.startyear
+if args.loadendyear==0:
+    args.loadend=args.endyear 
+
 print(args, flush=True)
 
 if type(args.field)==list: 
@@ -157,8 +171,9 @@ logging.getLogger().setLevel(log_level)
 if args.startyear >= args.endyear:
     sys.exit("--start argument should be smaller than --end argument")
 
-# ## number of cores
-n_cores = int(multproc.cpu_count() / 2)
+# ## number of cores - manually limited to 12
+n_cores = int(max(1,min(12, multproc.cpu_count() / 2))) 
+
 print('Have max %s cores available' % (n_cores), flush=True)
 
 print(f"Testing is {args.testing} \n", flush=True)
@@ -168,9 +183,19 @@ if args.testing:
 
 # ## Connections
 read_con = sqlite.connect(database = db_file, isolation_level= None)
-write_con = sqlite.connect(database = db_file, isolation_level= None)
 read_dict_con = sqlite.connect(database = db_file, isolation_level = None)
     # last one is for reading in the data into dict for the training step
+
+if args.write_to == "csv": # this is much simpler b/c we can use the same functions to write the links as for the main db
+    path_temp_files = datapath + "linked_ids_temp/"
+    file_suffix = "_" + args.linking_type + "_" + field_to_store + "_" + args.train_name + "_" + str(args.loadstartyear) + str(args.loadendyear) 
+    write_con = sqlite.connect(database = path_temp_files + file_suffix + ".sqlite", isolation_level= None) # database will be deleted at end of create_link script, if file changed here need to adapt there too.
+    msg = "I set the write connection to temporary database."
+else:
+    write_con = sqlite.connect(database = db_file, isolation_level= None)
+    msg = "I set the write connection to the main database."
+
+print(msg, flush=True)
 
 for c in [read_con, write_con, read_dict_con]:
     c.execute("PRAGMA journal_mode=WAL;")
@@ -192,8 +217,8 @@ id_field = read_con.execute(
 id_field = [f[0] for f in id_field.fetchall()]
 
 # SQL STATEMENTS FOR EXTRACTS
-where_stmt = f"WHERE year >= {args.startyear} and year <= {args.endyear} AND length(firstname) > 1"
-where_stmt_mag = f"WHERE length(firstname) > 1 AND year >= {args.startyear} - 5 AND year <= {args.endyear} + 5" # changed this to incorporate more people
+where_stmt = f"WHERE year >= {args.loadstartyear} and year <= {args.loadendyear} AND length(firstname) > 1"
+where_stmt_mag = f"WHERE length(firstname) > 1 AND year >= {args.loadstartyear} - 5 AND year <= {args.loadendyear} + 5" # changed this to incorporate more people
 
 if args.linking_type == "graduates":
     query_proquest = f"""
@@ -280,6 +305,12 @@ if args.linking_type == "graduates":
             FROM Authors
         ) AS b USING(AuthorId)
         INNER JOIN (
+            SELECT AuthorId
+            FROM author_field0
+            WHERE FieldOfStudyId_lvl0 IN ({insert_field_questionmarks})
+                AND Degree <= 0
+        ) USING(AuthorId)
+        LEFT JOIN (
             SELECT AuthorId, NormalizedName
             FROM author_fields c
             INNER JOIN (
@@ -308,6 +339,7 @@ if args.linking_type == "graduates":
     {where_stmt_mag} 
         -- ## use this to condition on people that have at least at some point their main affiliation in the US
         AND g.main_us_institutions_career IS NOT NULL
+        AND g.institution != "chinese academy of sciences"
     """
 elif args.linking_type == "advisors" or args.linking_type == "grants":
     institutions_to_use = "main_us_institutions_career"
@@ -316,7 +348,8 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
         , f.year || ";" || f.YearLastPub AS year_range 
         , g.all_us_institutions_year
     """
-    where_stmt_mag = f"WHERE length(firstname) > 1 AND f.YearLastPub >= {args.startyear} - 5 AND year <= {args.endyear} + 5" 
+    #where_stmt_mag = f"WHERE length(firstname) > 1 AND f.YearLastPub >= {args.startyear} - 5 AND year <= {args.endyear} + 5" 
+    where_stmt_mag = f"WHERE length(firstname) > 1 AND year >= {args.loadstartyear} - 5 AND year <= {args.loadendyear} + 5"  
 
 
     # note: this still sources field of study, but it is level 0 and thus the same for everyone 
@@ -357,15 +390,26 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
             FROM Authors
         ) AS b USING(AuthorId)
         INNER JOIN (
-            -- ## mark: different from linking graduates. filter on field0
+            SELECT AuthorId
+            FROM author_field0
+            WHERE FieldOfStudyId_lvl0 IN ({insert_field_questionmarks})
+                AND Degree <= 0
+        ) USING(AuthorId)
+        LEFT JOIN (
             SELECT AuthorId, NormalizedName
             FROM author_fields c
             INNER JOIN (
                 SELECT FieldOfStudyId, NormalizedName
                 FROM FieldsOfStudy
             ) AS d USING(FieldOfStudyId)
-            WHERE FieldClass = 'main'
-                AND FieldOfStudyId IN ({insert_field_questionmarks})
+            -- ## Condition on fieldofstudy being in the level 0 id_field
+            INNER JOIN (
+                SELECT ParentFieldOfStudyId, ChildFieldOfStudyId
+                FROM crosswalk_fields
+                WHERE ParentLevel = 0
+                    AND ParentFieldOfStudyId IN ({insert_field_questionmarks})
+            ) AS e ON (e.ChildFieldOfStudyId = c.FieldOfStudyId)
+            WHERE FieldClass = 'first'
         ) AS e USING(AuthorId)
     ) f
     LEFT JOIN (

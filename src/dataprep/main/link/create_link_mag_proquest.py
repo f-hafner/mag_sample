@@ -1,5 +1,5 @@
 """
-Step 2 to Link MAG authors to ProQuest graduates:
+Step 2 to Link MAG authors to ProQuest graduates (or other dataset):
         Read labelled examples and predict links.
         Write links to DB
 """
@@ -51,7 +51,7 @@ if __name__ == "__main__":
  
     with read_dict_con as con:
         cur = con.cursor()
-        cur.execute(query_mag, tuple(id_field))
+        cur.execute(query_mag, tuple(id_field + id_field))
         magdata = {i: row for i, row in custom_enumerate(cur.fetchall(), "AuthorId")}
         cur = con.cursor()
         if args.linking_type == "grants":
@@ -68,12 +68,14 @@ if __name__ == "__main__":
                 data[key]["keywords"] = frozenset(data[key]["keywords"].split(";"))
 
             features = ["institution", "coauthors", "year_range",
-                        "main_us_institutions_year", "all_us_institutions_year"]
+                        "main_us_institutions_year", "all_us_institutions_year",
+                        "year_papertitle"]
             ft_in_data = list(data[list(data.keys())[0]].keys()) # extract all features of the first record in the dict data
             features = [f for f in features if f in ft_in_data]
             for feature in features:
                 if data[key][feature] is not None:
-                    if feature in ["main_us_institutions_year", "all_us_institutions_year"]:
+                    if feature in ["main_us_institutions_year", "all_us_institutions_year",
+                                    "year_papertitle"]:
                         # split, make first entry numeric, convert to tuple
                         ft = [x.split("//") for x in data[key][feature].split(";")]
                         ft = [tuple([int(x[0]), x[1]]) for x in ft] 
@@ -125,11 +127,14 @@ if __name__ == "__main__":
     
     del otherdata 
     del magdata
+    del linker 
+    del scores 
 
     # ## Write everything into two tables
+        # if writing to csv, create a new write_con and write to this temporary db. then read it out into pandas and write to csv
+        # if writiong to db, write to the existing db connection
 
-    print("Writing to database...")
-
+    print("Writing to database...", flush=True)
     # ### Prepare tables 
     write_con.execute(f"""
         CREATE TABLE IF NOT EXISTS {tbl_linked_ids}(
@@ -138,7 +143,8 @@ if __name__ == "__main__":
             , iteration_id INT)
     """)
 
- 
+    print("Filling table info...", flush=True)
+
     write_con.execute(f"""
     CREATE TABLE IF NOT EXISTS {tbl_linking_info}(
         iteration_id INT
@@ -167,6 +173,8 @@ if __name__ == "__main__":
 
     # HERE FLAVIO DELETED LINKS FROM OLD RUNS. SEE link_mag_proquest.py if you want to readd it.
     # ### Write links 
+    print("Filling links into db...", flush=True)
+
     write_con.executemany(
         f"INSERT INTO {tbl_linked_ids} VALUES (?, ?, ?, ?)",
         tupelize_links(links, iteration_id)
@@ -206,8 +214,8 @@ if __name__ == "__main__":
                 WHERE mag_field0 IN ({insert_field_questionmarks}) """,  
                 tuple(id_field)
             ).fetchall()[0][0]
-        n_links = read_con.execute(f"SELECT COUNT(*) FROM {tbl_linked_ids} {where_stmt_links}").fetchall()[0][0]
-        print(f"Found {n_links} links for {n_graduates} graduates with a score of at least 0")
+        n_links = write_con.execute(f"SELECT COUNT(*) FROM {tbl_linked_ids} {where_stmt_links}").fetchall()[0][0]
+        print(f"Found {n_links} links for {n_graduates} graduates with a score of at least 0.")
     
     read_con.commit()
     write_con.commit()
@@ -215,9 +223,47 @@ if __name__ == "__main__":
     # ## Run ANALYZE, finish 
     analyze_db(write_con)
 
+    if args.write_to == "csv":
+        print("Copying to csv...", flush=True)
+        # need both the linked_ids table and the linking_info 
+            # the iteration id will need to be added separately when writing to db 
+
+        if not os.path.isdir(path_temp_files):
+          os.mkdir(path_temp_files)
+
+        d_links = pd.read_sql(
+            con=write_con,
+            sql=f"select * from {tbl_linked_ids}"
+        )
+        d_linking_info = pd.read_sql(
+            con=write_con,
+            sql=f"select * from {tbl_linking_info}"
+        )
+
+        d_links = d_links.drop(columns=["iteration_id"])
+        d_linking_info = d_linking_info.drop(columns=["iteration_id"])
+
+        d_links.to_csv(
+            path_or_buf=path_temp_files + "links" + file_suffix + ".csv",
+            index=False
+        )
+
+        d_linking_info.to_csv(
+            path_or_buf=path_temp_files + "linking_info" + file_suffix + ".csv",
+            index=False
+        )
+        print("Done copying to csv...", flush=True)
+
+
     for c in [read_con, write_con, read_dict_con]:
         c.close()
 
+   
+    if args.write_to == "csv":
+        os.remove(path_temp_files + file_suffix + ".sqlite")
+        print("Deleted the temporary database...")    
+    
+    
     time_to_run = (time.time() - start_time)/60
 
     print(f"Done in {time_to_run} minutes.")

@@ -1,0 +1,667 @@
+/home/christoph/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/numpy/core/getlimits.py:500: UserWarning: The value of the smallest subnormal for <class 'numpy.float64'> type is zero.
+  setattr(self, word, getattr(machar, word).flat[0])
+/home/christoph/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/numpy/core/getlimits.py:89: UserWarning: The value of the smallest subnormal for <class 'numpy.float64'> type is zero.
+  return self._float_to_str(self.smallest_subnormal)
+/home/christoph/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/numpy/core/getlimits.py:500: UserWarning: The value of the smallest subnormal for <class 'numpy.float32'> type is zero.
+  setattr(self, word, getattr(machar, word).flat[0])
+/home/christoph/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/numpy/core/getlimits.py:89: UserWarning: The value of the smallest subnormal for <class 'numpy.float32'> type is zero.
+  return self._float_to_str(self.smallest_subnormal)
+Namespace(testing=False, verbose=1, field=['computer science'], train_name='christoph_fielddegree0', startyear=1985, endyear=2015, mergemode='1:1', recall=0.9, institution='False', fieldofstudy_cat='False', fieldofstudy_str='False', keywords='True', retrain='True', linking_type='graduates', samplesize=50000)
+Have max 6 cores available
+Testing is False 
+
+finished setup ... 
+Time elapsed: 0.004863238334655762 minutes 
+
+
+    SELECT goid
+            , year
+            , firstname 
+            , lastname
+            , CASE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                WHEN 
+                    "" THEN NULL 
+                    ELSE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                END AS middlename
+            , fieldofstudy
+            , keywords
+            , institution
+            , coauthors
+            , year_papertitle
+    FROM (
+        SELECT goid
+            , degree_year AS year 
+            , fullname 
+            , SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) AS firstname
+            , REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "") AS lastname 
+            , TRIM(SUBSTR(fullname, length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1)) + 1)) AS middle_lastname 
+            , length(fullname) AS l_fullname 
+            , length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) ) AS l_firstname
+            , length(REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "")) AS l_lastname
+            , fieldname AS fieldofstudy
+            , university_id
+            , degree_year || "//" || thesistitle as year_papertitle 
+        FROM pq_authors 
+        INNER JOIN (
+            SELECT goid, fieldname 
+            FROM pq_fields_mag
+            WHERE mag_field0 IN (?)
+        ) USING (goid)
+    )
+    -- ## NOTE: use left join here as not all graduates have advisor (particularly pre-1980) and possibly also keywords
+    LEFT JOIN (
+        SELECT goid
+            , fields as keywords
+            , advisors as coauthors
+        FROm pq_info_linking
+    ) USING(goid)
+    INNER JOIN (
+        SELECT university_id, normalizedname as institution
+        FROM pq_unis
+        WHERE location like "%United States%"
+    ) USING(university_id)
+    WHERE year >= 1985 and year <= 2015 AND length(firstname) > 1
+     
+
+
+    SELECT f.AuthorId
+        , f.year
+        , f.firstname
+        , f.lastname
+        , CASE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            WHEN 
+                "" THEN NULL 
+                ELSE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            END as middlename 
+            -- ## NOTE this gives "" for middlename when it is missing 
+        , f.fieldofstudy
+        , g.keywords
+        , g.coauthors
+        , g.institution
+        , g.year_papertitle
+    FROM (
+        SELECT a.AuthorId
+            , a.YearFirstPub AS year
+            , a.FirstName AS firstname
+            , REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "") AS lastname 
+                    -- https://stackoverflow.com/questions/21388820/how-to-get-the-last-index-of-a-substring-in-sqlite
+            , TRIM(SUBSTR(b.NormalizedName, length(a.FirstName) + 1)) AS middle_lastname 
+                    -- this gives all except the first name 
+            , length(b.NormalizedName) as l_fullname 
+            , length(a.FirstName) as l_firstname
+            , length(REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "")) as l_lastname
+            , e.NormalizedName AS fieldofstudy
+        FROM author_sample AS a
+        INNER JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM Authors
+        ) AS b USING(AuthorId)
+        INNER JOIN (
+            SELECT AuthorId
+            FROM author_field0
+            WHERE FieldOfStudyId_lvl0 IN (?)
+                AND Degree <= 0
+        ) USING(AuthorId)
+        LEFT JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM author_fields c
+            INNER JOIN (
+                SELECT FieldOfStudyId, NormalizedName
+                FROM FieldsOfStudy
+            ) AS d USING(FieldOfStudyId)
+            -- ## Condition on fieldofstudy being in the level 0 id_field
+            INNER JOIN (
+                SELECT ParentFieldOfStudyId, ChildFieldOfStudyId
+                FROM crosswalk_fields
+                WHERE ParentLevel = 0
+                    AND ParentFieldOfStudyId IN (?)
+            ) AS e ON (e.ChildFieldOfStudyId = c.FieldOfStudyId)
+            WHERE FieldClass = 'first'
+        ) AS e USING(AuthorId)
+    ) f
+    LEFT JOIN (
+        SELECT AuthorId
+                , institutions as institution
+                , main_us_institutions_career
+                , coauthors
+                , keywords
+                , year_papertitle
+        FROM author_info_linking
+    ) AS g USING(AuthorId)
+    WHERE length(firstname) > 1 AND year >= 1985 - 5 AND year <= 2015 + 5 
+        -- ## use this to condition on people that have at least at some point their main affiliation in the US
+        AND g.main_us_institutions_career IS NOT NULL
+        AND g.institution != "chinese academy of sciences"
+     
+
+INFO:dedupe.canopy_index:Removing stop word en
+INFO:dedupe.canopy_index:Removing stop word un
+INFO:dedupe.canopy_index:Removing stop word hi
+INFO:dedupe.canopy_index:Removing stop word ar
+INFO:dedupe.canopy_index:Removing stop word ra
+INFO:dedupe.canopy_index:Removing stop word an
+INFO:dedupe.canopy_index:Removing stop word ch
+INFO:dedupe.canopy_index:Removing stop word in
+INFO:dedupe.canopy_index:Removing stop word ha
+INFO:dedupe.canopy_index:Removing stop word on
+INFO:dedupe.canopy_index:Removing stop word in
+INFO:dedupe.canopy_index:Removing stop word le
+INFO:dedupe.canopy_index:Removing stop word er
+INFO:dedupe.canopy_index:Removing stop word la
+INFO:dedupe.canopy_index:Removing stop word ha
+INFO:dedupe.canopy_index:Removing stop word el
+INFO:dedupe.canopy_index:Removing stop word en
+INFO:dedupe.canopy_index:Removing stop word ar
+INFO:dedupe.canopy_index:Removing stop word al
+INFO:dedupe.canopy_index:Removing stop word ma
+INFO:dedupe.canopy_index:Removing stop word an
+INFO:dedupe.canopy_index:Removing stop word ra
+INFO:dedupe.canopy_index:Removing stop word ri
+INFO:dedupe.canopy_index:Removing stop word as
+INFO:dedupe.canopy_index:Removing stop word on
+INFO:dedupe.canopy_index:Removing stop word ch
+INFO:dedupe.canopy_index:Removing stop word an
+INFO:dedupe.canopy_index:Removing stop word sh
+INFO:dedupe.canopy_index:Removing stop word ia
+INFO:dedupe.canopy_index:Removing stop word hu
+INFO:dedupe.canopy_index:Removing stop word ng
+INFO:dedupe.canopy_index:Removing stop word na
+INFO:dedupe.canopy_index:Removing stop word re
+INFO:dedupe.canopy_index:Removing stop word ar
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (commonSixGram, lastname)
+Time elapsed: 545.7035386403402 minutes 
+
+Starting active labeling...
+firstname : carlos
+lastname : otero
+middlename : tadeo ortega
+year : 2008
+year_papertitle : ((2008, 'variability in 3 d integrated circuits'), (2012, 'dynamic electrothermal simulation of three dimensional integrated circuits using standard cell macromodels'), (2013, 'a split foundry asynchronous fpga'), (2013, 'celltk automated layout for asynchronous circuits with nonstandard cells'), (2014, 'asynchronous design for ubiquitous computing'), (2014, 'ulsnap an ultra low power event driven microcontroller for sensor network nodes'), (2015, 'aes hardware software co design in wsn'), (2015, 'automatic obfuscated cell layout for trusted split foundry design'), (2015, 'timing driven placement for quasi delay insensitive circuits'))
+keywords : frozenset({'distributed computing', 'computer architecture', 'embedded system', 'electrical engineering', 'electronic engineering', 'software engineering', 'computer hardware'})
+
+firstname : carlos
+lastname : otero
+middlename : tadeo ortega
+year : 2014
+year_papertitle : ((2014, 'asynchronous design for ubiquitous computing'),)
+keywords : frozenset({'computer engineering', 'computer science', 'electrical engineering'})
+
+0/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished
+firstname : wenrui
+lastname : zhao
+middlename : None
+year : 2003
+year_papertitle : ((2003, 'message ferrying proactive routing in highly partitioned wireless ad hoc networks'), (2004, 'a message ferrying approach for data delivery in sparse mobile ad hoc networks'), (2004, 'the energy limited capacity of wireless networks'), (2005, 'controlling the mobility of multiple data transport ferries in a delay tolerant network'), (2005, 'multicasting in delay tolerant networks semantic models and routing algorithms'), (2005, 'trading latency for energy in wireless ad hoc networks using message ferrying'), (2006, 'capacity enhancement using throwboxes in dtns'), (2006, 'multicasting in sparse manets using message ferrying'), (2006, 'routing and network design in delay tolerant networks'), (2007, 'trading latency for energy in densely deployed wireless ad hoc networks using message ferrying'))
+keywords : frozenset({'distributed computing', 'computer network'})
+
+firstname : wenrui
+lastname : zhao
+middlename : None
+year : 2006
+year_papertitle : ((2006, 'routing and network design in delay tolerant networks'),)
+keywords : frozenset({'computer science'})
+
+1/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (commonSixGram, lastname)
+INFO:dedupe.training:SimplePredicate: (firstTwoTokensPredicate, middlename)
+firstname : mainak
+lastname : sen
+middlename : None
+year : 2003
+year_papertitle : ((2003, 'a control theoretic approach to dynamic voltage scheduling'), (2004, 'systematic exploitation of data parallelism in hardware synthesis of dsp applications'), (2005, 'computer vision on fpgas design methodology and its application to gesture recognition'), (2005, 'modeling image processing systems with homogeneous parameterized dataflow graphs'), (2006, 'affine nested loop programs and their binary parameterized dataflow graph counterparts'), (2006, 'mapping multimedia applications onto configurable hardware with parameterized cyclo static dataflow graphs'), (2006, 'model based hardware design for image processing systems'), (2006, 'model based mapping of image registration applications onto configurable hardware'), (2006, 'reconfigurable image registration on fpga platforms'), (2006, 'the effect of sleep disordered breathing on health related quality of life and depressive symptoms in children'))
+keywords : frozenset({'physical therapy', 'real time computing', 'computer architecture', 'embedded system', 'computer engineering', 'theoretical computer science', 'programming language', 'pediatrics', 'computer hardware', 'parallel computing', 'computer vision', 'artificial intelligence'})
+
+firstname : mainak
+lastname : sen
+middlename : None
+year : 2006
+year_papertitle : ((2006, 'model based hardware design for image processing systems'),)
+keywords : frozenset({'computer science'})
+
+2/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (commonSixGram, lastname)
+INFO:dedupe.training:SimplePredicate: (commonSixGram, firstname)
+firstname : jincun
+lastname : liu
+middlename : None
+year : 2016
+year_papertitle : ((2016, 'design and implementation of a robotic dolphin for water quality monitoring'), (2016, 'design of a camera stabilizer system for robotic fish based on feedback feedforward control'), (2016, 'parallel control and management system for biomimetic robotic fish based on acp approach'), (2017, 'development of a novel robotic dolphin and its application to water quality monitoring'), (2017, 'flippers based turning analysis and implementation of a dolphin robot'), (2018, 'depth control of a bioinspired robotic dolphin based on sliding mode fuzzy control method'), (2018, 'sliding mode fuzzy control based path following control for a dolphin robot'), (2019, '3 d motion analysis and implementation of a developed gliding robotic dolphin'), (2019, 'cooperative target tracking in aquatic environment using dual robotic dolphins'), (2019, 'development and path planning of a novel unmanned surface vehicle system and its application to exploitation of qarhan salt lake'))
+keywords : frozenset({'artificial intelligence', 'control engineering', 'marine engineering', 'simulation', 'computer vision', 'control theory'})
+
+firstname : mengting
+lastname : liu
+middlename : None
+year : 2013
+year_papertitle : ((2013, 'nonlinear granger causality and its application in decoding of human reaching intentions'),)
+keywords : frozenset({'mining engineering', 'biomedical engineering', 'artificial intelligence'})
+
+3/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : lingyang
+lastname : chu
+middlename : None
+year : 2011
+year_papertitle : ((2011, 'detection and location of near duplicate video sub clips by finding dense subgraphs'), (2011, 'fast common visual pattern detection via radiate geometric model'), (2013, 'cross media topic detection a multi modality fusion framework'), (2013, 'robust spatial consistency graph model for partial duplicate image retrieval'), (2014, 'graph density based visual word vocabulary for image retrieval'), (2015, 'alid scalable dominant cluster detection'), (2016, 'effective multimodality fusion framework for cross media topic detection'), (2016, 'finding gangs in war from signed networks'), (2016, 'tradeoffs between density and size in extracting dense subgraphs a unified framework'), (2017, 'query from sketch a common subgraph correspondence mining framework'))
+keywords : frozenset({'natural language processing', 'mathematical optimization', 'combinatorics', 'discrete mathematics', 'multimedia', 'algorithm', 'information retrieval', 'theoretical computer science', 'data mining', 'pattern recognition', 'computer vision', 'artificial intelligence'})
+
+firstname : diyang
+lastname : chu
+middlename : None
+year : 2013
+year_papertitle : ((2013, 'design validation of multi mode systems'),)
+keywords : frozenset({'systems science', 'computer engineering', 'artificial intelligence'})
+
+3/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : nancy
+lastname : reed
+middlename : e
+year : 1988
+year_papertitle : ((1988, 'specialized strategies an alternative to first principles in diagnostic problem solving'), (1990, 'generative knowledge for computer troubleshooting'), (1993, 'analysis of expert reasoning in hardware diagnosis'), (1994, 'diagnosing multiple interacting defects with combination descriptions'))
+keywords : frozenset({'software engineering', 'computer hardware', 'data science', 'artificial intelligence', 'machine learning'})
+
+firstname : nancy
+lastname : reed
+middlename : ellen
+year : 1995
+year_papertitle : ((1995, 'diagnosing multiple interacting defects with cue combination descriptions'),)
+keywords : frozenset({'cellular biology', 'computer science', 'artificial intelligence', 'surgery'})
+
+3/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : saif
+lastname : malik
+middlename : ur rehman
+year : 2008
+year_papertitle : ((2008, 'web warehouse towards efficient distributed business management'), (2009, 'the impact of test case reduction and prioritization on software testing effectiveness'), (2010, 'intelligent data mining in autonomous heterogeneous distributed bio databases'), (2010, 'intelligent decision making based on data mining using differential evolution algorithms and framework for etl workflow management'), (2010, 'proposed text mining framework to explore issues from text in a certain domain'), (2012, 'convergence time analysis of open shortest path first routing protocol in internet scale networks'), (2013, 'a survey on resource allocation in high performance distributed computing systems'), (2013, 'formal methods in large scale computing systems'), (2013, 'modeling and analysis of state of the art vm based cloud management platforms'), (2014, 'trends and challenges in cloud datacenters'))
+keywords : frozenset({'distributed computing', 'operating system', 'reliability engineering', 'information retrieval', 'process management', 'theoretical computer science', 'computer network', 'data mining', 'world wide web', 'database', 'computer security', 'data science'})
+
+firstname : saif
+lastname : malik
+middlename : ur rehman
+year : 2014
+year_papertitle : ((2014, 'using formal methods to validate the usage protocols and feasibility in large scale computing systems'),)
+keywords : frozenset({'computer engineering', 'computer science'})
+
+4/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (firstTokenPredicate, lastname)
+firstname : jie
+lastname : cheng
+middlename : None
+year : 2015
+year_papertitle : ((2015, 'neutronics and thermo hydraulic design of supercritical water cooled solid breeder tbm'), (2017, 'development and application of a neutronics thermal hydraulics coupling optimization code for the cfetr helium cooled solid breeder blanket with mixed pebble beds'), (2017, 'development of a neutronics thermal hydraulic coupling optimization code and its application on the cfetr hcsb blanket'), (2017, 'evaluation and optimization of tritium breeding shielding and nuclear heating performances of the helium cooled solid breeder blanket for cfetr'), (2017, 'numerical research on the neutronic thermal hydraulic mechanical coupling characteristics of the optimized helium cooled solid breeder blanket for cfetr'), (2018, 'improving the optimization algorithm of ntcoc for application in the hcsb blanket for cfetr phase ii'), (2019, 'neutronic and thermo hydraulic analyses of water cooled blanket based on pressurized supercritical water conditions for cfetr'))
+keywords : frozenset({'nuclear engineering', 'nuclear physics'})
+
+firstname : jie
+lastname : chen
+middlename : None
+year : 2005
+year_papertitle : ((2005, 'comparison of clustering algorithms and its application to document clustering'),)
+keywords : frozenset({'computer science'})
+
+5/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : xin
+lastname : liu
+middlename : None
+year : 2000
+year_papertitle : ((2000, 'efficient network utilization for multimedia wireless networks'), (2001, 'opportunistic transmission scheduling with resource sharing constraints in wireless networks'), (2001, 'transmission scheduling for efficient wireless network utilization'), (2001, 'transmission scheduling for efficient wireless resource utilization with minimum performance guarantees'), (2001, 'transmission scheduling for efficient wireless utilization'), (2002, 'joint scheduling and power allocation for interference management in wireless networks'), (2003, 'a framework for opportunistic scheduling in wireless networks'), (2003, 'optimal opportunistic scheduling in wireless networks'), (2004, 'combs needles haystacks balancing push and pull for discovery in large scale sensor networks'), (2004, 'energy aware node placement in wireless sensor networks'))
+keywords : frozenset({'distributed computing', 'mathematical optimization', 'computer network'})
+
+firstname : xin
+lastname : li
+middlename : None
+year : 2008
+year_papertitle : ((2008, 'a shape mapping framework for graphics and visual computing'),)
+keywords : frozenset({'computer science'})
+
+5/10 positive, 3/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : william
+lastname : johnson
+middlename : l
+year : 1984
+year_papertitle : ((1984, 'response alternatives in likert scaling'), (1985, 'retraining principals for productive school management'), (1986, 'instructional leadership training needs for school principals'), (1986, 'two methods of scoring discrepancy format needs assessment instruments'), (1987, 'the charles f kettering ltd school climate instrument a psychometric analysis'), (1988, 'instructional leadership training needs for nonurban educators'), (1990, 'factorial structure of the charles f kettering climate profile'), (1990, 'leadership for productive schools'), (1991, 'revisiting the charles f kettering ltd school climate profile further analysis of the subscale structure'))
+keywords : frozenset({'public relations', 'medical education', 'pedagogy', 'applied psychology', 'data mining', 'social psychology'})
+
+firstname : william
+lastname : jo
+middlename : jaime
+year : 2008
+year_papertitle : ((2008, 'functional profiling of the i saccharomyces cerevisiae i genome in the study of mechanisms of metal and metalloid toxicity'),)
+keywords : frozenset({'genetics', 'toxicology', 'bioinformatics'})
+
+5/10 positive, 4/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : james
+lastname : evins
+middlename : b
+year : 1991
+year_papertitle : ((1991, 'naval research laboratory flex processor for radar signal processing'), (1992, 'nrl flex radar signal processing architecture an update'))
+keywords : frozenset({'embedded system', 'real time computing'})
+
+firstname : james
+lastname : evans
+middlename : p
+year : 2010
+year_papertitle : ((2010, 'modeling virus host networks'),)
+keywords : frozenset({'bioinformatics'})
+
+5/10 positive, 5/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : david
+lastname : sherman
+middlename : l
+year : 1995
+year_papertitle : ((1995, 'a domain and type enforcement unix prototype'), (1995, 'practical domain and type enforcement for unix'), (1996, 'confining root programs with domain and type enforcement dte'), (1997, 'domain and type enforcement firewalls'), (1999, 'scalable access control for distributed object systems'))
+keywords : frozenset({'distributed computing', 'internet privacy', 'operating system', 'computer network', 'database', 'computer security', 'embedded system'})
+
+firstname : david
+lastname : sherman
+middlename : james
+year : 1994
+year_papertitle : ((1994, 'run time and compile time improvements to equational programs'),)
+keywords : frozenset({'computer science'})
+
+5/10 positive, 6/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : joshua
+lastname : hook
+middlename : vander
+year : 2011
+year_papertitle : ((2011, 'active target localization for bearing based robotic telemetry'), (2012, 'cautious greedy strategy for bearing based active localization experiments and theoretical analysis'), (2013, 'local search strategy for active localization of multiple invasive fish'), (2013, 'sensor planning for a symbiotic uav and ugv system for precision agriculture'), (2013, 'tracking aquatic invaders autonomous robots for monitoring invasive fish'), (2014, 'cautious greedy strategy for bearing only active localization analysis and field experiments'), (2014, 'pursuit and evasion with uncertain bearing measurements'), (2015, 'algorithms for cooperative active localization of static targets with mobile bearing sensors under communication constraints'), (2015, 'navigation around an unknown obstacle for autonomous surface vehicles using a forward facing sonar'), (2016, 'gathering bearing data for target localization'))
+keywords : frozenset({'mathematical optimization', 'real time computing', 'artificial intelligence', 'algorithm', 'control engineering', 'electronic engineering', 'simulation', 'computer vision', 'control theory'})
+
+firstname : joshua
+lastname : hook
+middlename : david vander
+year : 2015
+year_papertitle : ((2015, 'active target localization and tracking with application to robotic environmental monitoring'),)
+keywords : frozenset({'robotics', 'computer science'})
+
+5/10 positive, 7/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : xiao
+lastname : zhang
+middlename : None
+year : 2013
+year_papertitle : ((2013, 'aframe isolating advertisements from mobile applications in android'), (2014, 'attacks on android clipboard'), (2015, 'hare hunting in the wild android a study on the threat of hanging attribute references'), (2016, 'harvesting inconsistent security configurations in custom android roms via differential analysis'), (2016, 'hey you get off of my image detecting data residue in android images'), (2016, 'life after app uninstallation are the data still alive data residue attacks on android'), (2017, 'a hybrid learning system to mitigate botnet concept drift attacks'), (2018, 'betrayed by your dashboard discovering malicious campaigns via web analytics'))
+keywords : frozenset({'operating system', 'advertising', 'world wide web', 'computer security', 'artificial intelligence', 'machine learning'})
+
+firstname : xiao
+lastname : zhang
+middlename : None
+year : 2001
+year_papertitle : ((2001, 'access time sensitivity analysis for hard disk drives'),)
+keywords : frozenset({'computer science', 'electrical engineering'})
+
+6/10 positive, 7/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : michael
+lastname : lee
+middlename : j
+year : 2011
+year_papertitle : ((2011, 'a case study of post deployment user feedback triage'), (2011, 'personifying programming tool feedback improves novice programmers learning'), (2012, 'investigating the role of purposeful goals on novices engagement in a programming game'), (2012, 'representations of user feedback in an agile collocated software team'), (2012, 'social debugging game for learning engagement'), (2013, 'github developers use rockstars to overcome overflow of news'), (2013, 'how can a social debugging game effectively teach computer programming concepts'), (2013, 'in game assessments increase novice programmers engagement and level completion speed'), (2014, 'challenging stereotypes and changing attitudes the effect of a brief programming encounter on adults attitudes toward programming'), (2014, 'gidget an online debugging game for learning and engagement in computing education'))
+keywords : frozenset({'human computer interaction', 'multimedia', 'applied psychology', 'world wide web', 'software engineering', 'social psychology', 'cognitive psychology'})
+
+firstname : michael
+lastname : lee
+middlename : thomas
+year : 2006
+year_papertitle : ((2006, 'spatial modeling using triangular tetrahedral and pentatopic decompositions'),)
+keywords : frozenset({'computer science'})
+
+6/10 positive, 8/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : prateek
+lastname : jindal
+middlename : None
+year : 2011
+year_papertitle : ((2011, 'learning from negative examples in set expansion'), (2012, 'using knowledge and constraints to find the best antecedent'), (2013, 'end to end coreference resolution for clinical narratives'), (2013, 'extraction of events and temporal expressions from clinical narratives'), (2013, 'using domain knowledge and domain inspired discourse model for coreference resolution for clinical narratives'), (2013, 'using soft constraints in joint inference for clinical concept recognition'), (2014, 'detecting privacy sensitive events in medical text'), (2014, 'joint inference for end to end coreference resolution for clinical notes'), (2016, 'large scale gw software development'), (2016, 'towards highly scalable gw calculations'))
+keywords : frozenset({'natural language processing', 'mathematical optimization', 'computational science', 'systems engineering', 'information retrieval', 'theoretical computer science', 'artificial intelligence', 'machine learning'})
+
+firstname : prateek
+lastname : jindal
+middlename : None
+year : 2013
+year_papertitle : ((2013, 'information extraction for clinical narratives'),)
+keywords : frozenset({'computer engineering', 'computer science'})
+
+6/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : syed
+lastname : jafri
+middlename : ali raza
+year : 2007
+year_papertitle : ((2007, 'energy efficient mac and routing design in distributed beamforming sensor networks'), (2007, 'robust digital watermarking for wavelet based compression'), (2008, 'automatic text area segmentation in natural images'), (2008, 'the rosetta phone a hand held device for automatic translation of signs in natural images'), (2009, 'the case for spam aware high performance mail server architecture'), (2010, 'adaptive flow control for robust performance and energy'), (2010, 'litetm reducing transactional state overhead'), (2013, 'wait n gotm improving htm performance by serializing cyclic dependencies'))
+keywords : frozenset({'distributed computing', 'natural language processing', 'operating system', 'computer network', 'pattern recognition', 'computer security', 'parallel computing', 'computer vision', 'artificial intelligence', 'speech recognition'})
+
+firstname : syed
+lastname : jafri
+middlename : ali raza
+year : 2013
+year_papertitle : ((2013, 'improving multicore resource efficiency and performance'),)
+keywords : frozenset({'computer engineering'})
+
+7/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : heather
+lastname : harton
+middlename : None
+year : 2008
+year_papertitle : ((2008, 'incremental benchmarks for software verification tools and techniques'), (2009, 'engaging students in specification and reasoning hands on experimentation and evaluation'), (2009, 'generating verified java components through resolve'), (2009, 'verifying component based software deep mathematics or simple bookkeeping'), (2011, 'building a push button resolve verifier progress and challenges'), (2012, 'specification engineering and modular verification using a web integrated verifying compiler'), (2012, 'the location linking concept a basis for verification of code using pointers'), (2013, 'a language for building verified software components'))
+keywords : frozenset({'data mining', 'software engineering', 'programming language'})
+
+firstname : heather
+lastname : harton
+middlename : keown
+year : 2011
+year_papertitle : ((2011, 'mechanical and modular verification condition generation for object based software'),)
+keywords : frozenset({'computer science'})
+
+8/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : hao
+lastname : chen
+middlename : None
+year : 2011
+year_papertitle : ((2011, 'abstract 17956 serpin treatment reduces inflammation in transplanted temporal artery biopsy specimens from patients with suspected giant cell arteritis in immunodeficient mice'), (2011, 'viral serpin therapeutics from concept to clinic'), (2012, '661 virus derived immunomodulatory therapeutics for heart transplantation'), (2012, 'abstract 18589 virus derived serpin prolongs survival and reduces vasculitis in lethal viral sepsis in unrelated infections'), (2012, 'abstract 304 mutational analysis of m t7 a viral anti inflammatory protein provides insight into its activity'), (2012, 'abstract 7 serpin treatment reduces mortality in γ68 herpesvirus infected mice by rebalancing of coagulation and thrombolytic cascades'), (2012, 'viral cross class serpin inhibits vascular inflammation and t lymphocyte fratricide a study in rodent models in vivo and human cell lines in vitro'), (2012, 'virus derived anti inflammatory proteins potential therapeutics for cancer'), (2013, 'abstract 524 myxomaviral anti angiogenesis protein serp 1 inhibits pancreatic cancer growth in mice'), (2013, 'polymicrobial infection with major periodontal pathogens induced periodontal disease and aortic atherosclerosis in hyperlipidemic apoenull mice'))
+keywords : frozenset({'cancer research', 'andrology', 'virology', 'pathology', 'biochemistry', 'immunology', 'molecular biology'})
+
+firstname : hao
+lastname : chen
+middlename : None
+year : 2010
+year_papertitle : ((2010, 'exploring applications of suboptimal alignments in threading protein structure prediction'),)
+keywords : frozenset({'bioinformatics'})
+
+9/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : david
+lastname : heath
+middlename : a
+year : 1986
+year_papertitle : ((1986, 'suppression behavior analyzed as a function of monovision addition power'), (1987, 'mapping of ophthalmic lens distortions with a pinhole camera'))
+keywords : frozenset({'computer vision', 'optics', 'artificial intelligence'})
+
+firstname : david
+lastname : heath
+middlename : george
+year : 1993
+year_papertitle : ((1993, 'a geometric framework for machine learning'),)
+keywords : frozenset({'computer science', 'artificial intelligence'})
+
+10/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : junrui
+lastname : zhou
+middlename : None
+year : 2018
+year_papertitle : ((2018, 'simple way to fabricate novel paper based valves using plastic comb binding spines'), (2020, 'znse quantum dot based ion imprinting technology for fluorescence detecting cadmium and lead ions on a three dimensional rotary paper based microfluidic chip'))
+keywords : frozenset({'computer hardware', 'optoelectronics'})
+
+firstname : jun
+lastname : zhou
+middlename : None
+year : 2014
+year_papertitle : ((2014, 'scalable parallel programming for high performance seismic simulation on petascale heterogeneous supercomputers'),)
+keywords : frozenset({'computer engineering', 'geophysical'})
+
+10/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ying
+lastname : wang
+middlename : None
+year : 1993
+year_papertitle : ((1993, 'interaction of fluoroethane chlorofluorocarbon cfc substitutes with microsomal cytochrome p450 stimulation of p450 activity and chlorodifluoroethene metabolism'), (1993, 'nadph and oxygen consumption in isoflurane facilitated 2 chloro 1 1 difluoroethene metabolism in rabbit liver microsomes'), (1995, 'isoflurane and cytochrome b5 stimulation of 2 chloro 1 1 difluoroethene metabolism by reconstituted rat cyp2b1 and cyp2c6'), (1995, 'isoflurane chlorodifluoroethene interaction in human liver microsomes role of cytochrome p4502b6 in potentiation of haloethene metabolism'))
+keywords : frozenset({'biochemistry', 'internal medicine', 'endocrinology', 'pharmacology'})
+
+firstname : yingying
+lastname : wang
+middlename : None
+year : 2012
+year_papertitle : ((2012, 'supply risk in a multiple sourcing supply system'),)
+keywords : frozenset({'management consulting services', 'industrial engineering', 'operations research', 'management'})
+
+10/10 positive, 10/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : cris
+lastname : martin
+middlename : pedregal
+year : 1997
+year_papertitle : ((1997, 'delegation efficiently rewriting history'), (1999, 'recovery guarantees in mobile systems'))
+keywords : frozenset({'distributed computing', 'real time computing', 'programming language'})
+
+firstname : cristobal
+lastname : martin
+middlename : pedregal
+year : 2002
+year_papertitle : ((2002, 'transaction recovery in databases and beyond'),)
+keywords : frozenset({'computer science'})
+
+10/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : richard
+lastname : smith
+middlename : l
+year : 1988
+year_papertitle : ((1988, 'effect of sacroiliac joint mobilization on the standing position of the pelvis in healthy men'), (1994, 'therapists ability to identify safe maximum lifting in low back pain patients during functional capacity evaluation'))
+keywords : frozenset({'physical therapy', 'physical medicine and rehabilitation'})
+
+firstname : richard
+lastname : smith
+middlename : james
+year : 1995
+year_papertitle : ((1995, 'design and implementation of a distance education course over the internet'),)
+keywords : frozenset({'library science', 'mass communications', 'curriculum development', 'educational technology', 'information science'})
+
+10/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : daniel
+lastname : zimmerman
+middlename : s
+year : 2001
+year_papertitle : ((2001, 'modification of pbwo4 scintillator characteristics by doping'), (2001, 'weak adsorption of anions on gold measurement of partial charge transfer using fast fourier transform electrochemical impedance spectroscopy'), (2002, 'erratum to weak adsorption of anions on gold measurement of partial charge transfer using fast fourier transform electrochemical impedance spectroscopy j electroanal chem 499 2001 48 60'), (2002, 'temperature dependence of anomalous luminescence decay theory and experiment'), (2005, 'laboratory experiments on liquid metal spherical couette flows'), (2006, 'driven inertial waves in spherical couette flow'), (2006, 'observations of inertial waves in spherical couette flow'), (2007, 'experimental studies of mhd flow in a rapidly rotating system'), (2007, 'inertial waves driven by differential rotation in a planetary geometry'), (2007, 'liquid metal flow in a spherical shell recent results'))
+keywords : frozenset({'astrophysics', 'atomic physics', 'classical mechanics', 'geodesy', 'analytical chemistry', 'geophysics', 'condensed matter physics', 'nuclear chemistry', 'geometry', 'mechanics'})
+
+firstname : daniel
+lastname : zimmerman
+middlename : marc
+year : 2002
+year_papertitle : ((2002, 'dynamic unity'),)
+keywords : frozenset({'computer science'})
+
+10/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : paul
+lastname : boor
+middlename : van der
+year : 2014
+year_papertitle : ((2014, 'users as innovators in developing countries the global sources of innovation and diffusion in mobile banking services'), (2016, 'designing policy recommendations to reduce home abandonment in mexico'), (2017, 'machine learning for social services a study of prenatal case management in illinois'), (2018, 'improving government response to citizen requests online'))
+keywords : frozenset({'finance', 'internet privacy', 'industrial organization', 'actuarial science', 'artificial intelligence', 'machine learning'})
+
+firstname : paul
+lastname : boor
+middlename : e w van der
+year : 2014
+year_papertitle : ((2014, 'three studies on innovation and diffusion evidence from mobile banking in developing countries and a user innovation survey in portugal'),)
+keywords : frozenset({'computer engineering', 'economics', 'public policy'})
+
+10/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ahmed
+lastname : ali
+middlename : k
+year : 2013
+year_papertitle : ((2004, 'silence darkness and light the grand egyptian museum'), (2012, 're defining the architectural design process through building a decision support framework for design with reused building materials and components'), (2013, 're defining the architectural design process through building a decision support framework for design with reuse'), (2016, 'novel integration of sustainable and construction decisions into the design bid build project delivery method using bpmn'), (2017, 'on the reaction of naphthalene diimides with fluoride ions acid base versus redox reactions'), (2017, 'simulation and study of svpwm inverter for vfd applications'), (2019, 'a case study in developing an interdisciplinary learning experiment between architecture building construction and construction engineering and management education'), (2019, 'an m qam signal modulation recognition algorithm in awgn channel'), (2019, 'facilitating industrial symbiosis to achieve circular economy using value added by design a case study in transforming the automobile industry sheet metal waste flow into voronoi facade systems'), (2020, 'symbiotic circularity in buildings an alternative path for valorizing sheet metal waste stream as metal building facades'))
+keywords : frozenset({'waste management', 'process engineering', 'literature', 'systems engineering', 'architectural engineering', 'electronic engineering', 'photochemistry', 'pattern recognition', 'engineering ethics', 'engineering management', 'artificial intelligence', 'knowledge management'})
+
+firstname : ahmed
+lastname : ali
+middlename : mohamed abdelatty
+year : 1999
+year_papertitle : ((1999, 'auditory based acoustic phonetic signal processing for robust continuous speech recognition'),)
+keywords : frozenset({'computer science', 'electrical engineering'})
+
+11/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : sung
+lastname : park
+middlename : w
+year : 2004
+year_papertitle : ((2004, 'multi dimensional transfer functions for interactive 3d flow visualization'), (2005, 'dense geometric flow visualization'), (2006, 'discrete sibson interpolation'), (2006, 'structure accentuating dense flow visualization'))
+keywords : frozenset({'computational science', 'algorithm', 'theoretical computer science', 'computer vision', 'computer graphics images', 'artificial intelligence'})
+
+firstname : sungmin
+lastname : park
+middlename : None
+year : 2000
+year_papertitle : ((2000, 'efficient cycle time throughput curve generation using discrete event simulation'),)
+keywords : frozenset({'industrial engineering'})
+
+11/10 positive, 14/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+Finished labeling
+INFO:rlr.crossvalidation:using cross validation to find optimum alpha...
+INFO:rlr.crossvalidation:optimum alpha: 0.100000, score 0.681272955864263
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (commonSixGram, lastname)
+INFO:dedupe.training:SimplePredicate: (commonTwoTokens, middlename)
+INFO:dedupe.training:SimplePredicate: (commonSixGram, firstname)
+Done in 1149.5826523065566 minutes.

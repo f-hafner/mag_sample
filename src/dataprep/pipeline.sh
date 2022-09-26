@@ -1,7 +1,7 @@
 #!/bin/bash
 
 output_path="../../output/"
-script_path="main/"
+script_path="main"
 logfile_path="temp/"
 
 # ## Read in database
@@ -44,8 +44,11 @@ python3 $script_path/prep_mag/prep_citations.py &> $logfile_path/prep_citations.
 
 python3 $script_path/prep_mag/paper_outcomes.py &> $logfile_path/paper_outcomes.log
 
-python3 $script_path/prep_mag/author_info_linking.py --years_first_field 5 \
+python3 $script_path/prep_mag/author_info_linking.py --years_first_field 7 \
     &> $logfile_path/author_info_linking.log
+
+python -m $script_path.prep_mag.author_field0 \
+    &> $logfile_path/author_field0.log
 
 # ## Consolidate gender per author in author_sample 
 python3 $script_path/prep_mag/author_gender.py &> $logfile_path/author_gender.log
@@ -72,16 +75,16 @@ Rscript -e "rmarkdown::render('$script_path/reports/quality_mag.Rmd', output_dir
 Rscript -e "rmarkdown::render('$script_path/reports/quality_proquest.Rmd', output_dir = '$output_path')" \
     &> $logfile_path/quality_proquest.log
 
+Rscript -e "rmarkdown::render('$script_path/reports/sample_size_linking.Rmd', output_dir = '$output_path')" \
+    &> $logfile_path/sample_size_linking.log
 
-# ## Link graduates
+# ## Link graduates to MAG
 bash $script_path/link/graduates.sh $logfile_path
 
 Rscript -e "rmarkdown::render('$script_path/reports/quality_linking.Rmd', output_dir = '$output_path')" \
     &> $logfile_path/quality_linking.log
 
-python -m $script_path.link.prep_linked_data &> $logfile_path/prep_linked_data.log
-
-# ## Link advisors  
+# ## Link advisors to MAG
 bash $script_path/link/advisors.sh &> $logfile_path/link_advisors.log
 
 Rscript -e "rmarkdown::render('$script_path/reports/advisor_links_quality_select.Rmd', output_dir = '$output_path')" \
@@ -89,6 +92,20 @@ Rscript -e "rmarkdown::render('$script_path/reports/advisor_links_quality_select
 
 # ## Link NSF grants to MAG advisors
 bash $script_path/link/grants.sh $logfile_path
+
+# Manual split of biology!
+# bash $script_path/link/write_links_biology
+# python -m $script_path.link.merge_biology_csv
+
+# Write the links from csv 
+python -m $script_path.link.write_csv_links --linking_type "graduates" --train_name "christoph_fielddegree0" \
+    &> $logfile_path/write_csv_links_graduates.log
+python -m $script_path.link.write_csv_links --linking_type "advisors" --train_name "christoph_degree0" \
+    &> $logfile_path/write_csv_links_advisors.log
+
+python -m $script_path.link.prep_linked_data \
+    --filter_trainname "christoph_" \
+    &> $logfile_path/prep_linked_data.log
 
 # TODO: add report on quality of linking here
 

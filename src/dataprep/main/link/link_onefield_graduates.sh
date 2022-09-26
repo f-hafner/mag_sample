@@ -8,16 +8,18 @@ fieldofstudy_cat=$5
 fieldofstudy_str=$6
 keywords=$7
 logfile_path=$8
-echo "$field"
 
-python3 train_link_mag_proquest.py --no-test --train_name $train_name --field "${field}"  \
-    --recall $RECALL --start 1985 --end 2005 --institution $institution --fieldofstudy_cat $fieldofstudy_cat \
-     --fieldofstudy_str $fieldofstudy_str --keywords $keywords --verbose \
-      2>&1 | tee $logfile_path/trainlink_mag_proquest_"${field}"_${train_name}_8505.log 
- 
+echo "$field"
 mergemode="1:1"
-python3 create_link_mag_proquest.py --no-test --mergemode $mergemode --train_name $train_name \
- --field "${field}" --recall $RECALL --start 1985 --end 2005 --institution $institution \ 
+
+python3 -m main.link.train_link_mag_proquest --ntrain 50000 --no-test --train_name $train_name --field "${field}"  \
+    --recall $RECALL --start 1985 --end 2015 --institution $institution --fieldofstudy_cat $fieldofstudy_cat \
+     --fieldofstudy_str $fieldofstudy_str --keywords $keywords --verbose \
+      2>&1 | tee $logfile_path/trainlink_mag_proquest_"${field}"_${train_name}_graduates_8515.log 
+ 
+python3 -m main.link.create_link_mag_proquest --no-test --mergemode $mergemode --train_name $train_name \
+ --field "${field}" --recall $RECALL --start 1985 --end 2015 --institution $institution \
+ --to "csv" \
  --fieldofstudy_cat $fieldofstudy_cat --fieldofstudy_str $fieldofstudy_str --keywords $keywords --verbose \
-  2>&1 | tee $logfile_path/createlink_mag_proquest_"${field}"_${mergemode}_${train_name}_8505.log 
+  2>&1 | tee $logfile_path/createlink_mag_proquest_"${field}"_${mergemode}_${train_name}_graduates_8515.log 
  
