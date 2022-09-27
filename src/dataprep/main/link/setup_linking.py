@@ -1,4 +1,3 @@
-e
 from dataclasses import fields
 import os
 import time
@@ -95,9 +94,9 @@ parser.set_defaults(keywords="False")
 
 args = parser.parse_args()
 if args.loadstartyear==0:
-    args.loadstart=args.startyear
+    args.loadstartyear=args.startyear
 if args.loadendyear==0:
-    args.loadend=args.endyear 
+    args.loadendyear=args.endyear 
 
 print(args, flush=True)
 
