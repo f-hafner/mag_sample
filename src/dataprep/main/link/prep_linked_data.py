@@ -177,20 +177,12 @@ INNER JOIN (
     SELECT AuthorId 
     FROM current_authors
 ) USING (AuthorId) 
-INNER JOIN (
-    SELECT AuthorId, goid
-    FROM current_links
-) c USING (AuthorId)
-INNER JOIN (
-    SELECT goid, degree_year
-    FROM pq_authors
-) d USING (goid)
 CROSS JOIN (
     SELECT DISTINCT Year 
     FROM Papers
 ) b 
 WHERE 
-    b.Year >= d.degree_year - 5
+    b.Year >= a.YearFirstPub - 20
     AND 
     b.Year <= a.YearLastPub 
 """)
