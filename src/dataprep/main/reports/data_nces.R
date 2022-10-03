@@ -13,7 +13,7 @@ rm(list = ls())
 
 
 if (interactive()) {
-  setwd("~/projects/MAG/src")
+  setwd("~/projects/mag_sample/src/dataprep")
 }
 
 packages <- c("tidyverse", "readxl", "data.table")
@@ -28,6 +28,7 @@ processedpath <- paste0(datapath, "processed/")
 
 file_tab46_suppl <- paste0(rawpath, "nsf_table46_supplement.xlsx")
 file_graduate_counts <- paste0(rawpath, "nces_graduates_field_gender.csv")
+file_graduate_counts_field_uni <- paste0(rawpath, "ncses_graduates_field_uni.csv")
 
 source("helpers/setup_nces.R")
 
@@ -48,11 +49,14 @@ data_graduates <- data_graduates %>%
                       TRUE ~ tolower(.x)
                   )))
 
+
 data_graduates <- data_graduates %>%
     filter(det_fld == "total"
             & broad_fld != "total"
             & se_fld != "total") %>%
     filter(broad_fld != "education") # they are not in the MAG fields
+
+
 
 data_graduates <- data_graduates %>%
     select(-det_fld) %>%
@@ -177,7 +181,90 @@ postgrad_us_sectors <- df_postgrad %>%
   gather(key = sector, value = share, 
          -field_id, -year, -gender)
 
-# ## 4. Save 
+# ## 4. Number of graduates by detailed field, year and institution
+  # (ipeds unitid = carnegie unitid)
+col_names <- c("se_fld", "unitid", seq(2020, 1957, by = -1)) # for some reason there is another empty column
+
+d_uni_field <- fread(file_graduate_counts_field_uni,
+                     skip = 10, 
+                     col.names = col_names)
+# make sure the end is read correctly
+stopifnot(
+  d_uni_field[nrow(d_uni_field), "unitid" ] == "221999"
+)
+d_uni_field <- d_uni_field %>%
+  filter(unitid != "Total for selected values") %>%
+  pivot_longer(names_to = "year",
+               values_to = "nb",
+               cols = all_of(col_names[3:length(col_names)]) ) %>%
+  mutate(nb = ifelse(nb == "-", "0", nb)) %>%
+  mutate(across(all_of(c("unitid", "year", "nb")),
+                ~as.numeric(.))
+         ) %>%
+  filter(year > 1957) %>%
+  mutate(se_fld = tolower(se_fld))
+
+# they have their own classification separate from the previous data
+  # aggregate at field level 0
+humanities <- c("communication", "foreign languages and literature",
+  "letters", "other humanities and arts"  )
+
+other_socsi <- c("anthropology", "other social sciences", "non-s&e fields not elsewhere classified")
+
+
+cw_fields <- tibble(
+  ncses = c("agricultural sciences and natural resources",
+            "biological and biomedical sciences",
+            "business management and administration",
+            "chemistry",
+            "computer and information sciences",
+            "economics",
+            "engineering",
+            "mathematics and statistics",
+            "history" ,
+            "psychology" ,
+            "sociology" ,
+            "political science and government",
+            "physics and astronomy",
+            "geosciences, atmospheric sciences, and ocean sciences",
+            "health sciences"  
+            ),
+  mag = c("environmental science", 
+          "biology",
+          "business",
+          "chemistry",
+          "computer science",
+          "economics",
+          "engineering",
+          "mathematics",
+          "history" ,
+          "psychology" ,
+          "sociology",
+          "political science",
+          "physics",
+          "geology", # this is probably wrong
+          "health sciences"
+          )
+)
+
+d_uni_field <- d_uni_field %>%
+  filter(!grepl("education", se_fld)) %>%
+  mutate(se_fld = ifelse(grepl("engineering", se_fld), "engineering", se_fld)) %>%
+  group_by(se_fld, unitid, year) %>%
+  summarise(nb = sum(nb), .groups = "drop") %>%
+  left_join(cw_fields,
+            by = c("se_fld" = "ncses")) %>%
+  mutate(mag = case_when(
+    se_fld %in% humanities ~ "humanities",
+    se_fld %in% other_socsi ~ "other socsci",
+    TRUE ~ mag
+  )) %>% 
+  rename(fieldname0_mag = mag) %>%
+  group_by(unitid, year, fieldname0_mag) %>%
+  summarise(nb = sum(nb),
+            .groups = "drop")
+
+# ## 5. Save 
 
 df_fields <- bind_rows(field_lvl_0 %>% mutate(level = 0), 
                        field_lvl_1 %>% mutate(level = 1))
@@ -188,7 +275,8 @@ out <- list(
   postgrad_us_counts = postgrad_us_counts,
   postgrad_us_sectors = postgrad_us_sectors,
   fields = df_fields,
-  parent_fields = parent_fields
+  parent_fields = parent_fields,
+  counts_uni_field0 = d_uni_field
 )
 
 lapply(names(out), function(x) {
@@ -196,6 +284,7 @@ lapply(names(out), function(x) {
             row.names = FALSE)
 })
 
+cat("Done. \n")
 
 
 
