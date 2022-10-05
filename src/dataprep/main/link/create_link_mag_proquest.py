@@ -164,12 +164,15 @@ if __name__ == "__main__":
         , mergemode TEXT
     )
     """)
+    print("Filled table info...", flush=True)
 
     last_iteration = read_con.execute(f"SELECT MAX(iteration_id) FROM {tbl_linking_info}").fetchall()[0][0]
     if last_iteration is None:
         iteration_id = 1
     else:
         iteration_id = last_iteration + 1
+
+    print("Iteration id is " + str(iteration_id), flush=True)
 
     # HERE FLAVIO DELETED LINKS FROM OLD RUNS. SEE link_mag_proquest.py if you want to readd it.
     # ### Write links 
@@ -181,6 +184,7 @@ if __name__ == "__main__":
     )
     write_con.commit()
 
+    print("Filled links into db...", flush=True)
 
     # ### Write iteration info
     current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -193,6 +197,8 @@ if __name__ == "__main__":
         args.train_name, args.institution, args.fieldofstudy_cat, args.fieldofstudy_str, args.keywords, args.mergemode)
     )
     write_con.commit()
+
+    print("Wrote linking info into db...", flush=True)
 
     # ## Check fraction matched. Currently only for graduates.
     if args.linking_type == "graduates":
