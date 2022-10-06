@@ -177,10 +177,12 @@ if __name__ == "__main__":
     # HERE FLAVIO DELETED LINKS FROM OLD RUNS. SEE link_mag_proquest.py if you want to readd it.
     # ### Write links 
     print("Filling links into db...", flush=True)
-
+    links = [(i[0][0], i[0][1], i[1], iteration_id) for i in links]
+    
     write_con.executemany(
         f"INSERT INTO {tbl_linked_ids} VALUES (?, ?, ?, ?)",
-        tupelize_links(links, iteration_id)
+       # tupelize_links(links, iteration_id)
+       links
     )
     write_con.commit()
 
