@@ -69,7 +69,7 @@ parser.add_argument("--loadstart", dest = "loadstartyear", type = int,
 parser.add_argument("--loadend", dest = "loadendyear", type = int, 
                     default = 0, help = "Load End year for records, 0 for using endyear")
 parser.add_argument("--mergemode", dest = "mergemode", type = str, 
-                    default = "1:1", help = "m:1 or 1:1")
+                    default = "1:1", help = "m:1 or 1:1, gazetteer needs separate setting of n_macthes")
 parser.add_argument("--recall", dest = "recall", type = float,
                     default = 0.9, choices = [Range(0.0, 1.0)],
                     help = "Higher recall recovers more links labelled as true, but lowers precision (more false positives)")
@@ -79,13 +79,13 @@ parser.add_argument("--fieldofstudy_str", type=str, help = "use fieldofstudy as 
 parser.add_argument("--keywords", type=str, help = "use keywords for learning?") 
 parser.add_argument("--retrain", type = str, default = "True", help = "force retrain!?")   
 parser.add_argument("--linking_type", type = str, default = "graduates",
-                    help = "Are we linking graduates or advisors?", choices = {"graduates", "advisors", "grants"}) 
+                    help = "Are we linking graduates or advisors or grants?", choices = {"graduates", "advisors", "grants"}) 
 parser.add_argument("--ntrain", type=int, default=100000, dest="samplesize",
                     help="Sample size argument for dedupe.prepare_training()")
 parser.add_argument("--to", type=str, default="database", dest="write_to", 
                     choices={"database", "csv"},
                     help="Write to database or csv?")
-        
+
 parser.set_defaults(testing="True")
 parser.set_defaults(institution="False")
 parser.set_defaults(fieldofstudy_cat="False")
