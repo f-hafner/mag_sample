@@ -112,16 +112,15 @@ if __name__ == "__main__":
         pairs = linker.pairs(data_1 = otherdata, data_2 = magdata)
     elif args.linking_type == "grants":
         pairs = linker.pairs(data_1 = magdata, data_2 = otherdata)
-
     
     print("made pairs", flush=True)
     scores = linker.score(pairs)
     print("calculated scores", flush=True)
     if args.mergemode=="m:1":
-        links = linker.many_to_one(scores, threshold = 0)
+        links = linker.many_to_one(scores, threshold = 0.5)
         print("made m:1 links", flush=True)
     else:
-        links = linker.one_to_one(scores, threshold = 0)
+        links = linker.one_to_one(scores, threshold = 0.5)
         print("made 1:1 links", flush=True)
 
     
