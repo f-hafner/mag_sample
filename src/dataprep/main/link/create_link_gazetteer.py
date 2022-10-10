@@ -105,13 +105,16 @@ if __name__ == "__main__":
     with open(settings_file, 'rb') as sf:
         linker = dedupe.StaticGazetteer(sf, num_cores = n_cores)
 
-    print("Link now ... ", flush=True)
-    results = linker.search(magdata, n_matches=1, generator=True) # pick best match for now, test later whether we should generate multiple matches and report those
-    
+    print('index canonical data ...', flush=True)
+    linker.index(otherdata)
+
+   # results = gazetteer.search(messy, n_matches=2, generator=True)
+    print("Search in linker now ... ", flush=True)
+    results = linker.search(magdata, n_matches=1, generator=True) # XXX pick best match for now, test later whether we should generate multiple matches and report those
+    # XXX below this is used to create a list in the format it'll be written to the db
   
     del otherdata 
     del magdata
-    del linker 
 
     # ## Write everything into two tables
         # if writing to csv, create a new write_con and write to this temporary db. then read it out into pandas and write to csv
@@ -119,6 +122,7 @@ if __name__ == "__main__":
 
     print("Writing to database...", flush=True)
     # ### Prepare tables 
+    
     write_con.execute(f"""
         CREATE TABLE IF NOT EXISTS {tbl_linked_ids}(
             {column_order_links}
@@ -157,15 +161,33 @@ if __name__ == "__main__":
 
     print("Iteration id is " + str(iteration_id), flush=True)
 
-    # HERE FLAVIO DELETED LINKS FROM OLD RUNS. SEE link_mag_proquest.py if you want to readd it.
     # ### Write links 
     print("Filling links into db...", flush=True)
-    links = [(i[0][0], i[0][1], i[1], iteration_id) for i in results]
 
+    # print(results[0])
+    # print(results[2])
+    # XXX this is one tuple in results: (2595621298, ((15407486920, 0.0039104503),))
+    # XXX column order links has to be adjusted for gazetteer to make sense for grants and graduates!
+    # XXX check the order is correct. and handle the case when the second tuple is empty
+    # links = [(i[0], i[1][0][0], i[1][0][1], iteration_id) for i in results]
+    
+    # links = []
+    # # XXX cluster_id would be useful when allowing multiple matches
+    # # XXX this should be placed into a function as a generator. simply replace append with yield ... 
+    # for cluster_id, (messy_id, matches) in tqdm(enumerate(results)):
+    #     if len(matches)==0: 
+    #         continue
+    #     else:
+    #         for canon_id, score in matches:
+    #             # XXX for graduates this needs to be adjusted as the column order of links is different!
+    #             links.append((messy_id, canon_id, score, iteration_id))            
+
+    # print("now we have a list and will write that into db", flush=True)
+    print("using generator to write into db", flush=True)
     write_con.executemany(
         f"INSERT INTO {tbl_linked_ids} VALUES (?, ?, ?, ?)",
        # tupelize_links(links, iteration_id)
-       links
+       yield_gazetteer(results, iteration_id)
     )
     write_con.commit()
 

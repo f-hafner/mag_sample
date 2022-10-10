@@ -22,11 +22,11 @@ fields=("chemistry"
         "geography"
         "economics")
 fields=("biology")
-fields=("economics")
+#fields=("geology")
 
 for i in "${!fields[@]}"; do 
     field=${fields[$i]} 
     echo ${field}
-    screen -dmS "advisors.${field}" sh main/link/link_onefield_advisors_gazetteer.sh $RECALL "$field" $train_name $institution $fieldofstudy_cat $fieldofstudy_str $keywords $logfile_path
+    screen -dmS "g.advisors.${field}" sh main/link/link_onefield_advisors_gazetteer.sh $RECALL "${field}" $train_name $institution $fieldofstudy_cat $fieldofstudy_str $keywords $logfile_path
     echo "Started screen ..."
 done 

@@ -11,7 +11,7 @@ import pdb
 import argparse
 import pandas as pd
 from datetime import datetime
-
+from tqdm import tqdm
 import sqlite3 as sqlite
 
 import dedupe
@@ -19,7 +19,7 @@ import dedupe.backport
 from collections import OrderedDict
 
 from helpers.variables import db_file, datapath
-from helpers.functions import analyze_db, tupelize_links, dict_factory, custom_enumerate, print_elapsed_time
+from helpers.functions import analyze_db, tupelize_links, dict_factory, custom_enumerate, print_elapsed_time, yield_gazetteer
 import helpers.comparator_functions as cf
 
 start_time = time.time()
@@ -111,7 +111,8 @@ field = field.strip()
 pq_entity_id = "goid" # defines the link to proquest
 tbl_linking_info = "linking_info"
 tbl_linked_ids = "linked_ids"
-# the order and names of columns for the linked identifiers
+# the order and names of columns for the linked identifiers 
+# XXX this can be moved to create links to avoid issues with differnece between gazetteer and normal linking
 column_order_links = f"""AuthorId INT
                     , {pq_entity_id} INT """
 
