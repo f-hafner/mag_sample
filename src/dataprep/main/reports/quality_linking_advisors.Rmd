@@ -39,10 +39,6 @@ src_dbi(con)
 ```{r}
 # parameters for selecting links 
 min_score_advisors <- 0.7 # minimum score from dedupe 
-max_year_diff <- 5 # maximum difference between advisory and own publication at institution. 5 is arbitrary but perhaps makes sense: I publish something at Aalto, start advising a first-year student, then move elsewhere. then I would still figure as advisor at Aalto
-max_uniname_distance <- 0.02 # keep only links where the jarowinkler distance between the institution naems is below that threshold. 0.02 is conservative
-
-
 
 ```
 
@@ -51,18 +47,6 @@ max_uniname_distance <- 0.02 # keep only links where the jarowinkler distance be
 
 ```{r, include = FALSE}
 
-current_links <- tbl(con, sql("
-                              select * 
-                              from current_links 
-                              inner join (
-                                select authorid, normalizedname as author_name
-                                from authors 
-                              ) using(authorid)
-                              inner join (
-                                select AuthorId, main_institutions_career
-                                from author_info_linking
-                              ) using(authorId)
-                              "))
 linking_info <- tbl(con,
                     sql("select iteration_id, field
                           from (
@@ -109,20 +93,6 @@ theses <- tbl(con, sql("
                        ")
               )
 
-authors_affiliation <- tbl(con, 
-                           sql("
-                               select authorid, year, affil_name
-                               from AuthorAffiliation
-                               inner join (
-                                select affiliationid, normalizedname as affil_name
-                                from affiliations
-                               ) using(affiliationid)
-                               inner join (
-                                select authorid
-                                from current_links
-                               ) using(authorid)
-                               "))
-
 pq_fields_mag <- tbl(con,
                      sql("select goid, normalizedname as field 
                           from pq_fields_mag
@@ -136,13 +106,11 @@ pq_fields_mag <- tbl(con,
 
 
 ```{r}
-
-current_links <- collect(current_links)
 linked_advisors <- collect(linked_advisors)
 theses <- collect(theses)
-authors_affiliation <- collect(authors_affiliation)
 linking_info <- collect(linking_info)
 pq_fields_mag <- collect(pq_fields_mag)
+
 ```
 
 
@@ -234,8 +202,8 @@ score_by_year %>%
     - not linking an advisor in biology does not mean do not link them in chemistry if the thesis is also classified in chemistry
     - in the data above, this happens if biology is listed at position 0
   - Biology 
-    - main field chemistry: gerlt, cooperman, eveleigh (two of them with long careers, but both in chemistry), tsai
-    - main field bioloyg: dasgupta, freeling
+    <!-- - main field chemistry: gerlt, cooperman, eveleigh (two of them with long careers, but both in chemistry), tsai -->
+    - main field biology: dasgupta, freeling
     - at least one of the dissertations of freeling are sampled for the linking 
   - Sociology
     - different main field: ishisaka, coulton (medicine), howell (geography), mindel (psychology)
@@ -423,7 +391,193 @@ s_thesis_advisor_link %>%
 
 
 
+# Check whether the entities exist at all in the underlying data from MAG 
+
+Copy-paste the sql query for now
+
+
+```{r}
+fieldofstudy_id <- 86803240
+query_mag <- paste0(
+  "SELECT f.AuthorId
+        , f.year
+        , f.YearLastPub
+        , f.firstname
+        , f.lastname
+        , CASE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            WHEN 
+                '' THEN NULL 
+                ELSE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            END as middlename 
+        , f.fieldofstudy
+        , g.keywords
+        , g.coauthors
+        , g.institution
+        , g.main_us_institutions_year
+    FROM (
+        SELECT a.AuthorId
+            , a.YearFirstPub AS year
+            , a.YearLastPub 
+            , a.FirstName AS firstname
+            , REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, ' ', '')), '') AS lastname 
+            , TRIM(SUBSTR(b.NormalizedName, length(a.FirstName) + 1)) AS middle_lastname 
+            , length(b.NormalizedName) as l_fullname 
+            , length(a.FirstName) as l_firstname
+            , length(REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, ' ', '')), '')) as l_lastname
+            , e.NormalizedName AS fieldofstudy
+        FROM author_sample AS a
+        INNER JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM Authors
+        ) AS b USING(AuthorId)
+        INNER JOIN (
+            SELECT AuthorId
+            FROM author_field0
+            WHERE FieldOfStudyId_lvl0 =", fieldofstudy_id, "
+                AND Degree <= 0
+        ) USING(AuthorId)
+        LEFT JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM author_fields c
+            INNER JOIN (
+                SELECT FieldOfStudyId, NormalizedName
+                FROM FieldsOfStudy
+            ) AS d USING(FieldOfStudyId)
+            INNER JOIN (
+                SELECT ParentFieldOfStudyId, ChildFieldOfStudyId
+                FROM crosswalk_fields
+                WHERE ParentLevel = 0
+                    AND ParentFieldOfStudyId = ", fieldofstudy_id, "
+            ) AS e ON (e.ChildFieldOfStudyId = c.FieldOfStudyId)
+            WHERE FieldClass = 'first'
+        ) AS e USING(AuthorId)
+    ) f
+    LEFT JOIN (
+        SELECT AuthorId
+                , main_us_institutions_career as institution
+                , coauthors
+                , keywords
+                , main_us_institutions_year
+                , all_us_institutions_year
+        FROM author_info_linking
+    ) AS g USING(AuthorId)
+    WHERE length(firstname) > 1 AND year >= 1985 AND year <= 2015 + 5 AND institution is not NULL
+    AND institution not like '%chinese academy of sciences%'
+    "
+)
+
+advisor_sample_mag <- tbl(con, sql(query_mag))
+advisor_sample_mag <- collect(advisor_sample_mag)
+
+```
+
+
+
+
+```{r}
+unlinked_advisors <- score_by_year %>%
+  filter(field == "biology"
+          & is.na(link_score)) %>% 
+  group_by(firstname, lastname, uni_name, degree_year) %>%
+  summarise(nb = n(),
+            .groups = "drop") 
+
+dk <- unlinked_advisors %>%
+  left_join(advisor_sample_mag %>%
+              select(AuthorId, year, firstname, lastname, main_us_institutions_year),
+            by = c("firstname", "lastname", "degree_year" = "year"))
+
+
+```
+
+
+```{r}
+head(dk %>% filter(is.na(AuthorId) & degree_year <= 2015) %>% arrange(desc(nb)), 10)
+```
+
+
+Do these entities exist in MAG?
+- andrew fire 2012 in stanford. yes. not in advisor sample. authorid 683352831.
+- benjamin c start 2002 at iit. yes. has some duplicates. is in advisor sample. authorid 1992276655.
+- garry nolan 2010 stanford. yes. not in advisor sample. authorid 1989754750.
+- 
+
+
+```{r}
+head(dk %>% filter(is.na(AuthorId) & degree_year <= 2000) %>% arrange(desc(nb)), 10)
+```
+
+- dagmar ringe 2000 brandeis. yes. has some duplicates. not in advisor sample. authorid 2171354986
+- naba k gupta 1997 at nebraska lincoln. yes. has some duplicates. not in advisor sample. authorid 2298396241
+
+## Why are so many not in the sample? note they are all in author_sample
+- not in biology. no, they all have field level 0 biology. 
+- none of them has chinese academy of sciences affiliation
+- other filtering
+  - all of the examples above start their publishing career before 1985. Our query for the linking wrongly filters them out.
+
 
 ```{r, include = FALSE}
 DBI::dbDisconnect(con)
 ```
+
+
+Here is some sql code that I used for checking the cases of the non-linked biology advisors
+
+
+```{sql}
+
+
+-- 1. they are not in the sample 
+-- 2. they are not recognized as links: (a) the model is wrong, (b) the data are wrong (ie, dedupe is confused by the dupes in MAG)
+-- the fact that the same entities are not linked even after our improvements suggests perhaps that we are in case 2.b)? but then, dasgupta has no duplicates in MAG
+
+-- from older checks:
+-- john a gerlt: actually registered as "j a gerlt" in MAG (authorid 93129757). dedupe links him to authorid 3129783099 in 2000, 2009, 2010, 2014. this is b/c of the duplicate entity
+-- asim dasgupta: authorid 2150423063; 
+
+-- authors: 2298396241, 2171354986, 683352831, 1989754750
+
+-- all of them are in biology
+select count(distinct authorid)
+from author_field0 a
+inner join (
+    select fieldofstudyid, normalizedname
+    from fieldsofstudy
+) b on (a.fieldofstudyid_lvl0 = b.fieldofstudyid)
+where authorid in (2298396241, 2171354986, 683352831, 1989754750) 
+and a.Degree = 0
+and normalizedname = "biology"
+
+-- none of them are in chinese academy of sciences
+select count(*)
+from author_info_linking
+where authorid in (2298396241, 2171354986, 683352831, 1989754750)
+and main_us_institutions_career not like "chinese academy of sciences"
+
+-- only two have no missing information on the first field. but is this relevant? -> clearly not, as otherwise these two would still be in the advisor sample
+SELECT AuthorId, NormalizedName
+FROM author_fields c
+INNER JOIN (
+    SELECT FieldOfStudyId, NormalizedName
+    FROM FieldsOfStudy
+) AS d USING(FieldOfStudyId)
+-- ## Condition on fieldofstudy being in the level 0 id_field
+INNER JOIN (
+    SELECT ParentFieldOfStudyId, ChildFieldOfStudyId
+    FROM crosswalk_fields
+    WHERE ParentLevel = 0
+        AND ParentFieldOfStudyId IN (86803240)
+) AS e ON (e.ChildFieldOfStudyId = c.FieldOfStudyId)
+WHERE FieldClass = 'first'
+and authorid in (2298396241, 2171354986, 683352831, 1989754750)
+limit 10;
+
+-- they all start publishing before 1985
+select * 
+from author_sample 
+where authorid in (2298396241, 2171354986, 683352831, 1989754750)
+
+
+```
+

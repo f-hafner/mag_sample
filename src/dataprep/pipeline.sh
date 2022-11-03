@@ -78,35 +78,37 @@ Rscript -e "rmarkdown::render('$script_path/reports/quality_proquest.Rmd', outpu
 Rscript -e "rmarkdown::render('$script_path/reports/sample_size_linking.Rmd', output_dir = '$output_path')" \
     &> $logfile_path/sample_size_linking.log
 
-# ## Link graduates to MAG
+# # Link
+
+# ## 1. Link graduates to MAG
 bash $script_path/link/graduates.sh $logfile_path
+
+python -m $script_path.link.write_csv_links --linking_type "graduates" --train_name "christoph_fielddegree0" \
+    &> $logfile_path/write_csv_links_graduates.log
 
 Rscript -e "rmarkdown::render('$script_path/reports/quality_linking.Rmd', output_dir = '$output_path')" \
     &> $logfile_path/quality_linking.log
 
-# ## Link advisors to MAG
+# ## 2. Link thesis advisors to MAG
 bash $script_path/link/advisors.sh &> $logfile_path/link_advisors.log
 
-Rscript -e "rmarkdown::render('$script_path/reports/quality_linking_advisors.Rmd', output_dir = '$output_path')" \
-    &> $logfile_path/quality_linking_advisors.log
-
-# ## Link NSF grants to MAG advisors
-bash $script_path/link/grants.sh $logfile_path
-
-# Manual split of biology!
+# Manual split of biology! TODO: can we delete this?
 # bash $script_path/link/write_links_biology
 # python -m $script_path.link.merge_biology_csv
 
-# Write the links from csv 
-python -m $script_path.link.write_csv_links --linking_type "graduates" --train_name "christoph_fielddegree0" \
-    &> $logfile_path/write_csv_links_graduates.log
+# ### Write the links from csv 
 python -m $script_path.link.write_csv_links --linking_type "advisors" --train_name "christoph_degree0" \
     &> $logfile_path/write_csv_links_advisors.log
+    
+Rscript -e "rmarkdown::render('$script_path/reports/quality_linking_advisors.Rmd', output_dir = '$output_path')" \
+    &> $logfile_path/quality_linking_advisors.log
 
+
+# ## 3. Link NSF grants to MAG advisors
+bash $script_path/link/grants.sh $logfile_path
+
+
+# # Generate panel data set etc. for the linked entities
 python -m $script_path.link.prep_linked_data \
     --filter_trainname "christoph_" \
     &> $logfile_path/prep_linked_data.log
-
-# TODO: add report on quality of linking here
-
-
