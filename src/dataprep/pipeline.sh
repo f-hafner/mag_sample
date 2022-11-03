@@ -96,7 +96,6 @@ bash $script_path/link/advisors.sh &> $logfile_path/link_advisors.log
 # bash $script_path/link/write_links_biology
 # python -m $script_path.link.merge_biology_csv
 
-# ### Write the links from csv 
 python -m $script_path.link.write_csv_links --linking_type "advisors" --train_name "christoph_degree0" \
     &> $logfile_path/write_csv_links_advisors.log
     

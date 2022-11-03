@@ -238,27 +238,22 @@ if __name__ == "__main__":
         if not os.path.isdir(path_temp_files):
           os.mkdir(path_temp_files)
 
-        d_links = pd.read_sql(
-            con=write_con,
-            sql=f"select * from {tbl_linked_ids}"
-        )
-        d_linking_info = pd.read_sql(
-            con=write_con,
-            sql=f"select * from {tbl_linking_info}"
-        )
+        data_to_write = {
+            "links": pd.read_sql(
+                con=write_con,
+                sql=f"select * from {tbl_linked_ids}"),
+            "linking_info": pd.read_sql(
+                con=write_con, 
+                sql=f"select * from {tbl_linking_info}")
+        }
 
-        d_links = d_links.drop(columns=["iteration_id"])
-        d_linking_info = d_linking_info.drop(columns=["iteration_id"])
+        for name, data in data_to_write.items():
+            data = data.drop(columns=["iteration_id"])
+            filename = path_temp_files + name + file_suffix + ".csv"
+            if os.path.exists(filename): # not doing this can result in permission problems
+                os.remove(filename)
+            data.to_csv(filename, index=False)
 
-        d_links.to_csv(
-            path_or_buf=path_temp_files + "links" + file_suffix + ".csv",
-            index=False
-        )
-
-        d_linking_info.to_csv(
-            path_or_buf=path_temp_files + "linking_info" + file_suffix + ".csv",
-            index=False
-        )
         print("Done copying to csv...", flush=True)
 
 
@@ -266,8 +261,8 @@ if __name__ == "__main__":
         c.close()
 
    
-    if args.write_to == "csv":
-        os.remove(path_temp_files + file_suffix + ".sqlite")
+    if args.write_to == "csv": 
+        os.remove(temp_database_name)
         print("Deleted the temporary database...")    
     
     
