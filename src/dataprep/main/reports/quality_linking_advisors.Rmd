@@ -190,7 +190,6 @@ score_by_year %>%
 
 ### Notes 
 
-
 - Reasons for why advisor not linked
   - they are not sampled for linking either in the mag or proquest data
     - most plausibly because they are assigned to different fields 
@@ -215,23 +214,49 @@ score_by_year %>%
 
 
 ### Update, 4/11/22
+
+#### Biology
 - c brent theurer (authorid 2005171991), c channa reddy (authorid 2263585539): not in advisor sample b/c of the constraint on the length of the first name. can we fix this?
 - john a gerlt: similar; is in mag with j a or ja gerlt
 - daniel rittschof: his author id is 2242600877 and his name there is dan rittschof
 - mingdaw tsai (authorid 2159629249), naba k gupta (authorid 2298396241), paul f cook (authorid 2107503814), eric n olson (2029316736) are all in the advisor sample from mag
   - do their affiliation-years exactly match in MAG? all except olson, who has a special affiliation    
-  - what are the possibilities then?
-    - algorithm
-      - blocking: predicates are `(SimplePredicate: (commonSixGram, lastname), SimplePredicate: (commonFourGram, middlename))`. In contrast, for the settings file 1985-2022, the predicates are `(SimplePredicate: (suffixArray, lastname),)`. For chemistry, they are `(SimplePredicate: (sameSevenCharStartPredicate, lastname),)`
-        - why do we use another training data set again here?
-      - logistic regression
-      - they are false negatives. compared to chemistry, it seems weird to have such a high false negative rate (this assumes that all the advisors we do currently not find are actually in the data)
-    - training
-    - the features are wrong. -- No, they are correct. 
-    - the comparator is wrong. but then why does it work for other fields?
-  - any reason should ideally also explain why it works for chemistry but not for biology
+
+#### Physics
+- h angus macleod (2169098584): first initial
+- g michael morris (2232988940): first initial
+- cyrus duncan cantrell: hard to find in MAG, if non-existent. https://news.utdallas.edu/faculty-staff/engineering-school-visionary-dr-cyrus-cantrell-mou/
+- robert l byer: only late in mag, but exists as "r l byer" (authorid 2047849238)
+- clifford m will (2150132651): could be linked but is not
+- c fred moore (2317232422): first initial.
+
+#### Political science
+- chester a newland (2142560737): could be matched, but year-uni are 3 years apart
+- orion f white (2116764412): could be matched
+- a lucille brewer: could not find. hard to find.
+- christopher bellavita: could not find
+- m margaret conway (2104998712): first initial
+- mitchell a seligson (608794441): could be matched
+- bernard grofman (402009535): could be matched
+- chester a newland (2142560737): could be matched
+
+#### validate: does this also hold for economics?
+- there, the top 10 non-matched advisors all have only first initials 
+
+
+### Possible reasons for the non-linking 
+- algorithm
+  - blocking: predicates are `(SimplePredicate: (commonSixGram, lastname), SimplePredicate: (commonFourGram, middlename))`. In contrast, for the settings file 1985-2022, the predicates are `(SimplePredicate: (suffixArray, lastname),)`. For chemistry, they are `(SimplePredicate: (sameSevenCharStartPredicate, lastname),)`
+    - why do we use another training data set again here?
+  - logistic regression
+  - they are false negatives. compared to chemistry, it seems weird to have such a high false negative rate (this assumes that all the advisors we do currently not find are actually in the data)
+- training
+- the features are wrong. -- No, they are correct. 
+- the comparator is wrong. but then why does it work for other fields?
+- any reason should ideally also explain why it works for chemistry but not for biology
 - How can we fix the algorithm?
-  - we could relax the feature "same firstname"/"same lastname", particularly for advisors where the affiliation is a good and precise feature
+- we could relax the feature "same firstname"/"same lastname", particularly for advisors where the affiliation is a good and precise feature
+- in some fields it seems important to have people with first initials.
 
 
 
@@ -413,131 +438,6 @@ s_thesis_advisor_link %>%
 ## Note: the "usable" links are saved to the db in src/dataprep/main/link/prep_linked_data.py
 
 
-
-# Check whether the entities exist at all in the underlying data from MAG 
-
-Copy-paste the sql query for now
-
-
-```{r}
-fieldofstudy_id <- 86803240
-query_mag <- paste0(
-  "SELECT f.AuthorId
-        , f.year
-        , f.YearLastPub
-        , f.firstname
-        , f.lastname
-        , CASE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
-            WHEN 
-                '' THEN NULL 
-                ELSE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
-            END as middlename 
-        , f.fieldofstudy
-        , g.keywords
-        , g.coauthors
-        , g.institution
-        , g.main_us_institutions_year
-    FROM (
-        SELECT a.AuthorId
-            , a.YearFirstPub AS year
-            , a.YearLastPub 
-            , a.FirstName AS firstname
-            , REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, ' ', '')), '') AS lastname 
-            , TRIM(SUBSTR(b.NormalizedName, length(a.FirstName) + 1)) AS middle_lastname 
-            , length(b.NormalizedName) as l_fullname 
-            , length(a.FirstName) as l_firstname
-            , length(REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, ' ', '')), '')) as l_lastname
-            , e.NormalizedName AS fieldofstudy
-        FROM author_sample AS a
-        INNER JOIN (
-            SELECT AuthorId, NormalizedName
-            FROM Authors
-        ) AS b USING(AuthorId)
-        INNER JOIN (
-            SELECT AuthorId
-            FROM author_field0
-            WHERE FieldOfStudyId_lvl0 =", fieldofstudy_id, "
-                AND Degree <= 0
-        ) USING(AuthorId)
-        LEFT JOIN (
-            SELECT AuthorId, NormalizedName
-            FROM author_fields c
-            INNER JOIN (
-                SELECT FieldOfStudyId, NormalizedName
-                FROM FieldsOfStudy
-            ) AS d USING(FieldOfStudyId)
-            INNER JOIN (
-                SELECT ParentFieldOfStudyId, ChildFieldOfStudyId
-                FROM crosswalk_fields
-                WHERE ParentLevel = 0
-                    AND ParentFieldOfStudyId = ", fieldofstudy_id, "
-            ) AS e ON (e.ChildFieldOfStudyId = c.FieldOfStudyId)
-            WHERE FieldClass = 'first'
-        ) AS e USING(AuthorId)
-    ) f
-    LEFT JOIN (
-        SELECT AuthorId
-                , main_us_institutions_career as institution
-                , coauthors
-                , keywords
-                , main_us_institutions_year
-                , all_us_institutions_year
-        FROM author_info_linking
-    ) AS g USING(AuthorId)
-    WHERE length(firstname) > 1 AND f.YearLastPub >= 1985 AND year <= 2015 + 5 AND institution is not NULL
-    AND institution not like '%chinese academy of sciences%'
-    "
-)
-
-advisor_sample_mag <- tbl(con, sql(query_mag))
-advisor_sample_mag <- collect(advisor_sample_mag)
-
-```
-
-
-
-
-```{r}
-unlinked_advisors <- score_by_year %>%
-  filter(field == "biology"
-          & is.na(link_score)) %>% 
-  group_by(firstname, lastname, uni_name, degree_year) %>%
-  summarise(nb = n(),
-            .groups = "drop") 
-
-dk <- unlinked_advisors %>%
-  left_join(advisor_sample_mag %>%
-              select(AuthorId, year, firstname, lastname, main_us_institutions_year),
-            by = c("firstname", "lastname", "degree_year" = "year"))
-
-
-```
-
-
-```{r}
-head(dk %>% filter(is.na(AuthorId) & degree_year <= 2015) %>% arrange(desc(nb)), 10)
-```
-
-
-Do these entities exist in MAG?
-- andrew fire 2012 in stanford. yes. not in advisor sample. authorid 683352831.
-- benjamin c start 2002 at iit. yes. has some duplicates. is in advisor sample. authorid 1992276655.
-- garry nolan 2010 stanford. yes. not in advisor sample. authorid 1989754750.
-- 
-
-
-```{r}
-head(dk %>% filter(is.na(AuthorId) & degree_year <= 2000) %>% arrange(desc(nb)), 10)
-```
-
-- dagmar ringe 2000 brandeis. yes. has some duplicates. not in advisor sample. authorid 2171354986
-- naba k gupta 1997 at nebraska lincoln. yes. has some duplicates. not in advisor sample. authorid 2298396241
-
-## Why are so many not in the sample? note they are all in author_sample
-- not in biology. no, they all have field level 0 biology. 
-- none of them has chinese academy of sciences affiliation
-- other filtering
-  - all of the examples above start their publishing career before 1985. Our query for the linking wrongly filters them out.
 
 
 ```{r, include = FALSE}
