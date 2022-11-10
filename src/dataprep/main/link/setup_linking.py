@@ -11,7 +11,7 @@ import pdb
 import argparse
 import pandas as pd
 from datetime import datetime
-
+from tqdm import tqdm
 import sqlite3 as sqlite
 
 import dedupe
@@ -19,7 +19,7 @@ import dedupe.backport
 from collections import OrderedDict
 
 from helpers.variables import db_file, datapath
-from helpers.functions import analyze_db, tupelize_links, dict_factory, custom_enumerate, print_elapsed_time
+from helpers.functions import analyze_db, tupelize_links, dict_factory, custom_enumerate, print_elapsed_time, yield_gazetteer
 import helpers.comparator_functions as cf
 
 start_time = time.time()
@@ -68,8 +68,10 @@ parser.add_argument("--loadstart", dest = "loadstartyear", type = int,
                     default = 0, help = "Load Start year for records, 0 for using startyear")
 parser.add_argument("--loadend", dest = "loadendyear", type = int, 
                     default = 0, help = "Load End year for records, 0 for using endyear")
+# Note: loadstart, loadend are only relevant when we want to create links for separate time periods.
+    # For example, we trained data from 2000-2010, but create links separately for 2000-2005 and 2006-2010.
 parser.add_argument("--mergemode", dest = "mergemode", type = str, 
-                    default = "1:1", help = "m:1 or 1:1")
+                    default = "1:1", help = "m:1 or 1:1, gazetteer needs separate setting of n_macthes")
 parser.add_argument("--recall", dest = "recall", type = float,
                     default = 0.9, choices = [Range(0.0, 1.0)],
                     help = "Higher recall recovers more links labelled as true, but lowers precision (more false positives)")
@@ -79,13 +81,13 @@ parser.add_argument("--fieldofstudy_str", type=str, help = "use fieldofstudy as 
 parser.add_argument("--keywords", type=str, help = "use keywords for learning?") 
 parser.add_argument("--retrain", type = str, default = "True", help = "force retrain!?")   
 parser.add_argument("--linking_type", type = str, default = "graduates",
-                    help = "Are we linking graduates or advisors?", choices = {"graduates", "advisors", "grants"}) 
+                    help = "Are we linking graduates or advisors or grants?", choices = {"graduates", "advisors", "grants"}) 
 parser.add_argument("--ntrain", type=int, default=100000, dest="samplesize",
                     help="Sample size argument for dedupe.prepare_training()")
 parser.add_argument("--to", type=str, default="database", dest="write_to", 
                     choices={"database", "csv"},
                     help="Write to database or csv?")
-        
+
 parser.set_defaults(testing="True")
 parser.set_defaults(institution="False")
 parser.set_defaults(fieldofstudy_cat="False")
@@ -111,7 +113,8 @@ field = field.strip()
 pq_entity_id = "goid" # defines the link to proquest
 tbl_linking_info = "linking_info"
 tbl_linked_ids = "linked_ids"
-# the order and names of columns for the linked identifiers
+# the order and names of columns for the linked identifiers 
+# XXX this can be moved to create links to avoid issues with differnece between gazetteer and normal linking
 column_order_links = f"""AuthorId INT
                     , {pq_entity_id} INT """
 
@@ -187,7 +190,11 @@ read_dict_con = sqlite.connect(database = db_file, isolation_level = None)
 if args.write_to == "csv": # this is much simpler b/c we can use the same functions to write the links as for the main db
     path_temp_files = datapath + "linked_ids_temp/"
     file_suffix = "_" + args.linking_type + "_" + field_to_store + "_" + args.train_name + "_" + str(args.loadstartyear) + str(args.loadendyear) 
-    write_con = sqlite.connect(database = path_temp_files + file_suffix + ".sqlite", isolation_level= None) # database will be deleted at end of create_link script, if file changed here need to adapt there too.
+    temp_database_name = path_temp_files + file_suffix + ".sqlite"
+    if os.path.exists(temp_database_name): # make sure that we do not write links multiple times by appending to an existing table/db
+        os.remove(temp_database_name)
+
+    write_con = sqlite.connect(database = temp_database_name, isolation_level= None) # database will be deleted at end of create_link script, if file changed here need to adapt there too.
     msg = "I set the write connection to temporary database."
 else:
     write_con = sqlite.connect(database = db_file, isolation_level= None)
@@ -217,10 +224,11 @@ id_field = [f[0] for f in id_field.fetchall()]
 print(f"id_field is {id_field} and will be passed to sql queries.")
 
 # SQL STATEMENTS FOR EXTRACTS
-where_stmt = f"WHERE year >= {args.loadstartyear} and year <= {args.loadendyear} AND length(firstname) > 1"
-where_stmt_mag = f"WHERE length(firstname) > 1 AND year >= {args.loadstartyear} - 5 AND year <= {args.loadendyear} + 5" # changed this to incorporate more people
+where_stmt_pq = f"WHERE year >= {args.loadstartyear} and year <= {args.loadendyear} AND length(firstname) > 1"
 
 if args.linking_type == "graduates":
+    where_stmt_mag = f"WHERE length(firstname) > 1 AND year >= {args.loadstartyear} - 5 AND year <= {args.loadendyear} + 5" # changed this to incorporate more people
+
     query_proquest = f"""
     SELECT goid
             , year
@@ -268,7 +276,7 @@ if args.linking_type == "graduates":
         FROM pq_unis
         WHERE location like "%United States%"
     ) USING(university_id)
-    {where_stmt}
+    {where_stmt_pq}
     """
 
     query_mag = f"""
@@ -349,8 +357,7 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
         , g.all_us_institutions_year
     """
     #where_stmt_mag = f"WHERE length(firstname) > 1 AND f.YearLastPub >= {args.startyear} - 5 AND year <= {args.endyear} + 5" 
-    where_stmt_mag = f"WHERE length(firstname) > 1 AND year >= {args.loadstartyear} - 5 AND year <= {args.loadendyear} + 5"  
-
+    where_stmt_mag = f"WHERE length(firstname) > 1 AND f.YearLastPub  >= {args.loadstartyear} - 5 AND year <= {args.loadendyear} + 5" # "year" is YearFirstPub 
 
     # note: this still sources field of study, but it is level 0 and thus the same for everyone 
     query_mag = f"""
@@ -477,7 +484,7 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
             FROM pq_unis --## mark: previously we linked advisors anywhere in the world (as career outcomes). for now, focus on US
             WHERE location like "%United States%"
         ) USING(university_id)
-        {where_stmt}
+        {where_stmt_pq}
         """
     elif args.linking_type == "grants":
         # condition the nsf data on major directorate

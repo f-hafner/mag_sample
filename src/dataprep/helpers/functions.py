@@ -105,3 +105,16 @@ def custom_enumerate(s, idx):
     for elem in s:
         yield elem[idx], elem
 
+
+
+def yield_gazetteer(results, iteration_id):
+    """
+    Return a tuple from the generator `results`; add `iteration_id` as the last element of the tuple.
+    """
+    for cluster_id, (messy_id, matches) in enumerate(results):
+        if len(matches)==0: 
+            continue
+        else:
+            for canon_id, score in matches:
+                # XXX for graduates the column order of links needs to be adjusted!
+                yield (messy_id, canon_id, score, iteration_id)            

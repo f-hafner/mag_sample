@@ -112,16 +112,15 @@ if __name__ == "__main__":
         pairs = linker.pairs(data_1 = otherdata, data_2 = magdata)
     elif args.linking_type == "grants":
         pairs = linker.pairs(data_1 = magdata, data_2 = otherdata)
-
     
     print("made pairs", flush=True)
     scores = linker.score(pairs)
     print("calculated scores", flush=True)
     if args.mergemode=="m:1":
-        links = linker.many_to_one(scores, threshold = 0)
+        links = linker.many_to_one(scores, threshold = 0.5)
         print("made m:1 links", flush=True)
     else:
-        links = linker.one_to_one(scores, threshold = 0)
+        links = linker.one_to_one(scores, threshold = 0.5)
         print("made 1:1 links", flush=True)
 
     
@@ -164,6 +163,7 @@ if __name__ == "__main__":
         , mergemode TEXT
     )
     """)
+    print("Filled table info...", flush=True)
 
     last_iteration = read_con.execute(f"SELECT MAX(iteration_id) FROM {tbl_linking_info}").fetchall()[0][0]
     if last_iteration is None:
@@ -171,16 +171,21 @@ if __name__ == "__main__":
     else:
         iteration_id = last_iteration + 1
 
+    print("Iteration id is " + str(iteration_id), flush=True)
+
     # HERE FLAVIO DELETED LINKS FROM OLD RUNS. SEE link_mag_proquest.py if you want to readd it.
     # ### Write links 
     print("Filling links into db...", flush=True)
-
+    links = [(i[0][0], i[0][1], i[1], iteration_id) for i in links]
+    
     write_con.executemany(
         f"INSERT INTO {tbl_linked_ids} VALUES (?, ?, ?, ?)",
-        tupelize_links(links, iteration_id)
+       # tupelize_links(links, iteration_id)
+       links
     )
     write_con.commit()
 
+    print("Filled links into db...", flush=True)
 
     # ### Write iteration info
     current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -193,6 +198,8 @@ if __name__ == "__main__":
         args.train_name, args.institution, args.fieldofstudy_cat, args.fieldofstudy_str, args.keywords, args.mergemode)
     )
     write_con.commit()
+
+    print("Wrote linking info into db...", flush=True)
 
     # ## Check fraction matched. Currently only for graduates.
     if args.linking_type == "graduates":
@@ -231,27 +238,22 @@ if __name__ == "__main__":
         if not os.path.isdir(path_temp_files):
           os.mkdir(path_temp_files)
 
-        d_links = pd.read_sql(
-            con=write_con,
-            sql=f"select * from {tbl_linked_ids}"
-        )
-        d_linking_info = pd.read_sql(
-            con=write_con,
-            sql=f"select * from {tbl_linking_info}"
-        )
+        data_to_write = {
+            "links": pd.read_sql(
+                con=write_con,
+                sql=f"select * from {tbl_linked_ids}"),
+            "linking_info": pd.read_sql(
+                con=write_con, 
+                sql=f"select * from {tbl_linking_info}")
+        }
 
-        d_links = d_links.drop(columns=["iteration_id"])
-        d_linking_info = d_linking_info.drop(columns=["iteration_id"])
+        for name, data in data_to_write.items():
+            data = data.drop(columns=["iteration_id"])
+            filename = path_temp_files + name + file_suffix + ".csv"
+            if os.path.exists(filename): # not doing this can result in permission problems
+                os.remove(filename)
+            data.to_csv(filename, index=False)
 
-        d_links.to_csv(
-            path_or_buf=path_temp_files + "links" + file_suffix + ".csv",
-            index=False
-        )
-
-        d_linking_info.to_csv(
-            path_or_buf=path_temp_files + "linking_info" + file_suffix + ".csv",
-            index=False
-        )
         print("Done copying to csv...", flush=True)
 
 
@@ -259,8 +261,8 @@ if __name__ == "__main__":
         c.close()
 
    
-    if args.write_to == "csv":
-        os.remove(path_temp_files + file_suffix + ".sqlite")
+    if args.write_to == "csv": 
+        os.remove(temp_database_name)
         print("Deleted the temporary database...")    
     
     

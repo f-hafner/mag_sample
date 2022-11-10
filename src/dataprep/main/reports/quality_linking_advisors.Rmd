@@ -39,10 +39,6 @@ src_dbi(con)
 ```{r}
 # parameters for selecting links 
 min_score_advisors <- 0.7 # minimum score from dedupe 
-max_year_diff <- 5 # maximum difference between advisory and own publication at institution. 5 is arbitrary but perhaps makes sense: I publish something at Aalto, start advising a first-year student, then move elsewhere. then I would still figure as advisor at Aalto
-max_uniname_distance <- 0.02 # keep only links where the jarowinkler distance between the institution naems is below that threshold. 0.02 is conservative
-
-
 
 ```
 
@@ -51,18 +47,6 @@ max_uniname_distance <- 0.02 # keep only links where the jarowinkler distance be
 
 ```{r, include = FALSE}
 
-current_links <- tbl(con, sql("
-                              select * 
-                              from current_links 
-                              inner join (
-                                select authorid, normalizedname as author_name
-                                from authors 
-                              ) using(authorid)
-                              inner join (
-                                select AuthorId, main_institutions_career
-                                from author_info_linking
-                              ) using(authorId)
-                              "))
 linking_info <- tbl(con,
                     sql("select iteration_id, field
                           from (
@@ -109,20 +93,6 @@ theses <- tbl(con, sql("
                        ")
               )
 
-authors_affiliation <- tbl(con, 
-                           sql("
-                               select authorid, year, affil_name
-                               from AuthorAffiliation
-                               inner join (
-                                select affiliationid, normalizedname as affil_name
-                                from affiliations
-                               ) using(affiliationid)
-                               inner join (
-                                select authorid
-                                from current_links
-                               ) using(authorid)
-                               "))
-
 pq_fields_mag <- tbl(con,
                      sql("select goid, normalizedname as field 
                           from pq_fields_mag
@@ -136,13 +106,11 @@ pq_fields_mag <- tbl(con,
 
 
 ```{r}
-
-current_links <- collect(current_links)
 linked_advisors <- collect(linked_advisors)
 theses <- collect(theses)
-authors_affiliation <- collect(authors_affiliation)
 linking_info <- collect(linking_info)
 pq_fields_mag <- collect(pq_fields_mag)
+
 ```
 
 
@@ -222,7 +190,6 @@ score_by_year %>%
 
 ### Notes 
 
-
 - Reasons for why advisor not linked
   - they are not sampled for linking either in the mag or proquest data
     - most plausibly because they are assigned to different fields 
@@ -234,8 +201,8 @@ score_by_year %>%
     - not linking an advisor in biology does not mean do not link them in chemistry if the thesis is also classified in chemistry
     - in the data above, this happens if biology is listed at position 0
   - Biology 
-    - main field chemistry: gerlt, cooperman, eveleigh (two of them with long careers, but both in chemistry), tsai
-    - main field bioloyg: dasgupta, freeling
+    <!-- - main field chemistry: gerlt, cooperman, eveleigh (two of them with long careers, but both in chemistry), tsai -->
+    - main field biology: dasgupta, freeling
     - at least one of the dissertations of freeling are sampled for the linking 
   - Sociology
     - different main field: ishisaka, coulton (medicine), howell (geography), mindel (psychology)
@@ -244,6 +211,53 @@ score_by_year %>%
 - Next steps
   - widen the sampled field in MAG 
   - re-train and re-check 
+
+
+### Update, 4/11/22
+
+#### Biology
+- c brent theurer (authorid 2005171991), c channa reddy (authorid 2263585539): not in advisor sample b/c of the constraint on the length of the first name. can we fix this?
+- john a gerlt: similar; is in mag with j a or ja gerlt
+- daniel rittschof: his author id is 2242600877 and his name there is dan rittschof
+- mingdaw tsai (authorid 2159629249), naba k gupta (authorid 2298396241), paul f cook (authorid 2107503814), eric n olson (2029316736) are all in the advisor sample from mag
+  - do their affiliation-years exactly match in MAG? all except olson, who has a special affiliation    
+
+#### Physics
+- h angus macleod (2169098584): first initial
+- g michael morris (2232988940): first initial
+- cyrus duncan cantrell: hard to find in MAG, if non-existent. https://news.utdallas.edu/faculty-staff/engineering-school-visionary-dr-cyrus-cantrell-mou/
+- robert l byer: only late in mag, but exists as "r l byer" (authorid 2047849238)
+- clifford m will (2150132651): could be linked but is not
+- c fred moore (2317232422): first initial.
+
+#### Political science
+- chester a newland (2142560737): could be matched, but year-uni are 3 years apart
+- orion f white (2116764412): could be matched
+- a lucille brewer: could not find. hard to find.
+- christopher bellavita: could not find
+- m margaret conway (2104998712): first initial
+- mitchell a seligson (608794441): could be matched
+- bernard grofman (402009535): could be matched
+- chester a newland (2142560737): could be matched
+
+#### validate: does this also hold for economics?
+- there, the top 10 non-matched advisors all have only first initials 
+
+
+### Possible reasons for the non-linking 
+- algorithm
+  - blocking: predicates are `(SimplePredicate: (commonSixGram, lastname), SimplePredicate: (commonFourGram, middlename))`. In contrast, for the settings file 1985-2022, the predicates are `(SimplePredicate: (suffixArray, lastname),)`. For chemistry, they are `(SimplePredicate: (sameSevenCharStartPredicate, lastname),)`
+    - why do we use another training data set again here?
+  - logistic regression
+  - they are false negatives. compared to chemistry, it seems weird to have such a high false negative rate (this assumes that all the advisors we do currently not find are actually in the data)
+- training
+- the features are wrong. -- No, they are correct. 
+- the comparator is wrong. but then why does it work for other fields?
+- any reason should ideally also explain why it works for chemistry but not for biology
+- How can we fix the algorithm?
+- we could relax the feature "same firstname"/"same lastname", particularly for advisors where the affiliation is a good and precise feature
+- in some fields it seems important to have people with first initials.
+
 
 
 Here is some python code to look at the learned settings, based on
@@ -278,6 +292,8 @@ linker_cs.classifier.weights
 
 ```
 
+
+sf_biology = "/mnt/ssd/DedupeFiles/advisors/settings_biology_1985_2022_institutionTrue_fieldofstudy_catFalse_fieldofstudy_strFalse_keywordsFalsechristoph_degree0"
 
 
 ## Number of linked advisors 
@@ -427,3 +443,62 @@ s_thesis_advisor_link %>%
 ```{r, include = FALSE}
 DBI::dbDisconnect(con)
 ```
+
+
+Here is some sql code that I used for checking the cases of the non-linked biology advisors
+
+
+```sql
+
+-- 1. they are not in the sample 
+-- 2. they are not recognized as links: (a) the model is wrong, (b) the data are wrong (ie, dedupe is confused by the dupes in MAG)
+-- the fact that the same entities are not linked even after our improvements suggests perhaps that we are in case 2.b)? but then, dasgupta has no duplicates in MAG
+
+-- from older checks:
+-- john a gerlt: actually registered as "j a gerlt" in MAG (authorid 93129757). dedupe links him to authorid 3129783099 in 2000, 2009, 2010, 2014. this is b/c of the duplicate entity
+-- asim dasgupta: authorid 2150423063; 
+
+-- authors: 2298396241, 2171354986, 683352831, 1989754750
+
+-- all of them are in biology
+select count(distinct authorid)
+from author_field0 a
+inner join (
+    select fieldofstudyid, normalizedname
+    from fieldsofstudy
+) b on (a.fieldofstudyid_lvl0 = b.fieldofstudyid)
+where authorid in (2298396241, 2171354986, 683352831, 1989754750) 
+and a.Degree = 0
+and normalizedname = "biology"
+
+-- none of them are in chinese academy of sciences
+select count(*)
+from author_info_linking
+where authorid in (2298396241, 2171354986, 683352831, 1989754750)
+and main_us_institutions_career not like "chinese academy of sciences"
+
+-- only two have no missing information on the first field. but is this relevant? -> clearly not, as otherwise these two would still be in the advisor sample
+SELECT AuthorId, NormalizedName
+FROM author_fields c
+INNER JOIN (
+    SELECT FieldOfStudyId, NormalizedName
+    FROM FieldsOfStudy
+) AS d USING(FieldOfStudyId)
+-- ## Condition on fieldofstudy being in the level 0 id_field
+INNER JOIN (
+    SELECT ParentFieldOfStudyId, ChildFieldOfStudyId
+    FROM crosswalk_fields
+    WHERE ParentLevel = 0
+        AND ParentFieldOfStudyId IN (86803240)
+) AS e ON (e.ChildFieldOfStudyId = c.FieldOfStudyId)
+WHERE FieldClass = 'first'
+and authorid in (2298396241, 2171354986, 683352831, 1989754750)
+limit 10;
+
+-- they all start publishing before 1985
+select * 
+from author_sample 
+where authorid in (2298396241, 2171354986, 683352831, 1989754750)
+
+```
+

@@ -36,6 +36,9 @@ parser.add_argument("--linking_type", type=str, default="graduates",
                     choices = {"graduates", "advisors", "grants"}) 
 parser.add_argument("--train_name", type=str, default="christoph_fielddegree0",
                     help="Training name used for making the links")
+parser.add_argument("--keepyears", type=str, default="19902015",
+                    help="""Keep linking files with this string at the end, ie "field_19902015.csv". If, for a given field, such a file does not exist,
+                            a file without any such suffix (ie, "field.csv") is kept if it exists. """)
 args = parser.parse_args()
 
 # ## Other parameters
@@ -50,26 +53,62 @@ if args.linking_type != "graduates":
     tbl_info = f"{tbl_info}_{args.linking_type}"
 
 files = os.listdir(temp_data_path)
- 
-files = [f for f in files 
-            if args.linking_type in f 
-            if args.train_name in f]
 
-link_files = [f for f in files if "links_" in f]
-info_files = [f for f in files if "linking_info" in f]
-fields = [re.sub(f"links_{args.linking_type}_|.csv|_{args.train_name}", "", x) for x in link_files]
+# currently we have some old files w/o _startyearendyear in the file name suffix, but others (biology) with.
+    # we can only have one file with links per field.
+    # select appropriate files
 
-dict_to_read = {f: {
-                "links": [file for file in link_files if f in file][0] ,
-                "info": [file for file in info_files if f in file][0]
-                }
-            for f in fields
+
+files = {
+    "without_year": [f for f in files if "degree0.csv" in f],
+    "with_year":  [f for f in files if not "degree0.csv" in f
+                    if args.keepyears in f]
 }
 
+for k, v in files.items():
+    files[k] = [f for f in v 
+                    if args.linking_type in f 
+                    if args.train_name in f]
+
+for k, v in files.items():
+    files[k] = {
+        "link_files": [file for file in v if "links_" in file],
+        "info_files": [file for file in v if "linking_info" in file]
+    }
+
+fields = {}
+for k, v in files.items():
+    fs = [re.sub(f"links_{args.linking_type}_|.csv|_{args.train_name}|", "", x) for x in v["link_files"]]
+    fs = [re.sub("(_\d{8})", "", x) for x in fs]
+    fields[k] = fs
+
+# now we put together all fields and their respective fields
+    # give priority to fields with_year
+    # for any field not covered already, files are taken from without_year
+# TODO: this is a temporary fix; once all files have the same names this can be changed.
+
+dict_to_read = {f: {
+    "links": [file for file in files["with_year"]["link_files"] if f in file][0],
+    "info": [file for file in files["with_year"]["info_files"] if f in file][0]
+    }
+    for f in fields["with_year"]
+}
+print(f"Fields where files have the years in the name: {dict_to_read.keys()}")
+
+add_without_year = {f: {
+    "links": [file for file in files["without_year"]["link_files"] if f in file][0],
+    "info": [file for file in files["without_year"]["info_files"] if f in file][0]
+    }
+    for f in fields["without_year"] if f not in dict_to_read.keys()
+}
+print(f"Fields where files do not have the years in the name: {add_without_year.keys()}")
+
+dict_to_read.update(add_without_year)
+
+assert len(dict_to_read.keys()) == len(set(dict_to_read.keys()))
 
 with sqlite.connect(db_file) as con:
     d_iterations = pd.read_sql(sql=f"SELECT * FROM {tbl_info}", con=con)
-
 
 
 # need string types for some of the binary columns in linking_info
