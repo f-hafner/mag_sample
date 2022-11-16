@@ -2,7 +2,8 @@
 
 logfile_path=$1
 RECALL=0.9
-train_name="${USER}_degree0"
+#train_name="${USER}_degree0"
+train_name="christoph_degree0"
 keywords=False
 fieldofstudy_cat=False 
 fieldofstudy_str=False 
