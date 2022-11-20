@@ -22,7 +22,7 @@ fields=("chemistry"
         "geology" 
         "geography"
         "economics")
-fields=("biology")
+fields=("political science")
 
 for i in "${!fields[@]}"; do 
     field=${fields[$i]} 
