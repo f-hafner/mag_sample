@@ -356,7 +356,6 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
         , f.year || ";" || f.YearLastPub AS year_range 
         , g.all_us_institutions_year
     """
-    #where_stmt_mag = f"WHERE length(firstname) > 1 AND f.YearLastPub >= {args.startyear} - 5 AND year <= {args.endyear} + 5" 
     where_stmt_mag = f"WHERE f.YearLastPub  >= {args.loadstartyear} - 5 AND year <= {args.loadendyear} + 5" # "year" is YearFirstPub 
 
     # note: this still sources field of study, but it is level 0 and thus the same for everyone 
