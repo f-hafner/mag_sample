@@ -34,7 +34,7 @@ class Range(object):
 
 # ## Some settings
 pd.set_option('display.max.columns', None)
-path_dedupe_files = datapath + "DedupeFiles/"
+path_dedupe_files = datapath + "DedupeFiles/flavio/issue-21/" # TODO: this needs to be fixed at the end and any new files copied to DedupeFiles/advisors
 share_blockedpairs_training = 0.66 # fraction of similar pairs as opposed to random pairs 
 
 # register [adapter for numpy.int64](https://stackoverflow.com/questions/38753737/inserting-numpy-integer-types-into-sqlite-with-python3)
@@ -356,8 +356,7 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
         , f.year || ";" || f.YearLastPub AS year_range 
         , g.all_us_institutions_year
     """
-    #where_stmt_mag = f"WHERE length(firstname) > 1 AND f.YearLastPub >= {args.startyear} - 5 AND year <= {args.endyear} + 5" 
-    where_stmt_mag = f"WHERE length(firstname) > 1 AND f.YearLastPub  >= {args.loadstartyear} - 5 AND year <= {args.loadendyear} + 5" # "year" is YearFirstPub 
+    where_stmt_mag = f"WHERE f.YearLastPub  >= {args.loadstartyear} - 5 AND year <= {args.loadendyear} + 5" # "year" is YearFirstPub 
 
     # note: this still sources field of study, but it is level 0 and thus the same for everyone 
     query_mag = f"""
@@ -433,6 +432,7 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
     """
 
     if args.linking_type == "advisors":
+        where_stmt_pq = f"WHERE year >= {args.loadstartyear} and year <= {args.loadendyear}" # the length(firstname)>1 here would also refer to graduate's name...
         query_proquest = f"""
         SELECT relationship_id
                 , year
