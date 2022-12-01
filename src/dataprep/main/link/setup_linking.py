@@ -34,7 +34,7 @@ class Range(object):
 
 # ## Some settings
 pd.set_option('display.max.columns', None)
-path_dedupe_files = datapath + "DedupeFiles/flavio/issue-21/" # TODO: this needs to be fixed at the end and any new files copied to DedupeFiles/advisors
+path_dedupe_files = datapath + "DedupeFiles/" 
 share_blockedpairs_training = 0.66 # fraction of similar pairs as opposed to random pairs 
 
 # register [adapter for numpy.int64](https://stackoverflow.com/questions/38753737/inserting-numpy-integer-types-into-sqlite-with-python3)
