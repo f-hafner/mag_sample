@@ -83,6 +83,10 @@ Rscript -e "rmarkdown::render('$script_path/reports/sample_size_linking.Rmd', ou
 # ## 1. Link graduates to MAG
 bash $script_path/link/graduates.sh $logfile_path
 
+# Christoph retrained with with the following options:
+# --train_name "christoph_degree0" --keepyears "19852015"
+# need to run the write_csv_links script with these options as well
+# to get all links into db
 python -m $script_path.link.write_csv_links --linking_type "graduates" --train_name "christoph_fielddegree0" \
     &> $logfile_path/write_csv_links_graduates.log
 
