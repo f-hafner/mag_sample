@@ -1,0 +1,577 @@
+Namespace(testing=False, verbose=1, field=['business'], train_name='christoph_degree0', startyear=1985, endyear=2015, loadstartyear=1985, loadendyear=2015, mergemode='1:1', recall=0.9, institution='False', fieldofstudy_cat='False', fieldofstudy_str='False', keywords='True', retrain='True', linking_type='graduates', samplesize=50000, write_to='database')
+Have max 12 cores available
+Testing is False 
+
+I set the write connection to the main database.
+id_field is [144133560] and will be passed to sql queries.
+finished setup ... 
+Time elapsed: 0.0007546504338582356 minutes 
+
+
+    SELECT goid
+            , year
+            , firstname 
+            , lastname
+            , CASE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                WHEN 
+                    "" THEN NULL 
+                    ELSE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                END AS middlename
+            , fieldofstudy
+            , keywords
+            , institution
+            , coauthors
+            , year_papertitle
+    FROM (
+        SELECT goid
+            , degree_year AS year 
+            , fullname 
+            , SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) AS firstname
+            , REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "") AS lastname 
+            , TRIM(SUBSTR(fullname, length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1)) + 1)) AS middle_lastname 
+            , length(fullname) AS l_fullname 
+            , length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) ) AS l_firstname
+            , length(REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "")) AS l_lastname
+            , fieldname AS fieldofstudy
+            , university_id
+            , degree_year || "//" || thesistitle as year_papertitle 
+        FROM pq_authors 
+        INNER JOIN (
+            SELECT goid, fieldname 
+            FROM pq_fields_mag
+            WHERE mag_field0 IN (?)
+        ) USING (goid)
+    )
+    -- ## NOTE: use left join here as not all graduates have advisor (particularly pre-1980) and possibly also keywords
+    LEFT JOIN (
+        SELECT goid
+            , fields as keywords
+            , advisors as coauthors
+        FROm pq_info_linking
+    ) USING(goid)
+    INNER JOIN (
+        SELECT university_id, normalizedname as institution
+        FROM pq_unis
+        WHERE location like "%United States%"
+    ) USING(university_id)
+    WHERE year >= 1985 and year <= 2015 AND length(firstname) > 1
+     
+
+
+    SELECT f.AuthorId
+        , f.year
+        , f.firstname
+        , f.lastname
+        , CASE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            WHEN 
+                "" THEN NULL 
+                ELSE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            END as middlename 
+            -- ## NOTE this gives "" for middlename when it is missing 
+        , f.fieldofstudy
+        , g.keywords
+        , g.coauthors
+        , g.institution
+        , g.year_papertitle
+    FROM (
+        SELECT a.AuthorId
+            , a.YearFirstPub AS year
+            , a.FirstName AS firstname
+            , REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "") AS lastname 
+                    -- https://stackoverflow.com/questions/21388820/how-to-get-the-last-index-of-a-substring-in-sqlite
+            , TRIM(SUBSTR(b.NormalizedName, length(a.FirstName) + 1)) AS middle_lastname 
+                    -- this gives all except the first name 
+            , length(b.NormalizedName) as l_fullname 
+            , length(a.FirstName) as l_firstname
+            , length(REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "")) as l_lastname
+            , e.NormalizedName AS fieldofstudy
+        FROM author_sample AS a
+        INNER JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM Authors
+        ) AS b USING(AuthorId)
+        INNER JOIN (
+            SELECT AuthorId
+            FROM author_field0
+            WHERE FieldOfStudyId_lvl0 IN (?)
+                AND Degree <= 0
+        ) USING(AuthorId)
+        LEFT JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM author_fields c
+            INNER JOIN (
+                SELECT FieldOfStudyId, NormalizedName
+                FROM FieldsOfStudy
+            ) AS d USING(FieldOfStudyId)
+            -- ## Condition on fieldofstudy being in the level 0 id_field
+            INNER JOIN (
+                SELECT ParentFieldOfStudyId, ChildFieldOfStudyId
+                FROM crosswalk_fields
+                WHERE ParentLevel = 0
+                    AND ParentFieldOfStudyId IN (?)
+            ) AS e ON (e.ChildFieldOfStudyId = c.FieldOfStudyId)
+            WHERE FieldClass = 'first'
+        ) AS e USING(AuthorId)
+    ) f
+    LEFT JOIN (
+        SELECT AuthorId
+                , institutions as institution
+                , main_us_institutions_career
+                , coauthors
+                , keywords
+                , year_papertitle
+        FROM author_info_linking
+    ) AS g USING(AuthorId)
+    WHERE length(firstname) > 1 AND year >= 1985 - 5 AND year <= 2015 + 5 
+        -- ## use this to condition on people that have at least at some point their main affiliation in the US
+        AND g.main_us_institutions_career IS NOT NULL
+        AND g.institution != "chinese academy of sciences"
+     
+
+Time elapsed: 26.608677724997204 minutes 
+
+Starting active labeling...
+firstname : julian
+lastname : clair
+middlename : k saint
+year : 2010
+year_papertitle : ((2010, 'all positive emotions are not equal cognitive and motivational differences between pride and surprise'), (2013, 'identity regulation theory and implications of multiple identity management'), (2015, 'consumer uncertainty and purchase decision reversals theory and evidence'), (2017, 'fight fire with fire using one consumer stereotype to overcome another via conceptual contingency learning'))
+keywords : frozenset({'social psychology', 'microeconomics', 'marketing'})
+
+firstname : julian
+lastname : clair
+middlename : k saint
+year : 2013
+year_papertitle : ((2013, 'identity regulation theory and implications of multiple identity management'),)
+keywords : frozenset({'marketing'})
+
+0/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished
+firstname : syed
+lastname : zaidi
+middlename : kashif raza
+year : 2014
+year_papertitle : ((2014, 'ifrs adoption and enforcement as antecedents of economic growth'), (2014, 'the impact of ceo stock option expensing as per sfas 123 r on earnings quality'), (2020, 'diffusion of ifrs using innovation diffusion models'))
+keywords : frozenset({'accounting'})
+
+firstname : syed
+lastname : zaidi
+middlename : kashif raza
+year : 2012
+year_papertitle : ((2012, 'ifrs adoption and enforcement as antecedents of economic growth'),)
+keywords : frozenset({'accounting'})
+
+1/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : catherine
+lastname : soule
+middlename : armstrong
+year : 2013
+year_papertitle : ((2013, 'not all anchors weigh the same anchoring and framing effects in pay what you want pricing'), (2014, 'buy less buy better consumer response to green demarketing strategies'), (2014, 'duped scammed and suckered the development of the sugrophobia scale'), (2015, 'anchors and norms in anonymous pay what you want pricing contexts'), (2015, 'less is more is a green demarketing strategy sustainable'), (2016, 'green demarketing in advertisements comparing buy green and buy less appeals in product and institutional advertising contexts'), (2017, '13 g new with tags consumer and brand relationships in consumer to consumer buy sell trade groups on social media'), (2017, '14 i signaling nothing conspicuous anti consumption in demarketing contexts'), (2017, 'fans and brands delineating between fandoms brand communities and brand publics'), (2018, 'buying unicorns the impact of consumer to consumer branded buy sell trade communities on traditional retail buying behavior'))
+keywords : frozenset({'advertising', 'marketing', 'public relations', 'environmental resource management'})
+
+firstname : catherine
+lastname : soule
+middlename : a armstrong
+year : 2014
+year_papertitle : ((2014, 'anchors norms and dual processes exploring decision making in pay what you want pricing contexts'),)
+keywords : frozenset({'marketing'})
+
+2/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : stacey
+lastname : baker
+middlename : menzel
+year : 1994
+year_papertitle : ((1994, 'death by nostalgia a diagnosis of context specific cases'), (1995, 'the role of possessions in creating maintaining and preserving one s identity variation over the life course'), (1996, 'an ethnography of mick s sports card show preliminary findings from the field'), (1996, 'kids as collectors a phenomenological study of first and fifth graders'), (1999, 'motivations and commitments among participants in the great texas birding classic'), (1999, 'special session summary dialogues with visually impaired and color blind consumers psychological socio cultural and social policy perspectives on an emerging issue in consumer research'), (2000, 'santa claus does more than deliver toys advertising s commercialization of the collective memory of americans'), (2001, 'customer participation in creating site brand loyalty'), (2001, 'marketing and public accommodation a retrospective on title iii of the americans with disabilities act'), (2001, 'marketplace experiences of consumers with visual impairments beyond the americans with disabilities act'))
+keywords : frozenset({'mathematics education', 'social psychology', 'advertising', 'public relations', 'media studies', 'gender studies', 'law', 'marketing', 'economic geography'})
+
+firstname : stacey
+lastname : baker
+middlename : karlene menzel
+year : 1996
+year_papertitle : ((1996, 'task associative ego and extrinsic goal orientations an experiential analysis of collectors search'),)
+keywords : frozenset({'personality', 'marketing'})
+
+3/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : yohannes
+lastname : hailu
+middlename : g
+year : 2004
+year_papertitle : ((2004, 'modeling migration effects on agricultural lands a growth equilibrium model'), (2007, 'regional growth impacts on agricultural land development a spatial model for three states'), (2010, 'chemical use reductions in urban fringe agriculture'), (2010, 'effects of renewable energy policies on wind industry development in the us'), (2010, 'evidence of land hoarding behavior in us agriculture'), (2011, 'endogenizing the planning horizon in urban fringe agriculture'))
+keywords : frozenset({'natural resource economics', 'economy', 'agricultural economics', 'economic growth'})
+
+firstname : yohannes
+lastname : hailu
+middlename : m
+year : 1998
+year_papertitle : ((1998, 'factors affecting housing preference under conditions of limited choice the case of addis abeba'),)
+keywords : frozenset({'economics', 'finance'})
+
+4/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : sarah
+lastname : moore
+middlename : a
+year : 2006
+year_papertitle : ((2006, 'forgotten roots of the green city subsistence gardening in columbus ohio 1900 1940'), (2007, 'in the nature of cities urban political ecology and the politics of urban metabolism nik heynen maria kaika and erik swyngedouw eds'), (2008, 'the politics of garbage in oaxaca mexico'), (2009, 'the excess of modernity garbage politics in oaxaca mexico'), (2010, 'environment and society a critical introduction'), (2010, 'jutta gutberlet recovering resources recycling citizenship urban poverty reduction in latin america'), (2010, 'reading joel wainwright s decolonizing development colonial power and the maya'), (2010, 'the people s property power politics and the public lynn staeheli and don mitchell'), (2012, 'designing nature for learning school gardens for youth and child education'), (2012, 'garbage matters concepts in new geographies of waste'))
+keywords : frozenset({'economic history', 'economy', 'development economics', 'environmental protection', 'pedagogy', 'public administration', 'environmental ethics', 'media studies', 'social science', 'ethnology', 'political economy', 'economic growth'})
+
+firstname : sarah
+lastname : moore
+middlename : g
+year : 2009
+year_papertitle : ((2009, 'some things are better left unsaid how word of mouth influences the speaker'),)
+keywords : frozenset({'social psychology', 'linguistics', 'marketing'})
+
+4/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : lakshmi
+lastname : goel
+middlename : None
+year : 2006
+year_papertitle : ((2006, 'weblogging implementing communities of practice'), (2007, 'seeking dragons in is research'), (2007, 'vcrm virtual customer relationship management'), (2008, 'a proposed framework for designing sustainable communities for knowledge management systems'), (2009, 'a life cycle model of virtual communities'), (2009, 'exploring the dynamics of blog communities the case of metafilter'), (2009, 'half day workshop on the value of corporate wikis'), (2009, 'if you build it will they come an empirical investigation of consumer perceptions and strategy in virtual worlds'), (2009, 'the socialness of virtual worlds'), (2010, 'situated learning conceptualization and measurement'))
+keywords : frozenset({'knowledge management', 'cognitive science', 'public relations', 'social psychology', 'gender studies', 'marketing'})
+
+firstname : lakshmi
+lastname : goel
+middlename : None
+year : 2008
+year_papertitle : ((2008, 'situated learning in virtual worlds'),)
+keywords : frozenset({'social psychology', 'cognitive psychology', 'management'})
+
+4/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : steven
+lastname : hanke
+middlename : a
+year : 2012
+year_papertitle : ((2012, 'a censored quantile regression analysis of employee stock options substitution for debt and the impact of sfas 123r'), (2012, 'a two state analysis of estate taxes and charitable bequests from the most generous decedents'), (2012, 'an analysis of tax court cases relevant to financial planners'), (2012, 'why do small businesses take on high levels of external loans a censored quantile regression analysis'), (2013, 'the impact of double taxation on small firms cash holdings'), (2019, 'an assessment of pawnbroker succession planning'))
+keywords : frozenset({'macroeconomics', 'monetary economics', 'actuarial science', 'finance', 'accounting', 'environmental planning'})
+
+firstname : steven
+lastname : hanke
+middlename : None
+year : 2008
+year_papertitle : ((2008, 'tax policy questions regarding the federal estate tax and charitable bequests a two state analysis of probate records'),)
+keywords : frozenset({'accounting'})
+
+5/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jing
+lastname : liu
+middlename : None
+year : 2000
+year_papertitle : ((2000, 'stock returns and accounting earnings'), (2000, 'the feltham ohlson 1995 model empirical implications'), (2002, 'equity valuation using multiples'), (2002, 'measuring value relevance in a possibly inefficient market'), (2004, 'discussion of the role of expectations in explaining the cross section of stock returns'), (2004, 'valuation and accounting for inflation and foreign exchange'), (2005, 'earnings quality insider trading and cost of capital'), (2006, 'on international accounting valuation'), (2007, 'information asymmetry diversification and cost of capital'), (2007, 'is cash flow king in valuations'))
+keywords : frozenset({'monetary economics', 'microeconomics', 'financial economics', 'accounting', 'econometrics'})
+
+firstname : jing
+lastname : li
+middlename : None
+year : 2009
+year_papertitle : ((2009, 'accounting conservatism debt contracts and financial institutions'),)
+keywords : frozenset({'accounting'})
+
+6/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jorge
+lastname : fernandezbaca
+middlename : None
+year : 1988
+year_papertitle : ((1988, 'la economia informal y la demanda de dinero en el peru 1950 1986 en torno a una polemica sobre los fundamentos estadisticos de el otro sendero'), (1989, 'reformas politicas y eficiencia economica hacia un analisis economico de la democracia los fundamentos del neo institucionalismo'), (1990, 'el problema del atraso cambiario consideraciones teoricas y practicas'), (1991, 'la importancia de la democracia para los economistas'), (1992, 'sexo divorcio y machismo en torno a gary becker premio nobel de economia 1992'), (1994, 'douglass north y la nueva historia economica'))
+keywords : frozenset({'economy', 'development economics', 'positive economics', 'welfare economics', 'political economy', 'law', 'economic geography'})
+
+firstname : jorge
+lastname : fernandez
+middlename : trullen
+year : 2007
+year_papertitle : ((2007, 'quality evaluations and their impacts the roles of legitimacy and significance'),)
+keywords : frozenset({'colleges universities and professional schools', 'educational administration', 'management'})
+
+6/10 positive, 3/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : yu
+lastname : xiong
+middlename : None
+year : 2008
+year_papertitle : ((2008, 'pricing strategy of service provider under buyer driven pricing model'), (2008, 'value uncertain in advance selling the impact of offering refunds for cancellations'), (2009, 'robust dynamic pricing over infinite horizon in the presence of model uncertainty'), (2009, 'tracking the innovation epidemic a framework for innovation measurement and diffusion within the pharmaceutical sector'), (2010, 'dynamic pricing model and algorithm for perishable products with fuzzy demand'), (2011, 'coordination and incentive mechanisms on collaborative investment in the supply chain'), (2011, 'supply chain competition with information sharing'), (2012, 'bricks vs clicks the impact of manufacturer encroachment with a dealer leasing and selling of durable goods'), (2012, 'pathways to supply chain excellence'), (2013, 'the bright side of manufacturing remanufacturing conflict in a decentralised closed loop supply chain'))
+keywords : frozenset({'industrial organization', 'mathematical economics', 'microeconomics', 'knowledge management', 'process management', 'mathematical optimization', 'algorithm', 'commerce', 'operations management', 'marketing', 'manufacturing engineering'})
+
+firstname : yu
+lastname : xia
+middlename : None
+year : 2004
+year_papertitle : ((2004, 'market segmentation and pricing strategies by logistic efficiency in two echelon supply chain'),)
+keywords : frozenset({'marketing', 'management'})
+
+6/10 positive, 4/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : shawn
+lastname : walker
+middlename : None
+year : 2010
+year_papertitle : ((2010, 'budget mapping increasing citizen understanding of government via interactive design'), (2011, 'fifteen minutes of fame the power of blogs in the lifecycle of viral political information'), (2012, 'building understanding of smart city initiatives'), (2012, 'smart cities and service integration initiatives in north american cities a status report'), (2012, 'understanding smart cities an integrative framework'), (2014, 'a model of crowd enabled organization theory and methods for understanding the role of twitter in the occupy protests'), (2014, 'big data big questions working within a black box transparency in the collection and production of big twitter data'), (2014, 'organization in the crowd looking ahead'), (2014, 'organization in the crowd peer production in large scale networked protests'), (2014, 'working within a black box transparency in the collection and production of big twitter data'))
+keywords : frozenset({'public administration', 'knowledge management', 'advertising', 'public relations', 'environmental resource management', 'world wide web', 'internet privacy', 'data science', 'economic growth'})
+
+firstname : sean
+lastname : walker
+middlename : c
+year : 2012
+year_papertitle : ((2012, 'the nonconscious antecedents of group processes an experimental analysis of the priming of group beliefs'),)
+keywords : frozenset({'cognitive psychology', 'organizational behavior', 'management'})
+
+6/10 positive, 5/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : neil
+lastname : morgan
+middlename : a
+year : 1988
+year_papertitle : ((1988, 'successful growth by acquisition'), (1989, 'developing information strategies in the uk financial services sector'), (1989, 'marketing organisation in the uk financial services industry'), (1990, 'corporate legal advice and client quality perceptions'), (1990, 'internal marketing making marketing happen'), (1990, 'organisational context and behavioural problems as determinants of the effectiveness of the strategic marketing planning process'), (1990, 'professional accountancy firms and marketing'), (1991, 'an exploratory study of market orientation in the u k consulting engineering profession'), (1991, 'barriers to marketing implementation in u k professional service firms'), (1991, 'professional services marketing'))
+keywords : frozenset({'public relations', 'finance', 'accounting', 'marketing'})
+
+firstname : michael
+lastname : morgan
+middlename : scott
+year : 1990
+year_papertitle : ((1990, 'heterogeneity in brand choice under the zero order assumption a theoretical behavioral and empirical investigation'),)
+keywords : frozenset({'experiments', 'psychology', 'marketing', 'business costs'})
+
+6/10 positive, 6/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : mary
+lastname : luque
+middlename : f sully de
+year : 2000
+year_papertitle : ((2000, 'the impact of culture on feedback seeking behavior an integrated model and propositions'), (2006, 'a failure of scholarship response to george graen s critique of globe'), (2006, 'conceptualizing and measuring cultures and their consequences a comparative review of globe s and hofstede s approaches'), (2006, 'cultural and leadership predictors of corporate social responsibility values of top management a globe study of 15 countries'), (2006, 'in the eye of the beholder cross cultural lessons in leadership from project globe'))
+keywords : frozenset({'positive economics', 'social psychology', 'public relations', 'social science', 'marketing'})
+
+firstname : mary
+lastname : luque
+middlename : frances sully de
+year : 2000
+year_papertitle : ((2000, 'the impact of cross cultural differences on feedback seeking behavior tendency to engage strategy type and preferred source choice'),)
+keywords : frozenset({'business administration', 'cultural anthropology', 'management'})
+
+6/10 positive, 7/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : baojiang
+lastname : chen
+middlename : None
+year : 2006
+year_papertitle : ((2006, 'a note on minimum aberration and clear criteria'), (2006, 'some results on blocked regular 2 level fractional factorial designs with clear effects'), (2009, 'likelihood analysis of joint marginal and conditional models for longitudinal categorical data'), (2010, 'analysis of interval censored disease progression data via multi state models under a nonignorable inspection process'), (2010, 'estimating functions for evaluating treatment effects in cluster randomized longitudinal studies in the presence of drop out and non compliance'), (2010, 'stability of etiologic dementia diagnoses in the national alzheimer s coordinating center nacc uniform data set'), (2010, 'weighted generalized estimating functions for longitudinal response and covariate data that are missing at random'), (2011, 'doubly robust estimates for binary longitudinal data analysis with missing response and missing covariates'), (2011, 'non homogeneous markov process models with informative observations with an application to alzheimer s disease'), (2011, 'progressive multi state models for informatively incomplete longitudinal data'))
+keywords : frozenset({'combinatorics', 'data mining', 'psychiatry', 'artificial intelligence', 'calculus', 'statistics', 'econometrics', 'forestry', 'machine learning'})
+
+firstname : yao
+lastname : chen
+middlename : None
+year : 1991
+year_papertitle : ((1991, 'distributions for asset returns'),)
+keywords : frozenset({'computer science', 'statistics', 'finance'})
+
+7/10 positive, 7/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : li
+lastname : chen
+middlename : None
+year : 2008
+year_papertitle : ((2008, 'analysis of book resale in amazon upgrade framework a game theory approach'), (2009, 'iphone or kindle competition of electronic books sales'))
+keywords : frozenset({'industrial organization', 'microeconomics', 'commerce'})
+
+firstname : ling
+lastname : chen
+middlename : None
+year : 2010
+year_papertitle : ((2010, 'option pricing and hedging with transaction costs'),)
+keywords : frozenset({'statistics', 'finance'})
+
+7/10 positive, 8/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : steven
+lastname : smith
+middlename : r
+year : 1986
+year_papertitle : ((1986, 'disabled newborns and the federal child abuse amendments tenuous protection'), (1989, 'a crazy system mental health care delivery in america'))
+keywords : frozenset({'family medicine', 'psychiatry'})
+
+firstname : steven
+lastname : smith
+middlename : howard
+year : 2000
+year_papertitle : ((2000, 'tax accounting choice the costs of corporate tax aggressiveness'),)
+keywords : frozenset({'accounting'})
+
+7/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : anil
+lastname : maheshwari
+middlename : None
+year : 1990
+year_papertitle : ((1990, 'an optimal algorithm for computing a minimum nested nonconvex polygon'), (1991, 'computing the shortest path tree in a weak visibility polygon'), (1992, 'an optimal parallel algorithm for computing furthest neighbors in a tree'), (1992, 'parallel algorithms for all minimum link paths and link center problems'), (1992, 'sharing perspectives in distributed decision making'), (1993, 'characterizing and recognizing weak visibility polygons'), (1993, 'multi list ranking complexity and applications'), (1993, 'optimal crew pram algorithms for direct dominance problems'), (1993, 'parallel algorithms for rectilinear link distance problems'), (1994, 'a simple optimal parallel algorithm for reporting paths in a tree'))
+keywords : frozenset({'combinatorics', 'knowledge management', 'mathematical optimization', 'algorithm', 'parallel computing', 'discrete mathematics'})
+
+firstname : anil
+lastname : maheshwari
+middlename : kumar
+year : 1996
+year_papertitle : ((1996, 'learning and information technology an experimental investigation of computer based representation to support reflective thinking'),)
+keywords : frozenset({'psychology', 'experiments', 'higher education', 'management'})
+
+7/10 positive, 10/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : james
+lastname : hesford
+middlename : w
+year : 2011
+year_papertitle : ((2011, 'a social network analysis of the literature on management control'), (2012, 'the social structure of communication in major accounting research journals'), (2016, 'turnover and unit level financial performance an analysis of the costs and benefits of voluntary and involuntary turnover in unskilled jobs'), (2018, 'sunrise hotels an integrated managerial accounting teaching case'))
+keywords : frozenset({'labour economics', 'public relations', 'data science', 'knowledge management'})
+
+firstname : james
+lastname : hesford
+middlename : wesley
+year : 1998
+year_papertitle : ((1998, 'determinants of the use of competitors accounting information by competitive intelligence professionals'),)
+keywords : frozenset({'business administration', 'accounting', 'marketing'})
+
+7/10 positive, 10/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : william
+lastname : raynor
+middlename : j
+year : 1986
+year_papertitle : ((1986, 'automatic smoothing of regression functions in generalized linear models'), (1989, 'comparison of disposable diapers with fluff absorbent and fluff plus absorbent polymers effects on skin hydration skin ph and diaper dermatitis'))
+keywords : frozenset({'dermatology', 'mathematical optimization', 'food science'})
+
+firstname : william
+lastname : raynor
+middlename : judson
+year : 1999
+year_papertitle : ((1999, 'the impact of nafta on employment the perception of business economics faculty in mexico canada and the united states'),)
+keywords : frozenset({'international law', 'labor economics', 'international relations', 'management'})
+
+7/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : francis
+lastname : mediavilla
+middlename : a mendez
+year : 2009
+year_papertitle : ((2009, 'approximate queries on distributed data marts'), (2010, 'a bayesian method for query approximation'), (2011, 'information privacy implementation and perception of laws and corporate policies by ceos and managers'), (2012, 'approximation queries for building energy aware data warehouses on mobile ad hoc networks'), (2012, 'construction analysis of rainwater harvesting systems'), (2012, 'critical variables in the decision making process for amhs technology selection in semiconductor wafer size transitions exploratory study'), (2012, 'teaching multiple regression in elementary statistics'), (2014, 'what makes a top selling textbook comparing characteristics of ais textbooks'), (2016, 'an empirical investigation on ceo turnover in it firms and firm performance'))
+keywords : frozenset({'mathematics education', 'data mining', 'computer network', 'multimedia', 'simulation', 'database', 'manufacturing engineering', 'internet privacy', 'environmental engineering', 'information retrieval', 'business administration', 'civil engineering'})
+
+firstname : francis
+lastname : mediavilla
+middlename : a mendez
+year : 2005
+year_papertitle : ((2005, 'using discrete multivariate mcmc bayesian methods for change detection and disclosure control'),)
+keywords : frozenset({'computer science', 'statistics', 'management'})
+
+7/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : james
+lastname : walsh
+middlename : igoe
+year : 1994
+year_papertitle : ((1994, 'international constraints and domestic choices economic convergence and exchange rate policy in france and italy'), (1994, 'politics and exchange rates britain france italy and the negotiation of the european monetary system'), (1999, 'political bases of macroeconomic adjustment evidence from the italian experience'), (2000, 'european monetary integration and domestic politics'), (2000, 'european monetary integration domestic politics britain france and italy'), (2000, 'when do ideas matter explaining the successes and failures of thatcherite ideas'), (2001, 'national preferences and international institutions evidence from european monetary integration'))
+keywords : frozenset({'macroeconomics', 'economy', 'public administration', 'international economics', 'economic system', 'economic policy', 'political economy'})
+
+firstname : james
+lastname : walsh
+middlename : igoe
+year : 1996
+year_papertitle : ((1996, 'global finance domestic politics exchange rate policymaking in britain france and italy'),)
+keywords : frozenset({'finance', 'international law', 'international relations', 'political science'})
+
+8/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : karen
+lastname : bogart
+middlename : a smith
+year : 2013
+year_papertitle : ((2013, 'convergence of corporate governance and corporate social responsibility'), (2016, 'expanding the board s contribution to corporate social responsibility'))
+keywords : frozenset({'public relations', 'accounting'})
+
+firstname : karen
+lastname : bogart
+middlename : a smith
+year : 2013
+year_papertitle : ((2013, 'understanding the influence of the board of directors on corporate social responsibility in us public companies that are recognized as csr leaders'),)
+keywords : frozenset({'sustainability', 'organization theory', 'management'})
+
+9/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : maria
+lastname : comello
+middlename : leonora g
+year : 2002
+year_papertitle : ((2002, 'parent child communication perceived sanctions against drug use and youth drug involvement'), (2003, 'the community readiness model a complementary approach to social marketing'), (2005, 'using community readiness key informant assessments in a randomized group prevention trial impact of a participatory community media intervention'), (2006, 'development of an aspirational campaign to prevent youth substance use be under your own influence'), (2006, 'tobacco counteradvertisements aimed at bicultural mexican american youth the impact of language and theme'), (2009, 'flavoured cigarettes sensation seeking and adolescents perceptions of cigarette brands'))
+keywords : frozenset({'psychiatry', 'knowledge management', 'social psychology', 'advertising', 'public relations', 'developmental psychology', 'medical education'})
+
+firstname : maria
+lastname : comello
+middlename : leonora g
+year : 2010
+year_papertitle : ((2010, 'activated self concept as a mechanism underlying persuasive message effects'),)
+keywords : frozenset({'mass communications', 'health education', 'marketing'})
+
+10/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : annemarie
+lastname : zissu
+middlename : None
+year : 1989
+year_papertitle : ((1989, 'a causality effect between bid premium and outcome of tender offer'), (1989, 'the information content of post tender offer movement in the price of target shares'), (1990, 'choosing a discount point contract rate combination'), (1991, 'predicting the outcome of tender offers an endogeneity problem'))
+keywords : frozenset({'monetary economics', 'microeconomics', 'financial economics', 'actuarial science', 'econometrics'})
+
+firstname : annemarie
+lastname : zissu
+middlename : None
+year : 1988
+year_papertitle : ((1988, 'the impact of management resistance on the outcome of hostile tender offers'),)
+keywords : frozenset({'finance'})
+
+10/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : usha
+lastname : haley
+middlename : c v
+year : 1989
+year_papertitle : ((1989, 'cognitive trails in strategic decision making linking theories of personalities and cognitions'), (1991, 'corporate contributions as managerial masques reframing corporate contributions as strategies to influence society'), (1996, 'singapore incorporated reinterpreting singapore s business environments through a corporate metaphor'))
+keywords : frozenset({'economy', 'social psychology', 'public relations', 'accounting', 'cognitive psychology'})
+
+firstname : usha
+lastname : haley
+middlename : c v
+year : 1990
+year_papertitle : ((1990, 'from catalysts to chameleons multinational firms as participants in political environments'),)
+keywords : frozenset({'south african studies', 'international law', 'commerce business', 'management'})
+
+11/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+Finished labeling
+Done in 51.02889768282572 minutes.
