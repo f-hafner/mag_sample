@@ -1,0 +1,614 @@
+Namespace(testing=False, verbose=1, field=['philosophy'], train_name='christoph_degree0', startyear=1985, endyear=2015, loadstartyear=1985, loadendyear=2015, mergemode='1:1', recall=0.9, institution='False', fieldofstudy_cat='False', fieldofstudy_str='False', keywords='True', retrain='True', linking_type='graduates', samplesize=50000, write_to='database')
+Have max 12 cores available
+Testing is False 
+
+I set the write connection to the main database.
+id_field is [138885662] and will be passed to sql queries.
+finished setup ... 
+Time elapsed: 0.0004653771718343099 minutes 
+
+
+    SELECT goid
+            , year
+            , firstname 
+            , lastname
+            , CASE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                WHEN 
+                    "" THEN NULL 
+                    ELSE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                END AS middlename
+            , fieldofstudy
+            , keywords
+            , institution
+            , coauthors
+            , year_papertitle
+    FROM (
+        SELECT goid
+            , degree_year AS year 
+            , fullname 
+            , SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) AS firstname
+            , REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "") AS lastname 
+            , TRIM(SUBSTR(fullname, length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1)) + 1)) AS middle_lastname 
+            , length(fullname) AS l_fullname 
+            , length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) ) AS l_firstname
+            , length(REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "")) AS l_lastname
+            , fieldname AS fieldofstudy
+            , university_id
+            , degree_year || "//" || thesistitle as year_papertitle 
+        FROM pq_authors 
+        INNER JOIN (
+            SELECT goid, fieldname 
+            FROM pq_fields_mag
+            WHERE mag_field0 IN (?)
+        ) USING (goid)
+    )
+    -- ## NOTE: use left join here as not all graduates have advisor (particularly pre-1980) and possibly also keywords
+    LEFT JOIN (
+        SELECT goid
+            , fields as keywords
+            , advisors as coauthors
+        FROm pq_info_linking
+    ) USING(goid)
+    INNER JOIN (
+        SELECT university_id, normalizedname as institution
+        FROM pq_unis
+        WHERE location like "%United States%"
+    ) USING(university_id)
+    WHERE year >= 1985 and year <= 2015 AND length(firstname) > 1
+     
+
+
+    SELECT f.AuthorId
+        , f.year
+        , f.firstname
+        , f.lastname
+        , CASE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            WHEN 
+                "" THEN NULL 
+                ELSE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            END as middlename 
+            -- ## NOTE this gives "" for middlename when it is missing 
+        , f.fieldofstudy
+        , g.keywords
+        , g.coauthors
+        , g.institution
+        , g.year_papertitle
+    FROM (
+        SELECT a.AuthorId
+            , a.YearFirstPub AS year
+            , a.FirstName AS firstname
+            , REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "") AS lastname 
+                    -- https://stackoverflow.com/questions/21388820/how-to-get-the-last-index-of-a-substring-in-sqlite
+            , TRIM(SUBSTR(b.NormalizedName, length(a.FirstName) + 1)) AS middle_lastname 
+                    -- this gives all except the first name 
+            , length(b.NormalizedName) as l_fullname 
+            , length(a.FirstName) as l_firstname
+            , length(REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "")) as l_lastname
+            , e.NormalizedName AS fieldofstudy
+        FROM author_sample AS a
+        INNER JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM Authors
+        ) AS b USING(AuthorId)
+        INNER JOIN (
+            SELECT AuthorId
+            FROM author_field0
+            WHERE FieldOfStudyId_lvl0 IN (?)
+                AND Degree <= 0
+        ) USING(AuthorId)
+        LEFT JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM author_fields c
+            INNER JOIN (
+                SELECT FieldOfStudyId, NormalizedName
+                FROM FieldsOfStudy
+            ) AS d USING(FieldOfStudyId)
+            -- ## Condition on fieldofstudy being in the level 0 id_field
+            INNER JOIN (
+                SELECT ParentFieldOfStudyId, ChildFieldOfStudyId
+                FROM crosswalk_fields
+                WHERE ParentLevel = 0
+                    AND ParentFieldOfStudyId IN (?)
+            ) AS e ON (e.ChildFieldOfStudyId = c.FieldOfStudyId)
+            WHERE FieldClass = 'first'
+        ) AS e USING(AuthorId)
+    ) f
+    LEFT JOIN (
+        SELECT AuthorId
+                , institutions as institution
+                , main_us_institutions_career
+                , coauthors
+                , keywords
+                , year_papertitle
+        FROM author_info_linking
+    ) AS g USING(AuthorId)
+    WHERE length(firstname) > 1 AND year >= 1985 - 5 AND year <= 2015 + 5 
+        -- ## use this to condition on people that have at least at some point their main affiliation in the US
+        AND g.main_us_institutions_career IS NOT NULL
+        AND g.institution != "chinese academy of sciences"
+     
+
+INFO:dedupe.canopy_index:Removing stop word ar
+INFO:dedupe.canopy_index:Removing stop word in
+INFO:dedupe.canopy_index:Removing stop word en
+INFO:dedupe.canopy_index:Removing stop word an
+INFO:dedupe.canopy_index:Removing stop word ma
+INFO:dedupe.canopy_index:Removing stop word ha
+INFO:dedupe.canopy_index:Removing stop word al
+INFO:dedupe.canopy_index:Removing stop word on
+INFO:dedupe.canopy_index:Removing stop word ll
+INFO:dedupe.canopy_index:Removing stop word st
+INFO:dedupe.canopy_index:Removing stop word el
+INFO:dedupe.canopy_index:Removing stop word re
+INFO:dedupe.canopy_index:Removing stop word ra
+INFO:dedupe.canopy_index:Removing stop word er
+INFO:dedupe.canopy_index:Removing stop word ch
+INFO:dedupe.canopy_index:Removing stop word an
+INFO:dedupe.canopy_index:Removing stop word an
+INFO:dedupe.canopy_index:Removing stop word ri
+INFO:dedupe.canopy_index:Removing stop word ne
+INFO:dedupe.canopy_index:Removing stop word le
+INFO:dedupe.canopy_index:Removing stop word la
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (suffixArray, middlename)
+Time elapsed: 7.893500101566315 minutes 
+
+Starting active labeling...
+firstname : thomas
+lastname : hofweber
+middlename : None
+year : 1999
+year_papertitle : ((1999, 'ontology and objectivity'), (2000, 'empty names fiction and the puzzles of non existence'), (2000, 'proof theoretic reduction as a philosopher s tool'), (2001, 'a subject with no object strategies for nominalistic interpretation of mathematics'), (2005, 'a puzzle about ontology'), (2005, 'conceptions of truth'), (2005, 'number determiners numbers and arithmetic'), (2005, 'supervenience and object dependant properties'), (2006, 'le ambigue virtu della forma logica'), (2006, 'schiffer s new theory of propositions'))
+keywords : frozenset({'calculus', 'linguistics', 'epistemology', 'arithmetic', 'humanities'})
+
+firstname : thomas
+lastname : hofweber
+middlename : None
+year : 1999
+year_papertitle : ((1999, 'ontology and objectivity'),)
+keywords : frozenset({'philosophy', 'linguistics'})
+
+0/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished
+firstname : lauren
+lastname : ashwell
+middlename : None
+year : 2013
+year_papertitle : ((2009, 'desires and dispositions'), (2013, 'deep dark or transparent knowing our desires'), (2014, 'the metaphysics of desire and dispositions'), (2018, 'possibilities of misidentification'))
+keywords : frozenset({'social science', 'epistemology'})
+
+firstname : lauren
+lastname : ashwell
+middlename : None
+year : 2009
+year_papertitle : ((2009, 'desires and dispositions'),)
+keywords : frozenset({'philosophy', 'epistemology'})
+
+1/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:TfidfNGramSearchPredicate: (0.8, lastname)
+firstname : marc
+lastname : brettler
+middlename : zvi
+year : 1989
+year_papertitle : ((1989, 'god is king understanding an israelite metaphor'), (1989, 'jud 1 1 2 10 from appendix to prologue'), (1989, 'the book of judges literature as politics'), (1990, 'murder and difference gender genre and scholarship on sisera s death and death dissymmetry the politics of coherence in the book of judges review'), (1990, 'rabbi simeon ben lakish at the gladiator s banquet rabbinic observations on the roman arena'), (1990, 'samuel and the deuteronomist a literary study of the deuteronomic history 1 samuel robert polzin'), (1990, 'the confessions of jeremiah their interpretation and role in chapters 1 25 kathleen m o connor'), (1990, 'the first historians the hebrew bible and history baruch halpern'), (1991, 'the structure of 1 kings 1 11'), (1992, 'john day molech a god of human sacrifice in the old testament university of cambridge oriental publications 41 cambridge cambridge university press 1989 ix 115 pp'))
+keywords : frozenset({'ancient history', 'classics', 'linguistics', 'law', 'theology', 'epistemology', 'archaeology', 'literature', 'religious studies', 'humanities'})
+
+firstname : marc
+lastname : brettler
+middlename : zvi
+year : 1987
+year_papertitle : ((1987, 'god is king understanding an israelite metaphor enthronement biblical religion'),)
+keywords : frozenset({'theology'})
+
+2/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (wholeFieldPredicate, lastname)
+firstname : maria
+lastname : garcia
+middlename : del carmen
+year : 1982
+year_papertitle : ((1982, 'slow inward calcium currents have no obvious role in muscle excitation contraction coupling'),)
+keywords : frozenset({'biophysics'})
+
+firstname : maria
+lastname : garciapadilla
+middlename : del carmen
+year : 1993
+year_papertitle : ((1993, 'doing philosophy and the education of teachers'),)
+keywords : frozenset({'education philosophy', 'teacher education', 'philosophy'})
+
+3/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : james
+lastname : keller
+middlename : h
+year : 1995
+year_papertitle : ((1995, 'public access to the internet'), (1997, 'coordinating the internet'), (1999, 'the first 100 feet options for internet and broadband access'))
+keywords : frozenset({'marketing', 'telecommunications', 'management', 'public relations'})
+
+firstname : james
+lastname : kellerman
+middlename : allen
+year : 1996
+year_papertitle : ((1996, 'the dramatic prologue of plato s symposium as introduction to the dialogue s philosophy'),)
+keywords : frozenset({'classical literature', 'philosophy', 'classical studies'})
+
+3/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : mahon
+lastname : obrien
+middlename : None
+year : 2010
+year_papertitle : ((2010, 're assessing the affair the heidegger controversy revisited'), (2011, 'heidegger and authenticity from resoluteness to releasement'), (2014, 'leaping ahead of heidegger subjectivity and intersubjectivity in being and time'), (2014, 'martin heidegger the event reviewed by'), (2015, 'heidegger history and the holocaust'), (2016, 'the time of revolution kairos and chronos in heidegger'))
+keywords : frozenset({'ancient history', 'theology', 'epistemology', 'art history', 'cognitive science'})
+
+firstname : mahon
+lastname : brien
+middlename : james o
+year : 2010
+year_papertitle : ((2010, 'authenticity from resoluteness to releasement'),)
+keywords : frozenset({'philosophy'})
+
+3/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : thomas
+lastname : sizgorich
+middlename : None
+year : 2009
+year_papertitle : ((2009, 'for christian eyes only the intended audience of the martyrdom of antony rawḥ'), (2009, 'sanctified violence monotheist militancy as the tie that bound christian rome and islam'), (2010, 'muhammad s grave death rites and the making of islamic society by leor halevi'), (2011, 'riot in alexandria tradition and group dynamics in late antique pagan and christian communities by edward j watts the transformation of the classical heritage 46 berkeley university of california press 2010 xv 290 pp 55 00 cloth'))
+keywords : frozenset({'religious studies', 'theology', 'literature', 'classics'})
+
+firstname : thomas
+lastname : song
+middlename : byunghyun
+year : 1997
+year_papertitle : ((1997, 'the loftiness of god the humility of man and restoration in isaiah 57 14 21 a text linguistic analysis of their convergence'),)
+keywords : frozenset({'theology', 'biblical studies'})
+
+4/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (suffixArray, middlename)
+INFO:dedupe.training:SimplePredicate: (suffixArray, lastname)
+firstname : scott
+lastname : cook
+middlename : None
+year : 1997
+year_papertitle : ((1995, 'unity and diversity in the musical thought of warring states china'), (1997, 'xun zi on ritual and music'), (1997, 'zhuang zi and his carving of the confucian ox'), (2002, 'the lushi chunqiu and the resolution of philosophical dissonance'), (2003, 'hiding the world in the world uneven discourses on the zhuangzi'), (2004, 'the debate over coercive rulership and the human way in light of recently excavated warring states texts'))
+keywords : frozenset({'social psychology', 'law', 'genealogy', 'remote sensing', 'aesthetics', 'literature', 'art history', 'humanities'})
+
+firstname : scott
+lastname : cook
+middlename : bradley
+year : 1995
+year_papertitle : ((1995, 'unity and diversity in the musical thought of warring states china'),)
+keywords : frozenset({'music', 'philosophy', 'history'})
+
+4/10 positive, 3/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : michael
+lastname : caie
+middlename : None
+year : 2012
+year_papertitle : ((2012, 'belief and indeterminacy'), (2012, 'vagueness and semantic indiscriminability'), (2013, 'rational probabilistic incoherence'), (2014, 'calibration and probabilism'), (2014, 'metasemantics and metaphysical indeterminacy'), (2015, 'credence in the image of chance'), (2016, 'agreement theorems for self locating belief'), (2018, 'a problem for credal consequentialism'), (2018, 'agreement and updating for self locating belief'), (2018, 'benardete s paradox and the logic of counterfactuals'))
+keywords : frozenset({'mathematical economics', 'calculus', 'discrete mathematics', 'epistemology', 'remote sensing', 'algorithm', 'artificial intelligence', 'positive economics'})
+
+firstname : michael
+lastname : caie
+middlename : None
+year : 2011
+year_papertitle : ((2011, 'paradox and belief'),)
+keywords : frozenset({'philosophy', 'epistemology'})
+
+5/10 positive, 3/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:LevenshteinSearchPredicate: (1, lastname)
+firstname : juejun
+lastname : hu
+middlename : None
+year : 2006
+year_papertitle : ((2006, 'fabrication of single crystalline silicon nanowires by scratching a silicon surface with catalytic metal particles'), (2006, 'metal particle induced highly localized site specific etching of si and formation of single crystalline si nanowires in aqueous fluoride solution'), (2006, 'multispectral 1 d photonic crystal photodetector'), (2006, 'multispectral photonic crystal photo sensor'), (2006, 'multispectral pixel performance using a one dimensional photonic crystal design'), (2007, 'fabrication and testing of planar chalcogenide waveguide integrated microfluidic sensor'), (2007, 'low loss integrated planar chalcogenide waveguides for microfluidic chemical sensing'), (2007, 'refractive index modifications in chalcogenide films induced by sub bandgap near ir femtosecond pulses'), (2007, 'si cmos compatible lift off fabrication of low loss planar chalcogenide waveguides'), (2007, 'studies on structural electrical and optical properties of cu doped as se te chalcogenide glasses'))
+keywords : frozenset({'inorganic chemistry', 'analytical chemistry', 'optoelectronics', 'optics', 'nanotechnology'})
+
+firstname : haibin
+lastname : hu
+middlename : None
+year : 1996
+year_papertitle : ((1996, 'a study of parental information seeking and implications for school choice'),)
+keywords : frozenset({'education philosophy', 'secondary education', 'educational administration'})
+
+6/10 positive, 3/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : bridget
+lastname : clarke
+middlename : None
+year : 2010
+year_papertitle : ((2010, 'moral reflection william ransome'), (2010, 'virtue and disagreement'), (2012, 'sabina lovibond iris murdoch gender and philosophy reviewed by'), (2014, 'political emotions why love matters for justice by nussbaum martha c'))
+keywords : frozenset({'law', 'art history', 'optics', 'epistemology'})
+
+firstname : justin
+lastname : clarkedoane
+middlename : None
+year : 2011
+year_papertitle : ((2011, 'morality and mathematics'),)
+keywords : frozenset({'ethics', 'philosophy', 'epistemology', 'mathematics'})
+
+6/10 positive, 4/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : wongi
+lastname : park
+middlename : None
+year : 2015
+year_papertitle : ((2015, 'book review experiencing irony in the first gospel suspense surprise and curiosity written by karl mcdaniel new york bloomsbury 2013 vi 195'), (2016, 'studies in matthew s gospel literary design intertextuality and social setting written by wim j c weren 2014'))
+keywords : frozenset({'art history', 'literature'})
+
+firstname : wonbin
+lastname : park
+middlename : None
+year : 2006
+year_papertitle : ((2006, 'emmanuel levinas s ethic of the other i kenosis i and the theodicy questions'),)
+keywords : frozenset({'theology', 'philosophy'})
+
+6/10 positive, 5/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jane
+lastname : jakobsen
+middlename : r
+year : 1981
+year_papertitle : ((1981, 'the development of teaching programs in geriatric dentistry in the united states from 1974 to 1979'), (1983, 'a low cost method for conducting a statewide survey of oral health'), (1983, 'suicide statistics of dentists in iowa 1968 to 1980'), (1983, 'transportation problems and dental care of nursing home residents'), (1984, 'removable prosthodontic treatment needs a survey'), (1984, 'teaching programs in geriatric dentistry'), (1985, 'dental disease prevalence in a prison population'), (1985, 'dentofacial relationships in persons with unoperated clefts comparisons between three cleft types'), (1985, 'longitudinal changes in three normal facial types'), (1986, 'dentists who practice with spouses or relatives a pilot study of practitioners in iowa'))
+keywords : frozenset({'orthodontics', 'medical education', 'family medicine', 'dentistry', 'demography', 'medical emergency', 'nursing'})
+
+firstname : janet
+lastname : jakobsen
+middlename : ruth
+year : 1992
+year_papertitle : ((1992, 'the gendered division of moral labor and the possibilities for a responsible feminist ethic'),)
+keywords : frozenset({'religion', 'womens studies', 'philosophy'})
+
+6/10 positive, 6/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : gary
+lastname : aylesworth
+middlename : e
+year : 1992
+year_papertitle : ((1992, 'stephen k white political theory and postmodernism'), (1992, 'stephen k white political theory and postmodernism reviewed by'), (1995, 'r philip buckley husserl heidegger and the crisis of philosophical responsibility reviewed by'))
+keywords : frozenset({'religious studies', 'epistemology'})
+
+firstname : gary
+lastname : aylesworth
+middlename : eben
+year : 1986
+year_papertitle : ((1986, 'from grounds to play a comparative analysis of wittgenstein and heidegger'),)
+keywords : frozenset({'philosophy'})
+
+6/10 positive, 7/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : astrida
+lastname : tantillo
+middlename : orle
+year : 1998
+year_papertitle : ((1998, 'goethe s botany and his philosophy of gender'), (1998, 'goethes romane aufbruch in die moderne'), (2001, 'a new reading of werther as goethe s critique of rousseau'), (2002, 'goethe s elective affinities and the critics'), (2002, 'the will to create'), (2003, 'falsche tendenzen der staatsdiener goethe und der dichter'), (2004, 'northern dreams of the south imagining italy in the eighteenth century'))
+keywords : frozenset({'economic history', 'ancient history', 'classics', 'anthropology', 'literature', 'art history'})
+
+firstname : astrida
+lastname : tantillo
+middlename : orle
+year : 1994
+year_papertitle : ((1994, 'nature s artistry goethe s science and die wahlverwandtschaften'),)
+keywords : frozenset({'philosophy', 'science history', 'germanic literature'})
+
+7/10 positive, 7/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : thomas
+lastname : kennedy
+middlename : d
+year : 1990
+year_papertitle : ((1990, 'the political meaning of christianity an interpretation by glenn tinder baton rouge and london louisiana state university press 1989 29 95 isbn 0 8071 1510 x'),)
+keywords : frozenset({'theology'})
+
+firstname : thomas
+lastname : kennedy
+middlename : allen
+year : 1997
+year_papertitle : ((1997, 'project starfish a church and community based public school mentoring program'),)
+keywords : frozenset({'public policy', 'school counseling', 'theology', 'secondary education', 'religion'})
+
+8/10 positive, 7/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : andrew
+lastname : davis
+middlename : r
+year : 2013
+year_papertitle : ((2013, 'tel dan in its northern cultic context'), (2013, 'the literary effect of gender discord in the book of ruth'), (2013, 'translating חנם in job 1 9 and 2 3 on the relationship between job s piety and his interiority'), (2015, 'wrestling jacob in the book of genesis and august wilson s fences'), (2016, 'rereading 1 kings 17 21 in light of ancient medical texts'), (2017, 'a near eastern treaty parallel to ezekiel s dry bones'))
+keywords : frozenset({'environmental ethics', 'social psychology', 'ancient history', 'linguistics', 'psychoanalysis', 'anthropology', 'literature'})
+
+firstname : andrew
+lastname : davis
+middlename : alexander
+year : 2009
+year_papertitle : ((2009, 'living method from the regulative to the constitutive idea in hegel s logic'),)
+keywords : frozenset({'philosophy'})
+
+8/10 positive, 8/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : chris
+lastname : eliasmith
+middlename : None
+year : 1996
+year_papertitle : ((1996, 'the third contender a critical examination of the dynamicist theory of cognition'), (1997, 'computation and dynamical models of mind'), (1997, 'waves particles and explanatory coherence'), (1998, 'dynamical models and van gelder s dynamicism two different things'), (1998, 'the metaphysics of science an account of modern science in terms of principles laws and theories craig dilworth boston studies in the philosophy of science vol 173 dordrecht kluwer academic publishers 1995 x 235 pp 98 00'), (1999, 'developing and applying a toolkit from a general neurocomputational framework'), (2000, 'rethinking central pattern generators a general approach'), (2001, 'attractive and in discrete'), (2001, 'beyond bumps spiking networks that store sets of functions'), (2001, 'integrating structure and meaning a distributed model of analogical mapping'))
+keywords : frozenset({'epistemology', 'applied mathematics', 'machine learning', 'algorithm', 'control theory', 'artificial intelligence', 'cognitive science'})
+
+firstname : christopher
+lastname : eliasmith
+middlename : david
+year : 2000
+year_papertitle : ((2000, 'how neurons mean a neurocomputational theory of representational content'),)
+keywords : frozenset({'neurology', 'philosophy', 'cognitive therapy'})
+
+8/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : anthony
+lastname : matteo
+middlename : m
+year : 1988
+year_papertitle : ((1988, 'can belief in god be basic'), (1988, 'preserving life public policy and the life not worth living by richard sherlock chicago loyola university press 1987 xiv 332 pages 15 95'))
+keywords : frozenset({'economic history', 'epistemology'})
+
+firstname : anthony
+lastname : matteo
+middlename : michael
+year : 1987
+year_papertitle : ((1987, 'joseph marechal and the transcendental turn in catholic thought'),)
+keywords : frozenset({'philosophy'})
+
+8/10 positive, 10/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : chris
+lastname : eliasmith
+middlename : None
+year : 1996
+year_papertitle : ((1996, 'the third contender a critical examination of the dynamicist theory of cognition'), (1997, 'computation and dynamical models of mind'), (1997, 'waves particles and explanatory coherence'), (1998, 'dynamical models and van gelder s dynamicism two different things'), (1998, 'the metaphysics of science an account of modern science in terms of principles laws and theories craig dilworth boston studies in the philosophy of science vol 173 dordrecht kluwer academic publishers 1995 x 235 pp 98 00'), (1999, 'developing and applying a toolkit from a general neurocomputational framework'), (2000, 'rethinking central pattern generators a general approach'), (2001, 'attractive and in discrete'), (2001, 'beyond bumps spiking networks that store sets of functions'), (2001, 'integrating structure and meaning a distributed model of analogical mapping'))
+keywords : frozenset({'epistemology', 'applied mathematics', 'machine learning', 'algorithm', 'control theory', 'artificial intelligence', 'cognitive science'})
+
+firstname : christopher
+lastname : eliasmith
+middlename : david
+year : 2000
+year_papertitle : ((2000, 'how neurons mean a neurocomputational theory of representational content'),)
+keywords : frozenset({'neurology', 'philosophy', 'cognitive therapy'})
+
+8/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished
+firstname : anthony
+lastname : matteo
+middlename : m
+year : 1988
+year_papertitle : ((1988, 'can belief in god be basic'), (1988, 'preserving life public policy and the life not worth living by richard sherlock chicago loyola university press 1987 xiv 332 pages 15 95'))
+keywords : frozenset({'economic history', 'epistemology'})
+
+firstname : anthony
+lastname : matteo
+middlename : michael
+year : 1987
+year_papertitle : ((1987, 'joseph marechal and the transcendental turn in catholic thought'),)
+keywords : frozenset({'philosophy'})
+
+9/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : stephen
+lastname : blochschulman
+middlename : None
+year : 2010
+year_papertitle : ((2010, 'who s afraid of politics on the need to teach political engagement'), (2012, 'argumentation step by step learning critical thinking through deliberate practice'), (2015, 'asking another question democratic thinking inside and outside the classroom a forthcoming interview with elizabeth minnich and si kahn'), (2015, 'i am not trying to be defiant i am trying to be your partner how to help students navigate educational institutions that do not value democratic practice'), (2015, 'what kind of community an inquiry into teaching practices that move beyond exclusion'), (2016, 'a critique of methods in the scholarship of teaching and learning in philosophy'), (2016, 'asking bigger questions an invitation to further conversation'), (2016, 'beyond add teaching and learning and stir epistemologies of ignorance teaching and learning in philosophy and the need for resistance'), (2016, 'engaging in social partnerships democratic practices for campus community partnerships'), (2016, 'scholarship of teaching and learning in the arts and humanities moving the conversation forward special section editors introduction'))
+keywords : frozenset({'visual arts', 'psychoanalysis', 'multimedia', 'public relations', 'epistemology', 'pedagogy', 'cognitive science'})
+
+firstname : stephen
+lastname : block
+middlename : a
+year : 2012
+year_papertitle : ((2012, 'rhetoric reason and the problem of rule aristotle and j s mill on speech and politics'),)
+keywords : frozenset({'philosophy', 'political science'})
+
+10/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : yeonjeong
+lastname : kim
+middlename : None
+year : 2013
+year_papertitle : ((2013, 'agreement and similarity in self other perceptions of moral character'), (2014, 'moral character in the workplace'), (2015, 'moral character and workplace deviance recent research and current trends'), (2015, 'taking one for the team motivating prosocial volunteering by varying the size and the un certainty of its impact on collective welfare'), (2016, 'guilt proneness is a marker of integrity and employment suitability'), (2017, 'academic achievement of latino immigrant adolescents the effects of negative school social relationships school safety and educational expectation'), (2017, 'behavioral circumscription and the folk psychology of belief a study in ethno mentalizing'), (2017, 'the gettier intuition from south america to asia'), (2018, 'do relational and structural characteristics of negative school environments independently predict immigrant adolescents academic achievement'), (2019, 'nothing at stake in knowledge'))
+keywords : frozenset({'social psychology', 'epistemology'})
+
+firstname : yeong
+lastname : kim
+middlename : gyu
+year : 2003
+year_papertitle : ((2003, 'the role of worship in church renewal a case study of daejeon choongshin presbyterian church'),)
+keywords : frozenset({'theology'})
+
+10/10 positive, 10/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : marta
+lastname : hanson
+middlename : None
+year : 2003
+year_papertitle : ((2003, 'h t huang science and civilisation in china volume 6 biology and biological technology part 6 fermentations and food science new york cambridge university press 2000 pp xxviii 741 150 00'), (2003, 'reviews of books science and civilisation in china volume 6 biology and biological technology part 6 fermentations and food science h t huang'), (2003, 'the golden mirror in the imperial court of the qianlong emperor 1739 1742'), (2004, 'joanna grant a chinese physician wang ji and the stone mountain medical case histories needham research institute series london and new york routledgecurzon 2003 pp xi 209 illus 55 00 hardback 0 415 29758 3'), (2006, 'benjamin a elman on their own terms science in china 1550 1900 cambridge harvard university press 2005 pp xxxviii 567 55 00'), (2006, 'enhancing the practitioner s sense of time place and practice the history of chinese medicine for practitioners workshop'), (2006, 'northern purgatives southern restoratives ming medical regionalism'), (2007, 'needham s heavenly volumes and earthly tomes'), (2008, 'maoist public health campaigns chinese medicine and sars'))
+keywords : frozenset({'social science', 'ancient history', 'traditional medicine', 'gender studies', 'classics', 'ethnology', 'law', 'theology', 'medical education', 'anthropology', 'literature'})
+
+firstname : mark
+lastname : hanson
+middlename : jeffrey
+year : 1993
+year_papertitle : ((1993, 'implications of nonfoundationalist moral epistemologies for theological ethics in public moral discourse'),)
+keywords : frozenset({'theology', 'religion', 'philosophy'})
+
+10/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : seung
+lastname : lee
+middlename : jae
+year : 2004
+year_papertitle : ((2004, 'a nonneutralizing anti hiv 1 antibody turns into a neutralizing antibody when expressed on the surface of hiv 1 susceptible cells a new way to fight hiv'), (2006, 'a nonneutralizing anti hiv type 1 antibody turns into a broad neutralizing antibody when expressed on the surface of hiv type 1 susceptible cells ii inhibition of hiv type 1 captured and transferred by dc sign'))
+keywords : frozenset({'immunology', 'virology'})
+
+firstname : seungkee
+lastname : lee
+middlename : None
+year : 2000
+year_papertitle : ((2000, 'determinate and indeterminate judgments and the unity of kant s critical philosophy'),)
+keywords : frozenset({'philosophy'})
+
+10/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jeff
+lastname : engelhardt
+middlename : None
+year : 2015
+year_papertitle : ((2015, 'emergent substances physical properties action explanations'), (2015, 'property reductive emergent dualism'), (2015, 'what is the exclusion problem'), (2016, 'what we talk about when we talk about content externalism'), (2017, 'interactive inclusive substance dualism'), (2017, 'mental causation is not just downward causation'), (2019, 'false double consciousness hermeneutical resources from the rush limbaugh show'), (2019, 'linguistic labor and its division'), (2019, 'resources rules and oppression'))
+keywords : frozenset({'psychoanalysis', 'criminology', 'epistemology', 'linguistics'})
+
+firstname : jeffrey
+lastname : engelhardt
+middlename : michael
+year : 2011
+year_papertitle : ((2011, 'the metaphysical role of causal roles'),)
+keywords : frozenset({'philosophy', 'metaphysics'})
+
+10/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+Finished labeling
+INFO:rlr.crossvalidation:using cross validation to find optimum alpha...
+INFO:rlr.crossvalidation:optimum alpha: 0.010000, score 0.6832997421289402
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:TfidfNGramSearchPredicate: (0.8, lastname)
+INFO:dedupe.training:TfidfNGramSearchPredicate: (0.8, middlename)
+Done in 15.337178341547649 minutes.

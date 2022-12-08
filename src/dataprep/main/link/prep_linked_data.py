@@ -32,7 +32,6 @@ import pdb
 import argparse
 
 # ## Arguments
-# ## Arguments
 parser = argparse.ArgumentParser(description = 'Inputs for author_collab')
 parser.add_argument("--filter_trainname", 
                     type=str,
@@ -145,7 +144,7 @@ WHERE n_links = 1
 
 # for now, do not condition on certain time distance between 
 # graduation year and whenever the supervisor has a publication. 
-# TODO: do this after gaining some insights in the analysis
+# Do this on the fly after gaining some insights in the analysis 
 
 con.execute("CREATE UNIQUE INDEX idx_cla_AuthorIdrelid ON current_links_advisors (AuthorId ASC, relationship_id ASC)")
 con.execute("CREATE UNIQUE INDEX idx_cla_relid ON current_links_advisors (relationship_id ASC)") # this is also a way to make sure there are not multiple links per goid

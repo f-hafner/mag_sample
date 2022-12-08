@@ -21,7 +21,17 @@ fields=("chemistry"
         "geology" 
         "geography"
         "economics")
-
+        
+fields=("art"
+        "business"
+        "history"
+        "materials science"
+        "medicine"
+        "philosophy"
+         )
+ fields=("philosophy"
+         )
+ 
 
 for i in "${!fields[@]}"; do 
     field=${fields[$i]} 
