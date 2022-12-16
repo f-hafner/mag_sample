@@ -26,7 +26,7 @@ import numpy as np
 import re 
 
 from helpers.variables import db_file, datapath, databasepath
-from helpers.functions import analyze_db, normalize_string, drop_firstword
+from helpers.functions import analyze_db 
 
 
 path_magfos = datapath+"/magfos/"
@@ -36,19 +36,19 @@ path_magfos = datapath+"/magfos/"
 def load_magfos(filepath):
     df = pd.read_csv(filepath, 
                         sep="\t",
-                        names=["goid", "fieldrank", "FieldOfStudyId", "score"])
+                        names=["goid", "fieldrank", "FieldOfStudyId", "score"],
+                        dtype = {'goid': int, 'fieldrank': int, 'x3': int, 'x4': float})
+    df.drop_duplicates(inplace=True)
     return df
 
 files = [f for f in listdir(path_magfos) if isfile(join(path_magfos, f))]
 
 
-for (i,f) in enumerate(files):
-    df = load_magfos(path_magfos+files[0])
-    #print(df.head())
-
-
-    con = sqlite.connect(database = db_file, isolation_level= None)
-    with con: 
+con = sqlite.connect(database = db_file, isolation_level= None)
+with con: 
+    for (i,f) in enumerate(files):
+        df = load_magfos(path_magfos+f)
+        #print(df.head())
         if i==0:
             if_exists_opt="replace"
         else:
@@ -65,9 +65,8 @@ for (i,f) in enumerate(files):
                                 """
                     )
 
-# Make index and clean up
-with con:
-    con.execute("CREATE UNIQUE INDEX idx_pq_magfos ON pq_magfos (goid ASC, FieldOfStudyId ASC)")
+    # Make index and clean up
+    con.execute("CREATE UNIQUE INDEX idx_pq_magfos ON pq_magfos (goid ASC,fieldrank ASC, FieldOfStudyId ASC)")
 
     analyze_db(con)
 
