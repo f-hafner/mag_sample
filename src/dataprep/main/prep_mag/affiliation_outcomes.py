@@ -116,7 +116,7 @@ with con as c:
             INNER JOIN (
                 SELECT FieldOfStudyId 
                 FROM FieldsOfStudy 
-                WHERE level <= {args.fos_max_level} 
+                WHERE level >= {args.fos_max_level} 
             ) USING(FieldOfStudyId)
         ) USING(PaperId)
         INNER JOIN ( 
