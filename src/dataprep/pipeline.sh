@@ -68,6 +68,9 @@ python -m $script_path.load_proquest.correspond_fieldofstudy &> \
 python -m $script_path.load_proquest.pq_author_info_linking &> \
     $logfile_path/pq_author_info_linking.log
 
+python -m $script_path.load_proquest.magfos_to_db &> \
+    $logfile_path/pq_magfos_to_db.log
+    
 # ## Make some summary stats on the data
 Rscript $script_path/reports/data_nces.R &> temp/data_nces.log  
 
