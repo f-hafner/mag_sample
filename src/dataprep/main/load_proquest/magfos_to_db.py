@@ -10,7 +10,10 @@ Create table in database:
 
 pq_magfos data schema is:
 
-goid, fieldrank INTEGER, FieldOfStudyId INTEGER, score NUMERIC 
+goid INTEGER, fieldrank INTEGER, FieldOfStudyId INTEGER, score NUMERIC 
+ 
+fieldrank is the counter within a goid for the fields, fieldrank=1 means this is the field that has the highest score
+using this variable one can easily get the top N fields, by where fieldrank<=N 
 
 unique index on goid and FieldOfStudyId (multiple fields per goid)
 """
@@ -66,9 +69,9 @@ with con:
                     )
 
     # Make index and clean up
-    con.execute("CREATE UNIQUE INDEX idx_pq_magfos ON pq_magfos (goid ASC,fieldrank ASC, FieldOfStudyId ASC)")
+    con.execute("CREATE UNIQUE INDEX idx_pq_magfos ON pq_magfos (goid ASC, FieldOfStudyId ASC)")
 
     analyze_db(con)
 
-    con.close()
+con.close()
 
