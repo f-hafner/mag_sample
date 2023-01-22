@@ -72,16 +72,17 @@ def calculate_quantiles(chunk_id, write_dir, field, year, quantiles=list(np.aran
     df = pd.read_sql(con=con, sql=sql, params=(list(keep_doctypes_citations) + [year] + [field]))
     logging.debug(f"df.shape is {df.shape}")
     logging.info(f"year: {year}, field: {field}")
-    q_out = (df.groupby(["Year", "Field1"])["CitationCount_y10"]
-            .quantile(q=quantiles)
-            .reset_index()
-            .rename(columns={"level_2": "quantile", 
-                             "CitationCount_y10": "value"})
-            )
-    q_out["variable"] = "CitationCount_y10"
-    logging.debug(f"current directory is {os.getcwd()}")
-    logging.debug(f"write_dir is {args.write_dir}")
-    q_out.to_csv(f"{write_dir}/part-{chunk_id}.csv", index=False)
+    if df.shape[0] > 0: # some field-year combinations may not exist in data.
+        q_out = (df.groupby(["Year", "Field1"])["CitationCount_y10"]
+                .quantile(q=quantiles)
+                .reset_index()
+                .rename(columns={"level_2": "quantile", 
+                                "CitationCount_y10": "value"})
+                )
+        q_out["variable"] = "CitationCount_y10"
+        logging.debug(f"current directory is {os.getcwd()}")
+        logging.debug(f"write_dir is {args.write_dir}")
+        q_out.to_csv(f"{write_dir}/part-{chunk_id}.csv", index=False)
 
 # ## Arguments
 parser = argparse.ArgumentParser(description = 'Inputs for prep_quantiles_papercites')
