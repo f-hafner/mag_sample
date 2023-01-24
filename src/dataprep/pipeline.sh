@@ -45,6 +45,9 @@ python3 -m $script_path.prep_mag.prep_quantiles_papercites \
     --ncores 10 \
     --write_dir "quantiles_temp" \
     &> $logfile_path/prep_quantiles_papercites.log
+python3 -m $script_path.prep_mag.read_quantiles_papercites \
+    --read_dir "quantiles_temp" \
+    &> $logfile_path/read_quantiles_papercites.log
 
 python3 $script_path/prep_mag/paper_outcomes.py &> $logfile_path/paper_outcomes.log
 
