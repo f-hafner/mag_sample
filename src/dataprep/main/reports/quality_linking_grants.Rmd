@@ -52,7 +52,7 @@ src_dbi(con)
 
 ```{r}
 # parameters for selecting links 
-min_score_advisors <- 0.7 # minimum score from dedupe 
+min_score_grants <- 0.7 # minimum score from dedupe 
 
 ```
 
@@ -65,7 +65,7 @@ linking_info <- tbl(con,
                     sql("select iteration_id, field
                           from (
                               select *, max(iteration_id) OVER(partition by field) as max_iter
-                              from linking_info_advisors
+                              from linking_info_grants
                               where recall = 0.9 
                                   and testing = 0
                                   and institution = 'True'
@@ -77,57 +77,54 @@ linking_info <- tbl(con,
                           where iteration_id = max_iter "))
 
 
-# linked_advisors <- tbl(con, sql("select * 
-#                                 from linked_ids_advisors
-#                                 ")) %>%
-#   inner_join(linking_info %>% 
-#                select(iteration_id),
-#              by = "iteration_id")
-# 
+linked_grants <- tbl(con, sql("select * 
+                                 from linked_ids_grants
+                                 ")) %>%
+   inner_join(linking_info %>% 
+                select(iteration_id),
+              by = "iteration_id")
+ 
 # 
 # # load all grants try code below
-# theses <- tbl(con, sql("
-#           SELECT a.GrantID || "_" || c.author_position as grantid_authorposition
-#               , CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) AS year_range
-#               , b.institution, c.firstname, c.lastname, c.middlename
-#               , '' AS keywords, '' AS coauthors -- # necessary for current code structure
-#               , CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) || "//" || b.institution AS main_us_institutions_year
-#               , CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) || "//" || b.institution AS all_us_institutions_year
-#           FROM NSF_MAIN as a
-#           INNER JOIN (
-#               SELECT GrantID, Name AS institution
-#               FROM NSF_Institution
-#               WHERE Position = 0 #-- take the first reported. otherwise possibly duplicates. NSF_Performance_Institution has some missing. https://github.com/chrished/science_career_RAs/issues/19
-#           ) b
-#           USING (GrantID)
-#           INNER JOIN (
-#               SELECT GrantID
-#                   , FirstName AS firstname
-#                   , LastName AS lastname
-#                   , PIMidInit AS middlename --# NOTE: PISufxName is often "Jr", "Mr", JR, ...
-#                   , Position as author_position --## Some grants have >1 PIs
-#               FROM NSF_Investigator
-#               WHERE RoleCode = 'principal investigator'
-#           ) c
-#           USING (GrantID)
-#           WHERE AWARD_TranType = 'grant' AND AWARD_Agency = 'nsf'
-#               AND a.AwardInstrument_Value IN ('standard grant', 'continuing grant')
-#               AND c.lastname != 'data not available'
-#               AND CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) >= {args.startyear}
-#               AND CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) <= {args.endyear}
-#               AND b.institution != "travel award"
-#                    ")
-#               )
-# 
-#         # query_nsf = f"""
+grants <- tbl(con, sql("
+          SELECT a.GrantID || \"_\" || c.author_position as grantid_authorposition
+              , CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) AS year 
+              ,a.GrantID, b.institution, c.firstname, c.lastname, c.middlename
+          FROM NSF_MAIN as a
+          INNER JOIN (
+              SELECT GrantID, Name AS institution
+              FROM NSF_Institution
+              WHERE Position = 0  
+          ) b
+          USING (GrantID)
+          INNER JOIN (
+              SELECT GrantID
+                  , FirstName AS firstname
+                  , LastName AS lastname
+                  , PIMidInit AS middlename  
+                  , Position as author_position  
+              FROM NSF_Investigator
+              WHERE RoleCode = 'principal investigator'
+          ) c
+          USING (GrantID)
+          WHERE AWARD_TranType = 'grant' AND AWARD_Agency = 'nsf'
+              AND a.AwardInstrument_Value IN ('standard grant', 'continuing grant')
+              AND c.lastname != 'data not available'
+              AND CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) >= 1990
+              AND CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) <= 2020
+              AND b.institution != \"travel award\"
+                   ")
+              )
+
+        # query_nsf = f"""
 #    
  
 ```
 
 
 ```{r}
-#linked_advisors <- collect(linked_advisors)
-# theses <- collect(theses)
+linked_grants <- collect(linked_grants)
+grants <- collect(grants)
 linking_info <- collect(linking_info)
 ```
 
@@ -138,10 +135,11 @@ linking_info <- collect(linking_info)
 
 ```{r}
 
-linked_advisors %>%
+linked_grants %>%
   left_join(linking_info, by = "iteration_id") %>%
+  #filter(link_score>=0.7) %>%
   ggplot(aes(x = link_score)) +
-  geom_histogram(bins = 100, aes( y = ..density..)) +
+  geom_histogram(bins = 100, aes( y = after_stat(density))) +
   facet_wrap(~field)
 
 ```
@@ -161,30 +159,29 @@ keep_fields <- select_fields
 #                 "geography", "geology", "mathetmatics", "physics",
 #                 "political science", "psychology", "sociology")
 
-score_by_year <- theses %>% 
-  filter(degree_year >= 1985) %>%
-  left_join(linked_advisors,
-            by = "relationship_id") %>%
-  left_join(pq_fields_mag, by = "goid") %>%
-  filter(field %in% keep_fields)
+score_by_year <- grants %>% 
+   left_join(linked_grants,
+           by = "GrantID")%>% 
+   filter(year >= 1985) %>%
+   left_join(linking_info,
+            by = "iteration_id") %>%
+  # filter(link_score>=0.7) #%>%
+   filter(field %in% keep_fields)
 
-# %>%
-#   left_join(linking_info,
-#             by = "iteration_id")
 
-score_by_year %>%
-  mutate(link_score_adj = ifelse(is.na(link_score), -1, link_score)) %>%
-  group_by(degree_year, field) %>%
-  summarise(mean_score = mean(link_score, na.rm = TRUE),
-            #p50_score = quantile(link_score, probs = 0.5),
-            share_linked = mean(link_score_adj > min_score_advisors),
-            .groups = "drop") %>%
-  pivot_longer(cols = all_of(c("mean_score", "share_linked")),
-               names_to = "stat") %>%
-  ggplot(aes(x = degree_year, y = value)) + 
-  geom_line(aes(linetype = stat)) + 
-  facet_wrap(~field) + 
-  theme(legend.position = "bottom")
+# score_by_year %>%
+#   mutate(link_score_adj = ifelse(is.na(link_score), -1, link_score)) %>%
+#   group_by(year, field) %>%
+#   #p50_score = quantile(link_score, probs = 0.5),
+#   summarise(mean_score = mean(link_score, na.rm = TRUE),
+#             share_linked = mean(link_score_adj > min_score_grants),
+#             .groups = "drop") %>%
+#   pivot_longer(cols = all_of(c("mean_score", "share_linked")),
+#                names_to = "stat") %>%
+#   ggplot(aes(x = year, y = value)) +
+#   geom_line(aes(linetype = stat)) +
+#   facet_wrap(~field) +
+#   theme(legend.position = "bottom")
 
 ```
 
