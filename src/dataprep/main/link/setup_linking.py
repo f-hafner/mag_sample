@@ -134,8 +134,8 @@ elif args.linking_type == "grants":
     tbl_linking_info = "linking_info_grants"
     tbl_linked_ids = "linked_ids_grants"
     path_dedupe_files = path_dedupe_files + "grants/"
-    column_order_links = f"""{nsf_entity_id} TEXT
-                        , AuthorId INT"""
+    column_order_links = f"""AuthorId INT,
+                            {nsf_entity_id} TEXT"""
 
 
 if not os.path.isdir(path_dedupe_files):
