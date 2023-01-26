@@ -206,8 +206,8 @@ if __name__ == "__main__":
             data_1_use = otherdata
             data_2_use = magdata
         elif args.linking_type == "grants":
-            data_1_use = magdata
-            data_2_use = otherdata
+            data_1_use = otherdata
+            data_2_use = magdata 
             
         del otherdata 
         del magdata

@@ -111,7 +111,7 @@ if __name__ == "__main__":
     elif args.linking_type == "advisors": # this is important: we link many theses in proquest to one record on mag 
         pairs = linker.pairs(data_1 = otherdata, data_2 = magdata)
     elif args.linking_type == "grants":
-        pairs = linker.pairs(data_1 = magdata, data_2 = otherdata)
+        pairs = linker.pairs(data_1 = otherdata, data_2 = magdata)
     
     print("made pairs", flush=True)
     scores = linker.score(pairs)
