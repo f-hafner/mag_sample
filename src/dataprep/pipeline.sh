@@ -115,8 +115,18 @@ Rscript -e "rmarkdown::render('$script_path/reports/quality_linking_advisors.Rmd
 # ## 3. Link NSF grants to MAG advisors
 bash $script_path/link/grants.sh $logfile_path
 
+# XXX adapt for grants - use mona train
+#python -m $script_path.link.write_csv_links --linking_type "advisors" --train_name "christoph_degree0" \
+#    &> $logfile_path/write_csv_links_advisors.log
+    
+Rscript -e "rmarkdown::render('$script_path/reports/quality_linking_grants.Rmd', output_dir = '$output_path')" \
+    &> $logfile_path/quality_linking_grants.log
+
+
 
 # # Generate panel data set etc. for the linked entities
 python -m $script_path.link.prep_linked_data \
     --filter_trainname "christoph_" \
     &> $logfile_path/prep_linked_data.log
+    
+    
