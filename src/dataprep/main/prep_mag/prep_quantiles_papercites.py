@@ -4,8 +4,9 @@
 """
 Script prep_quantiles_papercites.py
     Use multiprocessing to calculate 
-    quantiles of citation distributions by Field1-Year
-    and save as csv files
+    quantiles of citation distributions by field-Year
+    and save as csv files.
+    Field is at level 0 or 1 in MAG.
 """
 
 import multiprocessing as mp
@@ -33,7 +34,14 @@ def enumerated_arguments(*args):
         yield ((i,) + tuple([j for j in k]))
 
 
-def calculate_quantiles(chunk_id, write_dir, field, year, quantiles=list(np.arange(0, 1, 0.05))):
+def calculate_quantiles(
+    chunk_id, 
+    write_dir, 
+    field, 
+    year,
+    level, 
+    quantiles=list(np.arange(0, 1, 0.01))
+    ):
     """
     For a year-field combination, calculate the quantiles of the 
     10 year forward citation distribution and save as csv. 
@@ -48,16 +56,19 @@ def calculate_quantiles(chunk_id, write_dir, field, year, quantiles=list(np.aran
        Fields to process
     years: list
        years to process
+    level: int
+        Level of FieldOfStudyId, either 0 or 1.
     """
     # qmarks_years = ",".join(["?" for _ in range(len(years))])
     # qmarks_fields = ",".join(["?" for _ in range(len(fields))])
     qmarks_year = "?"
     qmarks_field = "?"
+    field_column = f"Field{level}"
     sql = f"""
         SELECT a.PaperId
             , a.Year
             , b.CitationCount_y10
-            , c.Field1
+            , c.{field_column}
         FROM Papers AS a
         INNER JOIN 
         paper_outcomes AS b
@@ -67,13 +78,13 @@ def calculate_quantiles(chunk_id, write_dir, field, year, quantiles=list(np.aran
         USING(PaperId)
         WHERE a.DocType IN ({insert_questionmark_doctypes_citations})
         AND a.Year IN ({qmarks_year})
-        AND c.Field1 IN ({qmarks_field})
+        AND c.{field_column} IN ({qmarks_field})
     """
     df = pd.read_sql(con=con, sql=sql, params=(list(keep_doctypes_citations) + [year] + [field]))
     logging.debug(f"df.shape is {df.shape}")
-    logging.info(f"year: {year}, field: {field}")
+    logging.debug(f"year: {year}, field: {field}")
     if df.shape[0] > 0: # some field-year combinations may not exist in data.
-        q_out = (df.groupby(["Year", "Field1"])["CitationCount_y10"]
+        q_out = (df.groupby(["Year", field_column])["CitationCount_y10"]
                 .quantile(q=quantiles)
                 .reset_index()
                 .rename(columns={"level_2": "quantile", 
@@ -87,9 +98,15 @@ def calculate_quantiles(chunk_id, write_dir, field, year, quantiles=list(np.aran
 # ## Arguments
 parser = argparse.ArgumentParser(description = 'Inputs for prep_quantiles_papercites')
 parser.add_argument("--nfields", 
-                    dest = "n_fields", 
-                    default = 1, 
-                    help = "Number of authors process. 'all' or an integer.") 
+                    dest="n_fields", 
+                    default=1, 
+                    help="Number of authors process. 'all' or an integer.") 
+parser.add_argument("--level",
+                    dest="level",
+                    type=int,
+                    default=1,
+                    choices=[0, 1],
+                    help="summarise at field level 0 or 1?")
 # parser.add_argument("--chunksize", 
 #                     dest = "chunk_size",
 #                     default = 10_000,
@@ -131,16 +148,18 @@ con = sqlite.connect(database = "file:" + db_file + "?mode=ro",
 
 ## Prepare inputs for map
 if args.n_fields == "all":
-    args.n_fields = con.execute("SELECT COUNT(FieldOfStudyId) FROM FieldsOfStudy WHERE Level = 1").fetchall()[0][0]
+    args.n_fields = con.execute(f"SELECT COUNT(FieldOfStudyId) FROM FieldsOfStudy WHERE Level = {args.level}").fetchall()[0][0]
 else:
     args.n_fields = int(args.n_fields)
 
-query = "SELECT DISTINCT FieldOfStudyId FROM FieldsOfStudy WHERE Level = 1 LIMIT ?"
-fields = pd.read_sql(sql=query, con=con, params=(args.n_fields, ))
+query = "SELECT DISTINCT FieldOfStudyId FROM FieldsOfStudy WHERE Level = ? LIMIT ?"
+fields = pd.read_sql(sql=query, con=con, params=(args.level, args.n_fields))
 
 
 years = [y for y in range(args.start_year, args.end_year)]
-inputs = itertools.product([args.write_dir], fields.FieldOfStudyId, years)
+inputs = itertools.product(
+    [args.write_dir], fields.FieldOfStudyId, years, [args.level]
+    )
 
 # ## Map 
 enumerated_inputs = enumerated_arguments(inputs)

@@ -7,7 +7,7 @@ Script affiliation_outcomes.py
 Generate tables: at the affiliation-year-field0 level
 - affiliation_outcomes: publication outcomes
     - number of journal articles published and 10-year forward citations per 
-        affiliation-year-field0. Field0 is assigned from the Field0 of the published paper
+        affiliation-year-field0. Field0 is assigned from the Field0 of the published paper.
 - affiliation_fields: keywords of published papers 
     - fields of study of the published paper 
 NOTE: in the long run, we may consider to move this to prep_affiliations.py, or unify them in a new file.
