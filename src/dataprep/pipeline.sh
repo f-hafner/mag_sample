@@ -66,7 +66,7 @@ python3 $script_path/prep_mag/author_info_linking.py --years_first_field 7 \
 python -m $script_path.prep_mag.author_field0 \
     &> $logfile_path/author_field0.log
 
-python3 -m $script_path.prep_mag.affiliation_outcomes --fos_max_level 2 \ 
+python3 -m $script_path.prep_mag.affiliation_outcomes --fos_max_level 2 \
     &> $logfile_path/affiliation_outcomes.log #note: script_path should omit the / at the end
 
 
