@@ -70,6 +70,7 @@ with con:
 
     # Make index and clean up
     con.execute("CREATE UNIQUE INDEX idx_pq_magfos ON pq_magfos (goid ASC, FieldOfStudyId ASC)")
+    con.execute("CREATE INDEX idx_pq_magfos_fos ON pq_magfos (FieldOfStudyId ASC)")
 
     analyze_db(con)
 
