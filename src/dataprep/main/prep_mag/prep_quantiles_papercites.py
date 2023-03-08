@@ -21,17 +21,11 @@ import sys
 import numpy as np
 import logging 
 import itertools 
-
+from helpers.functions import enumerated_arguments
 
 from helpers.variables import db_file, keep_doctypes_citations, insert_questionmark_doctypes_citations
 
 logging.basicConfig(level=logging.INFO)
-
-
-def enumerated_arguments(*args):
-    "from a generator *args, yield a tuple (i, *args[i]) for i in range(len(args))."
-    for i, k in enumerate(*args):
-        yield ((i,) + tuple([j for j in k]))
 
 
 def calculate_quantiles(
