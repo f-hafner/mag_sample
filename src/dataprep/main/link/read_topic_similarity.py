@@ -41,11 +41,11 @@ file_map = {
     "inst": {
         "fn_full": "sim_to_institutions_full.csv",
         "tbl": "graduates_similarity_to_institutions",
-        "schema": """(AuthorId
-            , AffiliationId
-            , period
-            , similarity_faculty_overall
-            , similarity_closest_collaborator)""",
+        "schema": """(AuthorId INT 
+            , AffiliationId INT 
+            , period TEXT
+            , similarity_faculty_overall REAL
+            , similarity_closest_collaborator REAL)""",
         "idx": [
             """CREATE UNIQUE INDEX idx_gsi_AuthorAffilPeriod
                 ON graduates_similarity_to_institutions (AuthorId, AffiliationId, period)"""
@@ -62,11 +62,11 @@ file_map = {
     "closest_collaborator_ids": {
         "fn_full": "sim_closest_collaborator_full.csv",
         "tbl": "graduates_closest_collaborators",
-        "schema": """(AuthorId
-            , AffiliationId
-            , CoAuthorId
-            , period
-            , similarity)""",
+        "schema": """(AuthorId INT 
+            , AffiliationId INT
+            , CoAuthorId INT
+            , period TEXT
+            , similarity REAL)""",
         "idx": [
             """CREATE UNIQUE INDEX idx_gcc_AuthorAffilCoAuthorPeriod 
                 ON graduates_closest_collaborators(AuthorId ASC, AffiliationId ASC, CoAuthorId ASC, period)"""
@@ -95,7 +95,7 @@ for id, params in file_map.items():
 
 
 
-shutil.rmtree(args.read_dir) 
+# shutil.rmtree(args.read_dir) 
 
 
 # ## Run ANALYZE, finish

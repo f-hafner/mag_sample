@@ -151,4 +151,4 @@ python -m $script_path.link.topic_similarity \
 
 python -m  $script_path.link.read_topic_similarity \
     --read_dir similarities_temp/ \
-    &> $logfile/read_topic_similarity.log
+    &> $logfile_path/read_topic_similarity.log

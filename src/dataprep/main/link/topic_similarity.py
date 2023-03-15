@@ -56,8 +56,8 @@ parser.add_argument("--limit",
                     type=int,
                     default=None,
                     help="Limit number of field-degree year combinations to process. For quick testing.")
+parser.add_argument('--no-parallel', action=argparse.BooleanOptionalAction, dest="noparallel")
 args = parser.parse_args()
-
 
 def get_similarities(data):
     """Calculate similarities between graduates from `degree_year` in `field`
@@ -225,8 +225,12 @@ def main():
     enumerated_inputs = enumerated_arguments(inputs, limit=args.limit)
     ctx = mp.get_context("forkserver")
     logging.info("Running queries")
-    with ProcessPoolExecutor(max_workers=args.n_cores, mp_context=ctx) as executor:
-        result = executor.map(get_similarities, enumerated_inputs, chunksize=1)
+    if args.noparallel:
+        inputs = (0, db_file, args.write_dir, 2005, 162324750, args.top_n_authors)
+        get_similarities(inputs)
+    else:
+        with ProcessPoolExecutor(max_workers=args.n_cores, mp_context=ctx) as executor:
+            result = executor.map(get_similarities, enumerated_inputs, chunksize=1)
 
     print("--queries finished.")
 
