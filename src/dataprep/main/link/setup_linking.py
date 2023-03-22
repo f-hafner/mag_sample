@@ -539,9 +539,10 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
         USING (GrantID)
         WHERE AWARD_TranType = 'grant' AND AWARD_Agency = 'nsf' 
             AND a.AwardInstrument_Value IN ('standard grant', 'continuing grant')
-            AND a.Organization_Directorate_ShortName IN {directorates}
             AND c.lastname != 'data not available'
             AND CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) >= {args.startyear}
             AND CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) <= {args.endyear}
             AND b.institution != "travel award"
         """
+
+# deleted in 542 to use all fields for linking: AND a.Organization_Directorate_ShortName IN {directorates}
