@@ -12,15 +12,18 @@ Generate tables: at the affiliation-year-field0 level
 - affiliation_fields: keywords of published papers 
     - fields of study of the published paper 
 NOTE: in the long run, we may consider to move this to prep_affiliations.py, or unify them in a new file.
+NOTE: for paper count, better use affiliation_outcomes.PaperCount, where it is unique. should not create paper count again for affiliation_fields
 """
 
 import argparse 
 import sqlite3 as sqlite
-import warnings
+import logging 
 import time 
 from helpers.functions import analyze_db
 from helpers.variables import db_file
 
+
+logging.basicConfig(level=logging.INFO)
 
 # ## Arguments
 parser = argparse.ArgumentParser()
@@ -87,6 +90,7 @@ with con as c:
 
 print("Creating tables affiliation_outcomes_temp and author_affiliation_field")
 with con as c:
+    logging.debug("making affiliation_outcomes_temp")
     c.execute("""
         CREATE TEMP TABLE affiliation_outcomes_temp AS  
         SELECT AffiliationId
@@ -109,6 +113,7 @@ with con as c:
 
     c.execute("CREATE UNIQUE INDEX idx_affo_temp_AffilYearField ON affiliation_outcomes_temp (AffiliationId, Year, Field0)")
 
+    logging.debug("making author_affiliation_field")
     c.execute("""
         CREATE TEMP TABLE author_affiliation_field AS 
         SELECT AffiliationId
@@ -127,7 +132,7 @@ with con as c:
     c.execute("CREATE UNIQUE INDEX idx_aaf_AffilYearField ON author_affiliation_field (AffiliationId, Year, Field0)")
 
 
-print("Creating table affiliation_outcomes", flush=True)
+logging.info("Creating table affiliation_outcomes")
 with con as c:
     c.execute("DROP TABLE IF EXISTS affiliation_outcomes")
     c.execute("""
@@ -144,11 +149,9 @@ with con as c:
     c.execute("CREATE UNIQUE INDEX idx_affo_AffilYearField ON affiliation_outcomes (AffiliationId, Year, Field0)")
 
 
-print("Creating table affiliation_fields", flush=True)
-
+logging.info("Creating table affiliation_fields")
 with con as c:
     c.execute("DROP TABLE IF EXISTS affiliation_fields")
-
     c.execute(f"""
         CREATE TABLE affiliation_fields AS 
         SELECT AffiliationId
@@ -174,19 +177,16 @@ with con as c:
     """)
 
     c.execute("CREATE UNIQUE INDEX idx_afff_AffilFieldYearField ON affiliation_fields (AffiliationId, FieldOfStudyId, Year, Field0)")
+    c.execute("CREATE INDEX idx_afff_AffilYearField ON affiliation_fields (AffiliationId, Year, Field0)")
     c.execute("CREATE INDEX idx_afff_Year ON affiliation_fields (Year)")
     c.execute("CREATE INDEX idx_afff_FoS ON affiliation_fields (FieldOfStudyId)")
-
-
 
 # ## Run ANALYZE, finish
 with con as c:
     analyze_db(c)
-
 
 con.close()
 
 end_time = time.time()
 
 print(f"Done in {(end_time - start_time)/60} minutes.")
-
