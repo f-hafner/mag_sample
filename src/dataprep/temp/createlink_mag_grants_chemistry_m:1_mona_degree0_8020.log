@@ -1,0 +1,123 @@
+Namespace(testing=False, verbose=1, field=['chemistry'], train_name='mona_degree0', startyear=1980, endyear=2020, loadstartyear=1980, loadendyear=2020, mergemode='m:1', recall=0.9, institution='True', fieldofstudy_cat='False', fieldofstudy_str='False', keywords='False', retrain='True', linking_type='grants', samplesize=100000, write_to='csv')
+Have max 12 cores available
+Testing is False 
+
+I set the write connection to temporary database.
+id_field is [185592680] and will be passed to sql queries.
+
+        SELECT a.GrantID || "_" || c.author_position as grantid_authorposition
+            , CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) AS year_range
+            , b.institution, c.firstname, c.lastname, c.middlename
+            , '' AS keywords, '' AS coauthors -- # necessary for current code structure
+            , CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) || "//" || b.institution AS main_us_institutions_year
+            , CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) || "//" || b.institution AS all_us_institutions_year
+        FROM NSF_MAIN as a 
+        INNER JOIN (
+            SELECT GrantID, Name AS institution
+            FROM NSF_Institution
+            WHERE Position = 0 -- take the first reported. otherwise possibly duplicates. NSF_Performance_Institution has some missing. https://github.com/chrished/science_career_RAs/issues/19
+        ) b 
+        USING (GrantID)
+        INNER JOIN (
+            SELECT GrantID
+                , FirstName AS firstname
+                , LastName AS lastname
+                , PIMidInit AS middlename --# NOTE: PISufxName is often "Jr", "Mr", JR, ... 
+                , Position as author_position --## Some grants have >1 PIs
+            FROM NSF_Investigator
+            WHERE RoleCode = 'principal investigator'
+        ) c
+        USING (GrantID)
+        WHERE AWARD_TranType = 'grant' AND AWARD_Agency = 'nsf' 
+            AND a.AwardInstrument_Value IN ('standard grant', 'continuing grant')
+            AND c.lastname != 'data not available'
+            AND CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) >= 1980
+            AND CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) <= 2020
+            AND b.institution != "travel award"
+         
+
+
+    SELECT f.AuthorId
+        , f.year
+        , f.YearLastPub
+        , f.firstname
+        , f.lastname
+        , CASE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            WHEN 
+                "" THEN NULL 
+                ELSE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            END as middlename 
+            -- ## NOTE this gives "" for middlename when it is missing 
+        , f.fieldofstudy
+        , g.keywords
+        , g.coauthors
+        , g.institution
+        , g.main_us_institutions_year
+         
+        , f.year || ";" || f.YearLastPub AS year_range 
+        , g.all_us_institutions_year
+    
+    FROM (
+        SELECT a.AuthorId
+            , a.YearFirstPub AS year
+            , a.YearLastPub 
+            , a.FirstName AS firstname
+            , REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "") AS lastname 
+                    -- https://stackoverflow.com/questions/21388820/how-to-get-the-last-index-of-a-substring-in-sqlite
+            , TRIM(SUBSTR(b.NormalizedName, length(a.FirstName) + 1)) AS middle_lastname 
+                    -- this gives all except the first name 
+            , length(b.NormalizedName) as l_fullname 
+            , length(a.FirstName) as l_firstname
+            , length(REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "")) as l_lastname
+            , e.NormalizedName AS fieldofstudy
+        FROM author_sample AS a
+        INNER JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM Authors
+        ) AS b USING(AuthorId)
+        INNER JOIN (
+            SELECT AuthorId
+            FROM author_field0
+            WHERE FieldOfStudyId_lvl0 IN (?)
+                AND Degree <= 0
+        ) USING(AuthorId)
+        LEFT JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM author_fields c
+            INNER JOIN (
+                SELECT FieldOfStudyId, NormalizedName
+                FROM FieldsOfStudy
+            ) AS d USING(FieldOfStudyId)
+            -- ## Condition on fieldofstudy being in the level 0 id_field
+            INNER JOIN (
+                SELECT ParentFieldOfStudyId, ChildFieldOfStudyId
+                FROM crosswalk_fields
+                WHERE ParentLevel = 0
+                    AND ParentFieldOfStudyId IN (?)
+            ) AS e ON (e.ChildFieldOfStudyId = c.FieldOfStudyId)
+            WHERE FieldClass = 'first'
+        ) AS e USING(AuthorId)
+    ) f
+    LEFT JOIN (
+        SELECT AuthorId
+                , main_us_institutions_career as institution
+                , coauthors
+                , keywords
+                , main_us_institutions_year
+                , all_us_institutions_year
+        FROM author_info_linking
+    ) AS g USING(AuthorId)
+    
+    WHERE f.YearLastPub  >= 1980 - 5 AND year <= 2020 + 5 AND institution is not NULL
+     
+
+reading from:  /mnt/ssd/DedupeFiles/grants/settings_chemistry_1980_2020_institutionTrue_fieldofstudy_catFalse_fieldofstudy_strFalse_keywordsFalsemona_degree0
+Link now ... 
+made pairs
+calculated scores
+made m:1 links
+Writing to database...
+Filling table info...
+Filled table info...
+Iteration id is 31
+Filling links into db...

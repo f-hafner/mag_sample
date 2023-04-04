@@ -546,3 +546,4 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
         """
 
 # deleted in 542 to use all fields for linking: AND a.Organization_Directorate_ShortName IN {directorates}
+# adjust endyear for grants?
