@@ -62,6 +62,8 @@ python3 -m $script_path.prep_mag.read_quantiles_papercites \
 
 python3 $script_path/prep_mag/paper_outcomes.py &> $logfile_path/paper_outcomes.log
 
+# TODO: add here venue_citations
+
 python3 $script_path/prep_mag/author_info_linking.py --years_first_field 7 \
     &> $logfile_path/author_info_linking.log
 
