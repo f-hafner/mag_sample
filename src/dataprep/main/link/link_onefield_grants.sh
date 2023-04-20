@@ -14,7 +14,7 @@ echo "$field"
 pwd 
 
 mergemode="m:1"
-mkdir "~/${field}/"
+mkdir "~/tmpgrants_${field}/"
 export TMP="~/tmpgrants_${field}"
 
 python3 -m main.link.train_link_mag_proquest --linking_type "grants" --no-test --mergemode $mergemode --train_name $train_name \
