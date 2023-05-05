@@ -13,7 +13,7 @@ import pandas as pd
 from datetime import datetime
 from tqdm import tqdm
 import sqlite3 as sqlite
-
+import csv 
 import dedupe
 import dedupe.backport
 from collections import OrderedDict

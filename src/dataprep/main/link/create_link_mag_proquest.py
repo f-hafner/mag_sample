@@ -176,16 +176,25 @@ if __name__ == "__main__":
     # HERE FLAVIO DELETED LINKS FROM OLD RUNS. SEE link_mag_proquest.py if you want to readd it.
     # ### Write links 
     print("Filling links into db...", flush=True)
-    links = [(i[0][0], i[0][1], i[1], iteration_id) for i in links]
     
-    write_con.executemany(
-        f"INSERT INTO {tbl_linked_ids} VALUES (?, ?, ?, ?)",
-       # tupelize_links(links, iteration_id)
-       links
-    )
-    write_con.commit()
-
-    print("Filled links into db...", flush=True)
+    if args.write_to == "csv":
+        links = [(i[0][0], i[0][1], i[1]) for i in links]
+        filename = path_temp_files + "links" + file_suffix + ".csv"
+        with open(filename, "wb") as csv_file:
+            writer = csv.writer(csv_file, delimiter=',')
+            for link in links:
+                writer.writerow(link)
+        
+        print("Filled links into csv...", flush=True)
+    else:
+        links = [(i[0][0], i[0][1], i[1], iteration_id) for i in links]
+        write_con.executemany(
+            f"INSERT INTO {tbl_linked_ids} VALUES (?, ?, ?, ?)",
+        # tupelize_links(links, iteration_id)
+        links
+        )
+        write_con.commit()
+        print("Filled links into db...", flush=True)
 
     # ### Write iteration info
     current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -231,7 +240,7 @@ if __name__ == "__main__":
     analyze_db(write_con)
 
     if args.write_to == "csv":
-        print("Copying to csv...", flush=True)
+        print("Copying to csv (just linking info, links done directly to csv)...", flush=True)
         # need both the linked_ids table and the linking_info 
             # the iteration id will need to be added separately when writing to db 
 
@@ -239,9 +248,9 @@ if __name__ == "__main__":
           os.mkdir(path_temp_files)
 
         data_to_write = {
-            "links": pd.read_sql(
-                con=write_con,
-                sql=f"select * from {tbl_linked_ids}"),
+            # "links": pd.read_sql(
+            #     con=write_con,
+            #     sql=f"select * from {tbl_linked_ids}"),
             "linking_info": pd.read_sql(
                 con=write_con, 
                 sql=f"select * from {tbl_linking_info}")
