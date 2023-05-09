@@ -179,11 +179,14 @@ if __name__ == "__main__":
     
     if args.write_to == "csv":
         links = [(i[0][0], i[0][1], i[1]) for i in links]
+        print(links[1:5])
         filename = path_temp_files + "links" + file_suffix + ".csv"
-        with open(filename, "wb") as csv_file:
+        with open(filename, "w") as csv_file:
             writer = csv.writer(csv_file, delimiter=',')
-            for link in links:
-                writer.writerow(link)
+            writer.writerow(["grantid_authorposition","AuthorId","link_score"]) 
+            writer.writerows(links) 
+            #for link in links:
+            #    writer.writerow(link)
         
         print("Filled links into csv...", flush=True)
     else:
