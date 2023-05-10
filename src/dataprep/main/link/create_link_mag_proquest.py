@@ -178,19 +178,19 @@ if __name__ == "__main__":
     print("Filling links into db...", flush=True)
     
     if args.write_to == "csv":
-        links = [(i[0][0], i[0][1], i[1]) for i in links]
-        print(links[1:5])
+        #   links = [(i[0][0], i[0][1], i[1]) for i in links]
+        #print(links[1:5])
         filename = path_temp_files + "links" + file_suffix + ".csv"
         with open(filename, "w") as csv_file:
             writer = csv.writer(csv_file, delimiter=',')
             writer.writerow(["grantid_authorposition","AuthorId","link_score"]) 
-            writer.writerows(links) 
-            #for link in links:
-            #    writer.writerow(link)
+            #writer.writerows(links) 
+            for link in links:
+                writer.writerow((link[0][0], link[0][1], link[1]))
         
         print("Filled links into csv...", flush=True)
     else:
-        links = [(i[0][0], i[0][1], i[1], iteration_id) for i in links]
+        links = [(i[0][0], i[0][1], i[1], iteration_id) for i in links] # XXX this will fail for large fields, need to iterate the insert into the db
         write_con.executemany(
             f"INSERT INTO {tbl_linked_ids} VALUES (?, ?, ?, ?)",
         # tupelize_links(links, iteration_id)
