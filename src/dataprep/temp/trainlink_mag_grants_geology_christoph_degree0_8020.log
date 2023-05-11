@@ -1,0 +1,631 @@
+Namespace(testing=False, verbose=1, field=['geology'], train_name='christoph_degree0', startyear=1980, endyear=2020, loadstartyear=1980, loadendyear=2020, mergemode='m:1', recall=0.9, institution='True', fieldofstudy_cat='False', fieldofstudy_str='False', keywords='False', retrain='True', linking_type='grants', samplesize=100000, write_to='database')
+Have max 12 cores available
+Testing is False 
+
+I set the write connection to the main database.
+id_field is [127313418] and will be passed to sql queries.
+finished setup ... 
+Time elapsed: 0.0007706562678019206 minutes 
+
+
+        SELECT a.GrantID || "_" || c.author_position as grantid_authorposition
+            , CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) AS year_range
+            , b.institution, c.firstname, c.lastname, c.middlename
+            , '' AS keywords, '' AS coauthors -- # necessary for current code structure
+            , CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) || "//" || b.institution AS main_us_institutions_year
+            , CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) || "//" || b.institution AS all_us_institutions_year
+        FROM NSF_MAIN as a 
+        INNER JOIN (
+            SELECT GrantID, Name AS institution
+            FROM NSF_Institution
+            WHERE Position = 0 -- take the first reported. otherwise possibly duplicates. NSF_Performance_Institution has some missing. https://github.com/chrished/science_career_RAs/issues/19
+        ) b 
+        USING (GrantID)
+        INNER JOIN (
+            SELECT GrantID
+                , FirstName AS firstname
+                , LastName AS lastname
+                , PIMidInit AS middlename --# NOTE: PISufxName is often "Jr", "Mr", JR, ... 
+                , Position as author_position --## Some grants have >1 PIs
+            FROM NSF_Investigator
+            WHERE RoleCode = 'principal investigator'
+        ) c
+        USING (GrantID)
+        WHERE AWARD_TranType = 'grant' AND AWARD_Agency = 'nsf' 
+            AND a.AwardInstrument_Value IN ('standard grant', 'continuing grant')
+            AND c.lastname != 'data not available'
+            AND CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) >= 1980
+            AND CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) <= 2020
+            AND b.institution != "travel award"
+         
+
+
+    SELECT f.AuthorId
+        , f.year
+        , f.YearLastPub
+        , f.firstname
+        , f.lastname
+        , CASE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            WHEN 
+                "" THEN NULL 
+                ELSE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            END as middlename 
+            -- ## NOTE this gives "" for middlename when it is missing 
+        , f.fieldofstudy
+        , g.keywords
+        , g.coauthors
+        , g.institution
+        , g.main_us_institutions_year
+         
+        , f.year || ";" || f.YearLastPub AS year_range 
+        , g.all_us_institutions_year
+    
+    FROM (
+        SELECT a.AuthorId
+            , a.YearFirstPub AS year
+            , a.YearLastPub 
+            , a.FirstName AS firstname
+            , REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "") AS lastname 
+                    -- https://stackoverflow.com/questions/21388820/how-to-get-the-last-index-of-a-substring-in-sqlite
+            , TRIM(SUBSTR(b.NormalizedName, length(a.FirstName) + 1)) AS middle_lastname 
+                    -- this gives all except the first name 
+            , length(b.NormalizedName) as l_fullname 
+            , length(a.FirstName) as l_firstname
+            , length(REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "")) as l_lastname
+            , e.NormalizedName AS fieldofstudy
+        FROM author_sample AS a
+        INNER JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM Authors
+        ) AS b USING(AuthorId)
+        INNER JOIN (
+            SELECT AuthorId
+            FROM author_field0
+            WHERE FieldOfStudyId_lvl0 IN (?)
+                AND Degree <= 0
+        ) USING(AuthorId)
+        LEFT JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM author_fields c
+            INNER JOIN (
+                SELECT FieldOfStudyId, NormalizedName
+                FROM FieldsOfStudy
+            ) AS d USING(FieldOfStudyId)
+            -- ## Condition on fieldofstudy being in the level 0 id_field
+            INNER JOIN (
+                SELECT ParentFieldOfStudyId, ChildFieldOfStudyId
+                FROM crosswalk_fields
+                WHERE ParentLevel = 0
+                    AND ParentFieldOfStudyId IN (?)
+            ) AS e ON (e.ChildFieldOfStudyId = c.FieldOfStudyId)
+            WHERE FieldClass = 'first'
+        ) AS e USING(AuthorId)
+    ) f
+    LEFT JOIN (
+        SELECT AuthorId
+                , main_us_institutions_career as institution
+                , coauthors
+                , keywords
+                , main_us_institutions_year
+                , all_us_institutions_year
+        FROM author_info_linking
+    ) AS g USING(AuthorId)
+    
+    WHERE f.YearLastPub  >= 1980 - 5 AND year <= 2020 + 5 AND institution is not NULL
+     
+
+Time elapsed: 67.24583208958308 minutes 
+
+Starting active labeling...
+firstname : michael
+lastname : adams
+middlename : w
+year_range : (1994,)
+main_us_institutions_year : ((1994, 'university of georgia research foundation inc'),)
+all_us_institutions_year : ((1994, 'university of georgia research foundation inc'),)
+
+firstname : michael
+lastname : adams
+middlename : t
+year_range : (1999, 2020)
+main_us_institutions_year : ((1999, 'federal highway administration'), (2015, 'federal highway administration'), (2016, 'federal highway administration'), (2019, 'federal highway administration'), (2020, 'federal highway administration'))
+all_us_institutions_year : ((1999, 'federal highway administration'), (2015, 'federal highway administration'), (2016, 'federal highway administration'), (2018, 'federal highway administration'), (2019, 'federal highway administration'), (2020, 'federal highway administration'), (2021, 'federal highway administration'), (2021, 'performance technologies incorporated'))
+
+0/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished
+firstname : henry
+lastname : bass
+middlename : w
+year_range : (2001,)
+main_us_institutions_year : ((2001, 'florida state university'),)
+all_us_institutions_year : ((2001, 'florida state university'),)
+
+firstname : henry
+lastname : bass
+middlename : e
+year_range : (1972, 2013)
+main_us_institutions_year : ((1984, 'university of mississippi'), (1992, 'naval postgraduate school'), (1993, 'university of mississippi'), (1994, 'university of mississippi'), (1995, 'university of mississippi'), (1998, 'university of mississippi'), (2000, 'university of mississippi'), (2001, 'university of mississippi'), (2004, 'university of mississippi'), (2005, 'university of mississippi'), (2007, 'university of mississippi'), (2008, 'university of mississippi'))
+all_us_institutions_year : ((1984, 'university of mississippi'), (1992, 'naval postgraduate school'), (1993, 'university of mississippi'), (1994, 'university of mississippi'), (1995, 'university of mississippi'), (1998, 'university of mississippi'), (2000, 'university of mississippi'), (2001, 'university of mississippi'), (2002, 'university of mississippi'), (2004, 'university of mississippi'), (2005, 'university of mississippi'), (2007, 'university of mississippi'), (2008, 'university of mississippi'))
+
+0/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : pran
+lastname : nath
+middlename : None
+year_range : (2016,)
+main_us_institutions_year : ((2016, 'northeastern university'),)
+all_us_institutions_year : ((2016, 'northeastern university'),)
+
+firstname : pran
+lastname : nath
+middlename : None
+year_range : (1964, 2021)
+main_us_institutions_year : ((1968, 'northeastern university'), (1969, 'northeastern university'), (1970, 'northeastern university'), (1971, 'northeastern university'), (1972, 'northeastern university'), (1975, 'northeastern university'), (1976, 'northeastern university'), (1977, 'northeastern university'), (1978, 'northeastern university'), (1979, 'northeastern university'), (1981, 'harvard university'), (1981, 'northeastern university'), (1982, 'northeastern university'), (1983, 'northeastern university'), (1984, 'northeastern university'), (1985, 'northeastern university'), (1986, 'northeastern university'), (1987, 'northeastern university'), (1988, 'northeastern university'), (1989, 'northeastern university'), (1990, 'northeastern university'), (1991, 'northeastern university'), (1992, 'northeastern university'), (1993, 'northeastern university'), (1994, 'northeastern university'), (1995, 'northeastern university'), (1996, 'university of california santa barbara'), (1997, 'northeastern university'), (1998, 'northeastern university'), (1999, 'northeastern university'), (2000, 'northeastern university'), (2001, 'northeastern university'), (2002, 'northeastern university'), (2003, 'northeastern university'), (2004, 'northeastern university'), (2005, 'northeastern university'), (2006, 'northeastern university'), (2007, 'northeastern university'), (2008, 'northeastern university'), (2009, 'northeastern university'), (2010, 'northeastern university'), (2011, 'northeastern university'), (2012, 'northeastern university'), (2013, 'northeastern university'), (2014, 'northeastern university'), (2015, 'northeastern university'), (2016, 'northeastern university'), (2017, 'northeastern university'), (2018, 'northeastern university'), (2019, 'northeastern university'), (2020, 'northeastern university'), (2021, 'northeastern university'))
+all_us_institutions_year : ((1968, 'northeastern university'), (1969, 'northeastern university'), (1970, 'northeastern university'), (1971, 'northeastern university'), (1972, 'northeastern university'), (1975, 'northeastern university'), (1976, 'northeastern university'), (1977, 'northeastern university'), (1978, 'northeastern university'), (1979, 'northeastern university'), (1981, 'harvard university'), (1981, 'northeastern university'), (1982, 'northeastern university'), (1983, 'northeastern university'), (1984, 'northeastern university'), (1985, 'northeastern university'), (1986, 'northeastern university'), (1987, 'harvard university'), (1987, 'northeastern university'), (1988, 'northeastern university'), (1989, 'northeastern university'), (1990, 'northeastern university'), (1991, 'northeastern university'), (1992, 'northeastern university'), (1993, 'northeastern university'), (1994, 'northeastern university'), (1995, 'northeastern university'), (1996, 'northeastern university'), (1996, 'university of california santa barbara'), (1997, 'northeastern university'), (1998, 'northeastern university'), (1999, 'northeastern university'), (2000, 'northeastern university'), (2000, 'university of california santa barbara'), (2001, 'northeastern university'), (2002, 'northeastern university'), (2003, 'northeastern university'), (2004, 'northeastern university'), (2005, 'northeastern university'), (2006, 'northeastern university'), (2007, 'northeastern university'), (2008, 'northeastern university'), (2009, 'northeastern university'), (2010, 'northeastern university'), (2011, 'northeastern university'), (2012, 'northeastern university'), (2013, 'northeastern university'), (2014, 'northeastern university'), (2015, 'northeastern university'), (2016, 'northeastern university'), (2017, 'northeastern university'), (2018, 'northeastern university'), (2019, 'northeastern university'), (2020, 'northeastern university'), (2021, 'northeastern university'))
+
+0/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : gustavo
+lastname : gioia
+middlename : None
+year_range : (2010,)
+main_us_institutions_year : ((2010, 'university of illinois at urbana champaign'),)
+all_us_institutions_year : ((2010, 'university of illinois at urbana champaign'),)
+
+firstname : gustavo
+lastname : gioia
+middlename : None
+year_range : (1990, 2021)
+main_us_institutions_year : ((1994, 'brown university'), (1996, 'brown university'), (1997, 'university of minnesota'), (1997, 'brown university'), (1998, 'university of minnesota'), (2000, 'rutgers university'), (2001, 'university of illinois at urbana champaign'), (2001, 'rutgers university'), (2002, 'university of illinois at urbana champaign'), (2003, 'university of illinois at urbana champaign'), (2004, 'university of illinois at urbana champaign'), (2005, 'university of illinois at urbana champaign'), (2006, 'university of illinois at urbana champaign'), (2007, 'university of illinois at urbana champaign'), (2009, 'university of illinois at urbana champaign'), (2010, 'university of illinois at urbana champaign'), (2011, 'university of illinois at urbana champaign'), (2012, 'university of illinois at urbana champaign'), (2013, 'university of illinois at urbana champaign'))
+all_us_institutions_year : ((1994, 'brown university'), (1996, 'brown university'), (1997, 'brown university'), (1997, 'university of minnesota'), (1998, 'university of minnesota'), (2000, 'rutgers university'), (2000, 'university of illinois at urbana champaign'), (2001, 'rutgers university'), (2001, 'university of illinois at urbana champaign'), (2002, 'university of illinois at urbana champaign'), (2003, 'university of illinois at urbana champaign'), (2004, 'university of illinois at urbana champaign'), (2005, 'university of illinois at urbana champaign'), (2006, 'university of illinois at urbana champaign'), (2007, 'university of illinois at urbana champaign'), (2009, 'university of illinois at urbana champaign'), (2010, 'university of illinois at urbana champaign'), (2011, 'university of illinois at urbana champaign'), (2012, 'university of illinois at urbana champaign'), (2013, 'university of illinois at urbana champaign'))
+
+1/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : james
+lastname : schnable
+middlename : None
+year_range : (2018,)
+main_us_institutions_year : ((2018, 'university of nebraska lincoln'),)
+all_us_institutions_year : ((2018, 'university of nebraska lincoln'),)
+
+firstname : james
+lastname : schnable
+middlename : c
+year_range : (2010, 2021)
+main_us_institutions_year : ((2010, 'university of california berkeley'), (2011, 'university of california berkeley'), (2012, 'university of california berkeley'), (2013, 'university of california berkeley'), (2014, 'university of california berkeley'), (2015, 'university of nebraska lincoln'), (2016, 'university of nebraska lincoln'), (2017, 'university of nebraska lincoln'), (2018, 'university of nebraska lincoln'), (2019, 'university of nebraska lincoln'), (2020, 'university of nebraska lincoln'), (2021, 'university of nebraska lincoln'))
+all_us_institutions_year : ((2010, 'university of california berkeley'), (2011, 'university of california'), (2011, 'university of california berkeley'), (2012, 'university of california'), (2012, 'university of california berkeley'), (2013, 'university of california berkeley'), (2014, 'donald danforth plant science center'), (2014, 'university of california berkeley'), (2014, 'university of nebraska lincoln'), (2015, 'university of california berkeley'), (2015, 'university of nebraska lincoln'), (2016, 'donald danforth plant science center'), (2016, 'university of nebraska lincoln'), (2017, 'university of nebraska lincoln'), (2018, 'university of nebraska lincoln'), (2019, 'university of nebraska lincoln'), (2020, 'university of nebraska lincoln'), (2021, 'university of nebraska lincoln'))
+
+2/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : amit
+lastname : tandon
+middlename : None
+year_range : (2016,)
+main_us_institutions_year : ((2016, 'university of massachusetts dartmouth'),)
+all_us_institutions_year : ((2016, 'university of massachusetts dartmouth'),)
+
+firstname : amit
+lastname : tandon
+middlename : None
+year_range : (1992, 2021)
+main_us_institutions_year : ((1992, 'cornell university'), (2004, 'university of massachusetts dartmouth'), (2005, 'dartmouth college'), (2006, 'university of massachusetts dartmouth'), (2008, 'university of massachusetts dartmouth'), (2009, 'university of massachusetts amherst'), (2010, 'university of massachusetts dartmouth'), (2011, 'university of massachusetts dartmouth'), (2012, 'university of massachusetts dartmouth'), (2013, 'university of massachusetts dartmouth'), (2014, 'university of massachusetts dartmouth'), (2015, 'university of massachusetts dartmouth'), (2015, 'dartmouth college'), (2016, 'university of massachusetts dartmouth'), (2018, 'university of massachusetts dartmouth'), (2019, 'university of massachusetts dartmouth'), (2020, 'university of massachusetts dartmouth'), (2021, 'university of massachusetts dartmouth'))
+all_us_institutions_year : ((1992, 'cornell university'), (2003, 'university of massachusetts dartmouth'), (2004, 'university of massachusetts dartmouth'), (2005, 'dartmouth college'), (2006, 'university of massachusetts dartmouth'), (2008, 'university of massachusetts amherst'), (2008, 'university of massachusetts dartmouth'), (2009, 'university of massachusetts amherst'), (2010, 'university of massachusetts dartmouth'), (2011, 'university of massachusetts dartmouth'), (2012, 'university of massachusetts dartmouth'), (2013, 'university of massachusetts dartmouth'), (2014, 'university of massachusetts dartmouth'), (2015, 'dartmouth college'), (2015, 'university of massachusetts amherst'), (2015, 'university of massachusetts dartmouth'), (2016, 'dartmouth college'), (2016, 'university of massachusetts dartmouth'), (2017, 'university of massachusetts amherst'), (2018, 'university of massachusetts amherst'), (2018, 'university of massachusetts dartmouth'), (2019, 'university of massachusetts dartmouth'), (2020, 'university of massachusetts dartmouth'), (2021, 'dartmouth college'), (2021, 'university of massachusetts dartmouth'))
+
+3/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : laine
+lastname : mears
+middlename : None
+year_range : (2019,)
+main_us_institutions_year : ((2019, 'clemson university'),)
+all_us_institutions_year : ((2019, 'clemson university'),)
+
+firstname : laine
+lastname : mears
+middlename : None
+year_range : (2005, 2021)
+main_us_institutions_year : ((2007, 'center for automotive research'), (2008, 'clemson university'), (2008, 'center for automotive research'), (2009, 'clemson university'), (2010, 'clemson university'), (2010, 'center for automotive research'), (2011, 'center for automotive research'), (2012, 'clemson university'), (2013, 'clemson university'), (2014, 'clemson university'), (2014, 'center for automotive research'), (2015, 'center for automotive research'), (2016, 'center for automotive research'), (2017, 'clemson university'), (2017, 'center for automotive research'), (2018, 'center for automotive research'), (2019, 'center for automotive research'), (2020, 'clemson university'), (2021, 'clemson university'))
+all_us_institutions_year : ((2007, 'center for automotive research'), (2007, 'clemson university'), (2008, 'center for automotive research'), (2008, 'clemson university'), (2009, 'center for automotive research'), (2009, 'clemson university'), (2010, 'center for automotive research'), (2010, 'clemson university'), (2011, 'center for automotive research'), (2011, 'clemson university'), (2012, 'clemson university'), (2013, 'center for automotive research'), (2013, 'clemson university'), (2014, 'center for automotive research'), (2014, 'clemson university'), (2015, 'center for automotive research'), (2015, 'clemson university'), (2016, 'center for automotive research'), (2016, 'clemson university'), (2017, 'center for automotive research'), (2017, 'clemson university'), (2018, 'center for automotive research'), (2018, 'clemson university'), (2019, 'center for automotive research'), (2019, 'clemson university'), (2020, 'center for automotive research'), (2020, 'clemson university'), (2021, 'clemson university'))
+
+4/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : xudong
+lastname : zheng
+middlename : None
+year_range : (2017,)
+main_us_institutions_year : ((2017, 'university of maine'),)
+all_us_institutions_year : ((2017, 'university of maine'),)
+
+firstname : xudong
+lastname : zheng
+middlename : None
+year_range : (2006, 2021)
+main_us_institutions_year : ((2008, 'george washington university'), (2009, 'george washington university'), (2010, 'johns hopkins university'), (2011, 'johns hopkins university'), (2012, 'princeton university'), (2014, 'university of maine'), (2016, 'university of maine'), (2017, 'university of maine'), (2018, 'university of maine'), (2019, 'university of maine'), (2020, 'university of maine'), (2021, 'university of maine'))
+all_us_institutions_year : ((2008, 'george washington university'), (2009, 'george washington university'), (2010, 'johns hopkins university'), (2011, 'johns hopkins university'), (2012, 'johns hopkins university'), (2012, 'princeton university'), (2013, 'university of maine'), (2014, 'university of maine'), (2016, 'university of maine'), (2017, 'university of maine'), (2018, 'university of maine'), (2019, 'university of maine'), (2020, 'university of maine'), (2021, 'university of maine'))
+
+5/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : mark
+lastname : richards
+middlename : a
+year_range : (1998,)
+main_us_institutions_year : ((1998, 'university of california berkeley'),)
+all_us_institutions_year : ((1998, 'university of california berkeley'),)
+
+firstname : mark
+lastname : richardson
+middlename : None
+year_range : (1986, 2008)
+main_us_institutions_year : ((1988, 'university of rhode island'), (1989, 'university of rhode island'), (2003, 'exxonmobil'), (2008, 'exxonmobil'))
+all_us_institutions_year : ((1988, 'university of rhode island'), (1989, 'university of rhode island'), (2003, 'exxonmobil'), (2006, 'exxonmobil'), (2008, 'exxonmobil'))
+
+6/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : alejandro
+lastname : grajal
+middlename : None
+year_range : (2010,)
+main_us_institutions_year : ((2010, 'chicago zoological society'),)
+all_us_institutions_year : ((2010, 'chicago zoological society'),)
+
+firstname : alejandro
+lastname : grajales
+middlename : None
+year_range : (2006, 2019)
+main_us_institutions_year : ((2012, 'american museum of natural history'), (2014, 'american museum of natural history'), (2015, 'american museum of natural history'), (2016, 'american museum of natural history'), (2017, 'american museum of natural history'), (2019, 'american museum of natural history'))
+all_us_institutions_year : ((2012, 'american museum of natural history'), (2014, 'american museum of natural history'), (2015, 'american museum of natural history'), (2016, 'american museum of natural history'), (2017, 'american museum of natural history'), (2018, 'american museum of natural history'), (2019, 'american museum of natural history'))
+
+6/10 positive, 3/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : richard
+lastname : murray
+middlename : m
+year_range : (2004,)
+main_us_institutions_year : ((2004, 'california institute of technology'),)
+all_us_institutions_year : ((2004, 'california institute of technology'),)
+
+firstname : r
+lastname : murrayclay
+middlename : None
+year_range : (2018, 2020)
+main_us_institutions_year : ((2018, 'university of california santa cruz'), (2019, 'university of california santa cruz'), (2020, 'university of california santa cruz'))
+all_us_institutions_year : ((2018, 'university of california santa cruz'), (2019, 'university of california santa cruz'), (2020, 'university of california santa cruz'))
+
+6/10 positive, 3/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ling
+lastname : wang
+middlename : None
+year_range : (2007,)
+main_us_institutions_year : ((2007, 'northwest research associates incorporated'),)
+all_us_institutions_year : ((2007, 'northwest research associates incorporated'),)
+
+firstname : ling
+lastname : wan
+middlename : None
+year_range : (2017, 2020)
+main_us_institutions_year : ((2017, 'chinese academy of sciences'), (2018, 'chinese academy of sciences'), (2019, 'chinese academy of sciences'), (2020, 'chinese academy of sciences'))
+all_us_institutions_year : ((2017, 'chinese academy of sciences'), (2018, 'chinese academy of sciences'), (2019, 'chinese academy of sciences'), (2020, 'chinese academy of sciences'))
+
+6/10 positive, 4/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : david
+lastname : goldstein
+middlename : l
+year_range : (2000,)
+main_us_institutions_year : ((2000, 'wright state university'),)
+all_us_institutions_year : ((2000, 'wright state university'),)
+
+firstname : david
+lastname : goodstein
+middlename : l
+year_range : (1965, 2018)
+main_us_institutions_year : ((1965, 'university of washington'), (1969, 'california institute of technology'), (1970, 'california institute of technology'), (1974, 'california institute of technology'), (1975, 'california institute of technology'), (1977, 'california institute of technology'), (1978, 'california institute of technology'), (1979, 'california institute of technology'), (1980, 'california institute of technology'), (1981, 'california institute of technology'), (1983, 'california institute of technology'), (1984, 'california institute of technology'), (1985, 'california institute of technology'), (1986, 'california institute of technology'), (1988, 'california institute of technology'), (1989, 'california institute of technology'), (1991, 'california institute of technology'), (1992, 'california institute of technology'), (1993, 'california institute of technology'), (1994, 'california institute of technology'), (1995, 'california institute of technology'), (1996, 'california institute of technology'), (1997, 'california institute of technology'), (1998, 'california institute of technology'), (1999, 'california institute of technology'), (2000, 'california institute of technology'), (2001, 'california institute of technology'), (2002, 'california institute of technology'), (2004, 'university of new mexico'), (2006, 'california institute of technology'), (2007, 'california institute of technology'), (2014, 'california institute of technology'), (2015, 'california institute of technology'), (2018, 'california institute of technology'))
+all_us_institutions_year : ((1965, 'university of washington'), (1969, 'california institute of technology'), (1970, 'california institute of technology'), (1973, 'california institute of technology'), (1974, 'california institute of technology'), (1975, 'california institute of technology'), (1977, 'california institute of technology'), (1977, 'pennsylvania state university'), (1978, 'california institute of technology'), (1978, 'pennsylvania state university'), (1979, 'california institute of technology'), (1980, 'california institute of technology'), (1981, 'california institute of technology'), (1983, 'california institute of technology'), (1984, 'california institute of technology'), (1985, 'california institute of technology'), (1986, 'california institute of technology'), (1988, 'california institute of technology'), (1989, 'california institute of technology'), (1991, 'california institute of technology'), (1992, 'california institute of technology'), (1993, 'california institute of technology'), (1994, 'california institute of technology'), (1995, 'california institute of technology'), (1996, 'california institute of technology'), (1997, 'california institute of technology'), (1998, 'california institute of technology'), (1999, 'california institute of technology'), (2000, 'california institute of technology'), (2001, 'california institute of technology'), (2002, 'california institute of technology'), (2004, 'university of new mexico'), (2006, 'california institute of technology'), (2007, 'california institute of technology'), (2014, 'california institute of technology'), (2015, 'california institute of technology'), (2018, 'california institute of technology'))
+
+6/10 positive, 5/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : norbert
+lastname : mueller
+middlename : h
+year_range : (2007,)
+main_us_institutions_year : ((2007, 'michigan state university'),)
+all_us_institutions_year : ((2007, 'michigan state university'),)
+
+firstname : norbert
+lastname : muller
+middlename : None
+year_range : (2002, 2021)
+main_us_institutions_year : ((2002, 'columbia university'), (2005, 'michigan state university'), (2006, 'michigan state university'), (2007, 'michigan state university'), (2008, 'michigan state university'), (2011, 'michigan state university'), (2012, 'michigan state university'), (2013, 'michigan state university'), (2014, 'michigan state university'), (2015, 'michigan state university'), (2016, 'michigan state university'), (2017, 'michigan state university'), (2018, 'michigan state university'), (2019, 'michigan state university'), (2020, 'michigan state university'), (2021, 'michigan state university'))
+all_us_institutions_year : ((2001, 'columbia university'), (2002, 'columbia university'), (2002, 'michigan state university'), (2003, 'michigan state university'), (2004, 'columbia university'), (2004, 'michigan state university'), (2005, 'michigan state university'), (2006, 'michigan state university'), (2007, 'michigan state university'), (2008, 'michigan state university'), (2009, 'michigan state university'), (2010, 'michigan state university'), (2011, 'michigan state university'), (2012, 'michigan state university'), (2013, 'michigan state university'), (2014, 'michigan state university'), (2015, 'michigan state university'), (2016, 'michigan state university'), (2017, 'michigan state university'), (2018, 'michigan state university'), (2019, 'michigan state university'), (2020, 'michigan state university'), (2021, 'michigan state university'))
+
+6/10 positive, 5/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : yan
+lastname : liang
+middlename : None
+year_range : (2009,)
+main_us_institutions_year : ((2009, 'brown university'),)
+all_us_institutions_year : ((2009, 'brown university'),)
+
+firstname : yan
+lastname : li
+middlename : None
+year_range : (2017, 2018)
+main_us_institutions_year : ((2017, 'boston children s hospital'), (2018, 'boston children s hospital'))
+all_us_institutions_year : ((2017, 'boston children s hospital'), (2018, 'boston children s hospital'))
+
+7/10 positive, 5/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : barrie
+lastname : walden
+middlename : b
+year_range : (1997,)
+main_us_institutions_year : ((1997, 'woods hole oceanographic institution'),)
+all_us_institutions_year : ((1997, 'woods hole oceanographic institution'),)
+
+firstname : barrie
+lastname : dale
+middlename : None
+year_range : (1966, 1977)
+main_us_institutions_year : ((1966, 'woods hole oceanographic institution'), (1967, 'woods hole oceanographic institution'), (1968, 'woods hole oceanographic institution'), (1969, 'woods hole oceanographic institution'), (1971, 'woods hole oceanographic institution'), (1977, 'woods hole oceanographic institution'))
+all_us_institutions_year : ((1966, 'woods hole oceanographic institution'), (1967, 'woods hole oceanographic institution'), (1968, 'woods hole oceanographic institution'), (1969, 'woods hole oceanographic institution'), (1971, 'woods hole oceanographic institution'), (1973, 'woods hole oceanographic institution'), (1977, 'woods hole oceanographic institution'))
+
+7/10 positive, 6/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jia
+lastname : zhang
+middlename : None
+year_range : (2015,)
+main_us_institutions_year : ((2015, 'carnegie mellon university'),)
+all_us_institutions_year : ((2015, 'carnegie mellon university'),)
+
+firstname : jia
+lastname : zhu
+middlename : ying
+year_range : (2010, 2017)
+main_us_institutions_year : ((2010, 'chinese academy of sciences'), (2011, 'carnegie institution for science'), (2012, 'carnegie institution for science'), (2013, 'chinese academy of sciences'), (2014, 'carnegie institution for science'), (2015, 'carnegie institution for science'), (2016, 'carnegie institution for science'), (2017, 'carnegie institution for science'))
+all_us_institutions_year : ((2010, 'chinese academy of sciences'), (2011, 'carnegie institution for science'), (2012, 'carnegie institution for science'), (2012, 'chinese academy of sciences'), (2013, 'chinese academy of sciences'), (2014, 'carnegie institution for science'), (2015, 'carnegie institution for science'), (2016, 'carnegie institution for science'), (2017, 'carnegie institution for science'), (2019, 'carnegie institution for science'))
+
+7/10 positive, 7/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : qi
+lastname : cheng
+middlename : None
+year_range : (2014,)
+main_us_institutions_year : ((2014, 'university of oklahoma norman campus'),)
+all_us_institutions_year : ((2014, 'university of oklahoma norman campus'),)
+
+firstname : qian
+lastname : chen
+middlename : None
+year_range : (1996, 2021)
+main_us_institutions_year : ((2008, 'north carolina state university'), (2009, 'north carolina state university'))
+all_us_institutions_year : ((2008, 'north carolina state university'), (2009, 'north carolina state university'), (2010, 'north carolina state university'), (2011, 'north carolina state university'), (2012, 'north carolina state university'), (2018, 'university of california los angeles'), (2018, 'university of north carolina at chapel hill'), (2019, 'university of california los angeles'), (2019, 'university of north carolina at chapel hill'), (2020, 'university of california los angeles'), (2021, 'university of california los angeles'), (2021, 'university of north carolina at chapel hill'))
+
+7/10 positive, 8/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : bogoljub
+lastname : stankovic
+middlename : None
+year_range : (1987,)
+main_us_institutions_year : ((1987, 'university of novi sad'),)
+all_us_institutions_year : ((1987, 'university of novi sad'),)
+
+firstname : b
+lastname : stankov
+middlename : b
+year_range : (1980, 2008)
+main_us_institutions_year : ((1987, 'national oceanic and atmospheric administration'), (1991, 'national oceanic and atmospheric administration'), (1992, 'national oceanic and atmospheric administration'), (1995, 'national oceanic and atmospheric administration'), (1996, 'national oceanic and atmospheric administration'), (1998, 'national oceanic and atmospheric administration'), (1999, 'national oceanic and atmospheric administration'), (2003, 'national oceanic and atmospheric administration'), (2005, 'national oceanic and atmospheric administration'), (2007, 'national oceanic and atmospheric administration'), (2008, 'national oceanic and atmospheric administration'))
+all_us_institutions_year : ((1987, 'national oceanic and atmospheric administration'), (1991, 'national oceanic and atmospheric administration'), (1992, 'national oceanic and atmospheric administration'), (1995, 'national oceanic and atmospheric administration'), (1996, 'national oceanic and atmospheric administration'), (1998, 'national oceanic and atmospheric administration'), (1999, 'national oceanic and atmospheric administration'), (2003, 'national oceanic and atmospheric administration'), (2005, 'national oceanic and atmospheric administration'), (2007, 'national oceanic and atmospheric administration'), (2008, 'national oceanic and atmospheric administration'))
+
+7/10 positive, 8/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : dean
+lastname : johnston
+middlename : h
+year_range : (2006,)
+main_us_institutions_year : ((2006, 'otterbein college'),)
+all_us_institutions_year : ((2006, 'otterbein college'),)
+
+firstname : d
+lastname : johnstone
+middlename : None
+year_range : (1999, 2021)
+main_us_institutions_year : None
+all_us_institutions_year : ((2015, 'national research council'), (2016, 'national research council'), (2017, 'national research council'))
+
+7/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : wei
+lastname : zhao
+middlename : None
+year_range : (1992,)
+main_us_institutions_year : ((1992, 'texas a m engineering experiment station'),)
+all_us_institutions_year : ((1992, 'texas a m engineering experiment station'),)
+
+firstname : wei
+lastname : zhao
+middlename : None
+year_range : (2006, 2009)
+main_us_institutions_year : ((2006, 'chinese academy of sciences'), (2009, 'chinese academy of sciences'))
+all_us_institutions_year : ((2006, 'chinese academy of sciences'), (2009, 'chinese academy of sciences'))
+
+7/10 positive, 10/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jonathan
+lastname : mayer
+middlename : d
+year_range : (2008,)
+main_us_institutions_year : ((2008, 'university of washington'),)
+all_us_institutions_year : ((2008, 'university of washington'),)
+
+firstname : g
+lastname : mayer
+middlename : None
+year_range : (1974, 2017)
+main_us_institutions_year : ((1974, 'north carolina state university'), (1986, 'north carolina state university'), (1991, 'institute for defense analyses'), (2001, 'university of washington'), (2002, 'university of washington'), (2004, 'university of washington'), (2005, 'university of washington'), (2006, 'university of washington'), (2007, 'university of washington'), (2009, 'university of washington'), (2010, 'university of washington'), (2011, 'university of washington'), (2015, 'university of washington'), (2017, 'university of washington'))
+all_us_institutions_year : ((1974, 'north carolina state university'), (1986, 'north carolina state university'), (1986, 'research triangle park'), (1991, 'institute for defense analyses'), (2001, 'university of washington'), (2002, 'university of washington'), (2004, 'university of washington'), (2005, 'university of washington'), (2006, 'university of washington'), (2007, 'university of washington'), (2009, 'university of washington'), (2010, 'university of washington'), (2011, 'university of washington'), (2015, 'university of washington'), (2017, 'university of washington'))
+
+7/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : alan
+lastname : lebeck
+middlename : o
+year_range : (1988,)
+main_us_institutions_year : ((1988, 'mechanical seal technology inc'),)
+all_us_institutions_year : ((1988, 'mechanical seal technology inc'),)
+
+firstname : a
+lastname : lebeck
+middlename : o
+year_range : (1984, 1987)
+main_us_institutions_year : ((1984, 'university of new mexico'), (1985, 'university of new mexico'), (1986, 'university of new mexico'), (1987, 'university of new mexico'))
+all_us_institutions_year : ((1984, 'university of new mexico'), (1985, 'university of new mexico'), (1986, 'university of new mexico'), (1987, 'university of new mexico'))
+
+7/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : r lawrence
+lastname : edwards
+middlename : None
+year_range : (1995,)
+main_us_institutions_year : ((1995, 'university of minnesota twin cities'),)
+all_us_institutions_year : ((1995, 'university of minnesota twin cities'),)
+
+firstname : r
+lastname : edwards
+middlename : lawrence
+year_range : (1985, 2021)
+main_us_institutions_year : ((1985, 'california institute of technology'), (1986, 'california institute of technology'), (1987, 'california institute of technology'), (1988, 'california institute of technology'), (1992, 'university of minnesota'), (1993, 'university of minnesota'), (1994, 'university of minnesota'), (1995, 'university of minnesota'), (1996, 'university of minnesota'), (1997, 'university of minnesota'), (1998, 'university of minnesota'), (1999, 'university of minnesota'), (2000, 'university of minnesota'), (2001, 'university of minnesota'), (2002, 'university of minnesota'), (2003, 'university of minnesota'), (2004, 'university of minnesota'), (2005, 'university of minnesota'), (2006, 'university of minnesota'), (2007, 'university of minnesota'), (2008, 'university of minnesota'), (2009, 'university of minnesota'), (2010, 'university of minnesota'), (2011, 'university of minnesota'), (2012, 'university of minnesota'), (2013, 'university of minnesota'), (2014, 'university of minnesota'), (2015, 'university of minnesota'), (2016, 'university of minnesota'), (2017, 'university of minnesota'), (2018, 'university of minnesota'), (2019, 'university of minnesota'), (2020, 'university of minnesota'), (2021, 'university of minnesota'))
+all_us_institutions_year : ((1985, 'california institute of technology'), (1986, 'california institute of technology'), (1987, 'california institute of technology'), (1988, 'california institute of technology'), (1992, 'university of minnesota'), (1993, 'university of minnesota'), (1994, 'university of minnesota'), (1995, 'university of minnesota'), (1996, 'university of minnesota'), (1997, 'university of minnesota'), (1998, 'university of minnesota'), (1999, 'university of minnesota'), (2000, 'university of minnesota'), (2001, 'university of minnesota'), (2002, 'university of minnesota'), (2003, 'university of minnesota'), (2004, 'university of minnesota'), (2005, 'university of minnesota'), (2006, 'university of minnesota'), (2007, 'university of minnesota'), (2008, 'university of minnesota'), (2009, 'university of minnesota'), (2010, 'university of minnesota'), (2011, 'university of minnesota'), (2012, 'university of minnesota'), (2013, 'university of minnesota'), (2014, 'university of minnesota'), (2015, 'university of minnesota'), (2016, 'university of minnesota'), (2017, 'university of minnesota'), (2018, 'university of minnesota'), (2019, 'university of minnesota'), (2020, 'university of minnesota'), (2021, 'university of minnesota'))
+
+7/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : mark
+lastname : johnson
+middlename : e
+year_range : (1995,)
+main_us_institutions_year : ((1995, 'university of alaska anchorage campus'),)
+all_us_institutions_year : ((1995, 'university of alaska anchorage campus'),)
+
+firstname : markes
+lastname : johnson
+middlename : e
+year_range : (1977, 2021)
+main_us_institutions_year : ((1977, 'university of chicago'), (1978, 'williams college'), (1979, 'williams college'), (1980, 'williams college'), (1981, 'williams college'), (1982, 'williams college'), (1985, 'williams college'), (1986, 'williams college'), (1987, 'williams college'), (1988, 'williams college'), (1989, 'williams college'), (1991, 'williams college'), (1992, 'williams college'), (1993, 'williams college'), (1996, 'williams college'), (1998, 'williams college'), (1999, 'williams college'), (2001, 'williams college'), (2002, 'williams college'), (2004, 'williams college'), (2005, 'williams college'), (2006, 'williams college'), (2007, 'williams college'), (2010, 'williams college'), (2011, 'williams college'), (2012, 'williams college'), (2013, 'williams college'), (2014, 'williams college'), (2015, 'williams college'), (2016, 'williams college'), (2017, 'williams college'), (2018, 'williams college'), (2019, 'williams college'), (2020, 'williams college'), (2021, 'williams college'))
+all_us_institutions_year : ((1977, 'university of chicago'), (1978, 'williams college'), (1979, 'williams college'), (1980, 'williams college'), (1981, 'williams college'), (1982, 'williams college'), (1985, 'williams college'), (1986, 'williams college'), (1987, 'williams college'), (1988, 'williams college'), (1989, 'williams college'), (1991, 'williams college'), (1992, 'williams college'), (1993, 'williams college'), (1996, 'williams college'), (1998, 'williams college'), (1999, 'williams college'), (2001, 'williams college'), (2002, 'williams college'), (2004, 'williams college'), (2005, 'williams college'), (2006, 'williams college'), (2007, 'williams college'), (2010, 'williams college'), (2011, 'williams college'), (2012, 'williams college'), (2013, 'williams college'), (2014, 'williams college'), (2015, 'williams college'), (2016, 'williams college'), (2017, 'williams college'), (2018, 'williams college'), (2019, 'williams college'), (2020, 'williams college'), (2021, 'williams college'))
+
+8/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : edwin
+lastname : bergin
+middlename : None
+year_range : (2019,)
+main_us_institutions_year : ((2019, 'regents of the university of michigan ann arbor'),)
+all_us_institutions_year : ((2019, 'regents of the university of michigan ann arbor'),)
+
+firstname : edwin
+lastname : bergin
+middlename : None
+year_range : (2010, 2018)
+main_us_institutions_year : ((2010, 'university of michigan'), (2018, 'michigan state university'))
+all_us_institutions_year : ((2010, 'university of michigan'), (2018, 'michigan state university'))
+
+8/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : timothy
+lastname : dunkerton
+middlename : j
+year_range : (2003,)
+main_us_institutions_year : ((2003, 'northwest research associates incorporated'),)
+all_us_institutions_year : ((2003, 'northwest research associates incorporated'),)
+
+firstname : timothy
+lastname : dunkerton
+middlename : j
+year_range : (1980, 2020)
+main_us_institutions_year : ((1983, 'washington university in st louis'),)
+all_us_institutions_year : ((1983, 'washington university in st louis'),)
+
+9/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : robin
+lastname : muench
+middlename : d
+year_range : (1998,)
+main_us_institutions_year : ((1998, 'earth and space research'),)
+all_us_institutions_year : ((1998, 'earth and space research'),)
+
+firstname : robin
+lastname : muench
+middlename : d
+year_range : (1977, 2012)
+main_us_institutions_year : ((1977, 'university of alaska fairbanks'),)
+all_us_institutions_year : ((1977, 'university of alaska fairbanks'),)
+
+9/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jason
+lastname : lillegraven
+middlename : a
+year_range : (1980,)
+main_us_institutions_year : ((1980, 'university of wyoming'),)
+all_us_institutions_year : ((1980, 'university of wyoming'),)
+
+firstname : jason
+lastname : lillegraven
+middlename : a
+year_range : (1970, 1975)
+main_us_institutions_year : ((1970, 'san diego state university'), (1975, 'san diego state university'))
+all_us_institutions_year : ((1970, 'san diego state university'), (1975, 'san diego state university'))
+
+10/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : john
+lastname : andrews
+middlename : t
+year_range : (1997,)
+main_us_institutions_year : ((1997, 'university of colorado at boulder'),)
+all_us_institutions_year : ((1997, 'university of colorado at boulder'),)
+
+firstname : john
+lastname : andrews
+middlename : None
+year_range : (1995, 2001)
+main_us_institutions_year : ((1995, 'woods hole oceanographic institution'), (1998, 'woods hole oceanographic institution'), (2001, 'woods hole oceanographic institution'))
+all_us_institutions_year : ((1995, 'woods hole oceanographic institution'), (1998, 'woods hole oceanographic institution'), (2001, 'woods hole oceanographic institution'))
+
+10/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+Finished labeling
+Done in 113.65640837351481 minutes.
