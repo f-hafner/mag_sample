@@ -1,0 +1,915 @@
+Namespace(testing=False, verbose=1, field=['art'], train_name='mona_degree0', startyear=1985, endyear=2015, loadstartyear=1985, loadendyear=2015, mergemode='1:1', recall=0.9, institution='False', fieldofstudy_cat='False', fieldofstudy_str='False', keywords='True', retrain='True', linking_type='graduates', samplesize=50000, write_to='database')
+Have max 12 cores available
+Testing is False 
+
+I set the write connection to the main database.
+id_field is [142362112] and will be passed to sql queries.
+finished setup ... 
+Time elapsed: 0.0014487306276957195 minutes 
+
+
+    SELECT goid
+            , year
+            , firstname 
+            , lastname
+            , CASE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                WHEN 
+                    "" THEN NULL 
+                    ELSE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                END AS middlename
+            , fieldofstudy
+            , keywords
+            , institution
+            , coauthors
+            , year_papertitle
+    FROM (
+        SELECT goid
+            , degree_year AS year 
+            , fullname 
+            , SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) AS firstname
+            , REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "") AS lastname 
+            , TRIM(SUBSTR(fullname, length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1)) + 1)) AS middle_lastname 
+            , length(fullname) AS l_fullname 
+            , length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) ) AS l_firstname
+            , length(REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "")) AS l_lastname
+            , fieldname AS fieldofstudy
+            , university_id
+            , degree_year || "//" || thesistitle as year_papertitle 
+        FROM pq_authors 
+        INNER JOIN (
+            SELECT goid, fieldname 
+            FROM pq_fields_mag
+            WHERE mag_field0 IN (?)
+        ) USING (goid)
+    )
+    -- ## NOTE: use left join here as not all graduates have advisor (particularly pre-1980) and possibly also keywords
+    LEFT JOIN (
+        SELECT goid
+            , fields as keywords
+            , advisors as coauthors
+        FROm pq_info_linking
+    ) USING(goid)
+    INNER JOIN (
+        SELECT university_id, normalizedname as institution
+        FROM pq_unis
+        WHERE location like "%United States%"
+    ) USING(university_id)
+    WHERE year >= 1985 and year <= 2015 AND length(firstname) > 1
+     
+
+
+    SELECT f.AuthorId
+        , f.year
+        , f.firstname
+        , f.lastname
+        , CASE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            WHEN 
+                "" THEN NULL 
+                ELSE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            END as middlename 
+            -- ## NOTE this gives "" for middlename when it is missing 
+        , f.fieldofstudy
+        , g.keywords
+        , g.coauthors
+        , g.institution
+        , g.year_papertitle
+    FROM (
+        SELECT a.AuthorId
+            , a.YearFirstPub AS year
+            , a.FirstName AS firstname
+            , REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "") AS lastname 
+                    -- https://stackoverflow.com/questions/21388820/how-to-get-the-last-index-of-a-substring-in-sqlite
+            , TRIM(SUBSTR(b.NormalizedName, length(a.FirstName) + 1)) AS middle_lastname 
+                    -- this gives all except the first name 
+            , length(b.NormalizedName) as l_fullname 
+            , length(a.FirstName) as l_firstname
+            , length(REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "")) as l_lastname
+            , e.NormalizedName AS fieldofstudy
+        FROM author_sample AS a
+        INNER JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM Authors
+        ) AS b USING(AuthorId)
+        INNER JOIN (
+            SELECT AuthorId
+            FROM author_field0
+            WHERE FieldOfStudyId_lvl0 IN (?)
+                AND Degree <= 0
+        ) USING(AuthorId)
+        LEFT JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM author_fields c
+            INNER JOIN (
+                SELECT FieldOfStudyId, NormalizedName
+                FROM FieldsOfStudy
+            ) AS d USING(FieldOfStudyId)
+            -- ## Condition on fieldofstudy being in the level 0 id_field
+            INNER JOIN (
+                SELECT ParentFieldOfStudyId, ChildFieldOfStudyId
+                FROM crosswalk_fields
+                WHERE ParentLevel = 0
+                    AND ParentFieldOfStudyId IN (?)
+            ) AS e ON (e.ChildFieldOfStudyId = c.FieldOfStudyId)
+            WHERE FieldClass = 'first'
+        ) AS e USING(AuthorId)
+    ) f
+    LEFT JOIN (
+        SELECT AuthorId
+                , institutions as institution
+                , main_us_institutions_career
+                , coauthors
+                , keywords
+                , year_papertitle
+        FROM author_info_linking
+    ) AS g USING(AuthorId)
+    WHERE length(firstname) > 1 AND year >= 1985 - 5 AND year <= 2015 + 5 
+        -- ## use this to condition on people that have at least at some point their main affiliation in the US
+        AND g.main_us_institutions_career IS NOT NULL
+        AND g.institution != "chinese academy of sciences"
+     
+
+INFO:dedupe.canopy_index:Removing stop word an
+INFO:dedupe.canopy_index:Removing stop word ma
+INFO:dedupe.canopy_index:Removing stop word ch
+INFO:dedupe.canopy_index:Removing stop word ra
+INFO:dedupe.canopy_index:Removing stop word er
+INFO:dedupe.canopy_index:Removing stop word st
+INFO:dedupe.canopy_index:Removing stop word te
+INFO:dedupe.canopy_index:Removing stop word le
+INFO:dedupe.canopy_index:Removing stop word el
+INFO:dedupe.canopy_index:Removing stop word in
+INFO:dedupe.canopy_index:Removing stop word on
+INFO:dedupe.canopy_index:Removing stop word ha
+INFO:dedupe.canopy_index:Removing stop word ro
+INFO:dedupe.canopy_index:Removing stop word al
+INFO:dedupe.canopy_index:Removing stop word en
+INFO:dedupe.canopy_index:Removing stop word or
+INFO:dedupe.canopy_index:Removing stop word la
+INFO:dedupe.canopy_index:Removing stop word li
+INFO:dedupe.canopy_index:Removing stop word ll
+INFO:dedupe.canopy_index:Removing stop word re
+INFO:dedupe.canopy_index:Removing stop word ri
+INFO:dedupe.canopy_index:Removing stop word an
+INFO:dedupe.canopy_index:Removing stop word er
+INFO:dedupe.canopy_index:Removing stop word ar
+INFO:dedupe.canopy_index:Removing stop word an
+INFO:dedupe.canopy_index:Removing stop word in
+INFO:dedupe.canopy_index:Removing stop word ar
+INFO:dedupe.canopy_index:Removing stop word ne
+INFO:dedupe.canopy_index:Removing stop word ma
+INFO:dedupe.canopy_index:Removing stop word el
+INFO:dedupe.canopy_index:Removing stop word ri
+INFO:dedupe.canopy_index:Removing stop word in
+INFO:dedupe.canopy_index:Removing stop word le
+INFO:dedupe.canopy_index:Removing stop word on
+INFO:dedupe.canopy_index:Removing stop word ng
+INFO:dedupe.canopy_index:Removing stop word ar
+/home/mona/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/sklearn/feature_extraction/text.py:544: UserWarning: The parameter 'ngram_range' will not be used since 'analyzer' is callable'
+  warnings.warn(
+/home/mona/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/sklearn/feature_extraction/text.py:550: UserWarning: The parameter 'stop_words' will not be used since 'analyzer' != 'word'
+  warnings.warn(
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (commonSixGram, lastname)
+Time elapsed: 83.19203879833222 minutes 
+
+Starting active labeling...
+firstname : stephanie
+lastname : haas
+middlename : w
+year : 1989
+year_papertitle : ((1989, 'case hierarchy based representations and procedures for domain analysis and the construction and porting of natural language interfaces'), (1989, 'constituent object parsing for information retrieval and similar text processing problems'), (1989, 'the constituent object parser syntactic structure matching for information retrieval'), (1989, 'the flexibility of case grammar representations a porting procedure for natural language interfaces'), (1990, 'a feasibility study of the case hierachy model for the construction and porting of natural language interfaces'), (1990, 'conjunction ellipsis and other discontinuous constituents in the constituent object parser'), (1992, 'covering the vocabulary of technical abstracts using standard and specialized dictionaries'), (1993, 'incomplete sentence quotations in books and journals'), (1993, 'review of text based intelligent systems current research and practice in information extraction and retrieval by paul s jacobs lawrence erlbaum associates 1992'))
+keywords : frozenset({'natural language processing', 'programming language', 'information retrieval', 'cognitive science', 'linguistics', 'artificial intelligence'})
+
+firstname : stephanie
+lastname : haas
+middlename : w
+year : 1989
+year_papertitle : ((1989, 'case hierarchy based representations and procedures for domain analysis and the construction and porting of natural language interfaces'),)
+keywords : frozenset({'information systems', 'linguistics', 'computer science'})
+
+0/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished
+firstname : elena
+lastname : parra
+middlename : del rio
+year : 2003
+year_papertitle : ((2003, 'una era de monstruos representaciones de lo deforme en el siglo de oro espanol'), (2004, 'el tamano del barroco dimension y espacialidad en la palabra poetica aurea'), (2005, 'babel y barroco hablar en lenguas y otras manifestaciones teolinguisticas aureas'), (2005, 'sacerdotes contrahechos y bautismo de locos sobre rituales decision e intencion en la casuistica aurea'), (2006, 'baustismos con nieve ayuno de olores y exhumacion de cadaveres casuistica aurea y materialidad ritual'), (2006, 'primero sueno y otros escritos'), (2006, 'sobre el alma matrimonio confesion y casuistica en torno a el burlador de sevilla'))
+keywords : frozenset({'art history', 'humanities', 'literature'})
+
+firstname : elena
+lastname : parra
+middlename : del rio
+year : 2001
+year_papertitle : ((2001, 'una era de monstruos hacia una poetica de lo deforme en el siglo de oro'),)
+keywords : frozenset({'romance literature', 'literature', 'modern literature'})
+
+1/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:TfidfTextSearchPredicate: (0.6, lastname)
+firstname : noelle
+lastname : zeinercarmichael
+middlename : None
+year : 2011
+year_papertitle : ((2011, 'jacqueline carlon pliny s women constructing virtue and creating identity in the roman world'), (2013, 'newlands c e 2011 statius silvae book ii cambridge greek and latin classics cambridge new york cambridge university press ix 283 pp pr 34 99 pb isbn 9780521666237'), (2014, 'r k gibson and r morello reading the letters of pliny the younger an introduction cambridge cambridge university press 2012 pp xii 350 isbn9780521842921 60 00 us 79 00'), (2018, 'roman rhetoric and correspondence education the epistolary viva vox of marcus cornelius fronto'))
+keywords : frozenset({'genealogy', 'classics', 'theology', 'media studies', 'literature'})
+
+firstname : noelle
+lastname : zeiner
+middlename : kirsten
+year : 2002
+year_papertitle : ((2002, 'i vox aurea i the role of socio economic distinction in statius silvae'),)
+keywords : frozenset({'classical literature', 'classical studies'})
+
+2/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : linda
+lastname : rosenzweig
+middlename : w
+year : 1990
+year_papertitle : ((1990, 'book review private matters american attitudes toward child bearing and infant nurture in the urban north 1800 1860 by sylvia d hoffert'), (1991, 'the anchor of my life middle class american mothers and college educated daughters 1880 1920'), (1994, 'boots of leather slippers of gold the history of a lesbian community by elizabeth lapovsky kennedy and madeline d davis new york routledge 1993 xvii plus 434pp'), (1994, 'made to play house dolls and the commercialization of american girlhood 1830 1930 by miriam formanek brunell new haven connecticut yale university press 1994 xi plus 233pp 25 00'), (1995, 'book reviews keeping house women s lives in western pennsylvania 1790 1850 by virginia k bartlett'), (1995, 'englishmen and jews social relations and political culture 1840 1914 by david feldman new haven yale university press 1994 xii plus 401pp 45 00 cloth'), (1996, 'constructing girlhood popular magazines for girls growing up in england 1920 1950 by penny tinkler pennsylvania taylor francis 1995 ix plus 209pp'), (1996, 'towards a structure of indifference the social origins of maternal custody by debra friedman hawthorne new york aldine de gruyter 1995 xiii plus 154pp'), (1997, 'around the world in 72 days prod by christine lesiak nebraskans for public television 1997 60 mins pbs video 1320 braddock pl alexandria va 23314 1698'), (1997, 'book reviews the empty cradle infertility in america from colonial times to the present by margaret marsh and wanda ronner'))
+keywords : frozenset({'social science', 'ancient history', 'gender studies', 'economic history', 'gerontology', 'law and economics', 'art history', 'media studies', 'humanities'})
+
+firstname : linda
+lastname : rose
+middlename : None
+year : 1993
+year_papertitle : ((1993, 'before the loathsome crowd women on stage in late nineteenth and early twentieth century american literature'),)
+keywords : frozenset({'american literature', 'womens studies'})
+
+2/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : michael
+lastname : sanderson
+middlename : j
+year : 1982
+year_papertitle : ((1982, 'evolution of social behavior by reciprocation'), (1983, 'cultural transmission and evolution a quantitative approach l l cavalli sforza m feldman princeton university press princeton new jersey 1981 368 price 25 00 hardback 10 50 paperback'), (1986, 'mechanosensitivity of cultured ciliated cells from the mammalian respiratory tract implications for the regulation of mucociliary transport'), (1988, 'the effect of the reproductive system on mutation load'), (1989, 'confidence limits on phylogenies the bootstrap revisited'), (1989, 'patterns of variation in levels of homoplasy'))
+keywords : frozenset({'immunology', 'humanities', 'statistics', 'mathematical economics', 'genetics', 'cell biology'})
+
+firstname : michael
+lastname : sanders
+middlename : t
+year : 2006
+year_papertitle : ((2006, 'theodore dreiser s encounters with american romanticism'),)
+keywords : frozenset({'american literature'})
+
+2/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : lisa
+lastname : sigel
+middlename : z
+year : 1998
+year_papertitle : ((1998, 'imperiled innocents anthony comstock and family reproduction in victorian america by nicola beisel princeton new jersey princeton university press 1997 x plus 275pp 35 00'), (1999, 'strategies for showing women possession and representation in english visual culture 1665 1800 by marcia pointon new york oxford university press 1997 xiii plus 439pp 85 00'), (2000, 'filth in the wrong people s hands postcards and the expansion of pornography in britain and the atlantic world 1880 1914'), (2000, 'name your pleasure the transformation of sexual language in nineteenth century british pornography'), (2000, 'the technology of orgasm hysteria the vibrator and women s sexual satisfaction review'), (2002, 'governing pleasures pornography and social change in england 1815 1914'), (2003, 'angus mclaren sexual blackmail a modem history cambridge harvard university press 2002 pp x 332 35 00'), (2003, 'blasphemy impious speech in the west from the seventeenth to the nineteenth century review'), (2003, 'prostitution prevention and reform in england 1860 1914 review'), (2003, 'reviews of books sexual blackmail a modern history angus mclaren'))
+keywords : frozenset({'classics', 'genealogy', 'law', 'social science', 'ancient history', 'gender studies', 'visual arts', 'media studies', 'art history', 'public administration', 'humanities', 'psychotherapist'})
+
+firstname : lisa
+lastname : nicoletti
+middlename : j
+year : 1999
+year_papertitle : ((1999, 'resuscitating ophelia images of suicide and suicidal insanity in nineteenth century england'),)
+keywords : frozenset({'science history', 'art history', 'womens studies'})
+
+2/10 positive, 3/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : oscar
+lastname : perez
+middlename : a
+year : 2018
+year_papertitle : ((2018, 'evaluation of a person centered theory based intervention to promote health behaviors'), (2018, 'spanish a language for scientific and technical communication'), (2019, 'toxic chemicals in samanta schweblin s distancia de rescate fever dream'))
+keywords : frozenset({'knowledge management', 'clinical psychology', 'humanities'})
+
+firstname : carmela
+lastname : perez
+middlename : None
+year : 1998
+year_papertitle : ((1998, 'the language of native spanish and english speaking schizotypal college students'),)
+keywords : frozenset({'linguistics', 'clinical psychology'})
+
+2/10 positive, 4/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : miriam
+lastname : greenberg
+middlename : None
+year : 1998
+year_papertitle : ((1998, 'from coney island to las vegas in the urban imaginary discursive practices of growth and decline'), (2000, 'branding cities a social history of the urban lifestyle magazine'), (2003, 'the limits of branding the world trade center fiscal crisis and the marketing of recovery'))
+keywords : frozenset({'marketing', 'gender studies', 'advertising'})
+
+firstname : bryan
+lastname : greenberg
+middlename : r
+year : 2008
+year_papertitle : ((2008, 'hollywood and the film development process the influence of social networks and industry structure on content decisions'),)
+keywords : frozenset({'marketing', 'mass communications', 'film studies'})
+
+2/10 positive, 5/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : julie
+lastname : koser
+middlename : None
+year : 2010
+year_papertitle : ((2010, 'spectre and or ideal representations of revolutionary women in the german press 1789 1794'), (2016, 'armed ambiguity women warriors in german literature and culture in the age of goethe'))
+keywords : frozenset({'classics', 'art history', 'humanities', 'literature'})
+
+firstname : julie
+lastname : koser
+middlename : mae
+year : 2007
+year_papertitle : ((2007, 'representations of armed women in late eighteenth and early nineteenth century german literature'),)
+keywords : frozenset({'gender studies', 'german literature'})
+
+2/10 positive, 6/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : vera
+lastname : camden
+middlename : j
+year : 1989
+year_papertitle : ((1989, 'compromise formations current directions in psychoanalytic criticism'), (1989, 'domestic dissent in the narrative of the persecution of agnes beaumont'), (1992, 'the narrative of the persecutions of agnes beaumont'))
+keywords : frozenset({'gender studies', 'psychotherapist', 'art history', 'psychoanalysis'})
+
+firstname : vera
+lastname : camden
+middlename : jean
+year : 1986
+year_papertitle : ((1986, 'blasphemy and belief john bunyan and the word puritan'),)
+keywords : frozenset({'british and irish literature'})
+
+3/10 positive, 6/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : dan
+lastname : kaufman
+middlename : None
+year : 2000
+year_papertitle : ((2000, 'descartes on the objective reality of materially false ideas'), (2003, 'divine simplicity and the eternal truths in descartes'), (2003, 'infimus gradus libertatis descartes on indifference and divine freedom'), (2005, 'god s immutability and the necessity of descartes s eternal truths'), (2007, 'locke on individuation and the corpuscular basis of kinds'))
+keywords : frozenset({'epistemology'})
+
+firstname : daniel
+lastname : kaufman
+middlename : alexander
+year : 1999
+year_papertitle : ((1999, 'the metaphysics of art and the language of criticism a philosophy of art and criticism'),)
+keywords : frozenset({'art history', 'philosophy'})
+
+3/10 positive, 7/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : matthew
+lastname : sivils
+middlename : wynn
+year : 2004
+year_papertitle : ((2004, 'william bartram s travels and the rhetoric of ecological communities'), (2011, 'dissecting the pamphlet literature of the boston smallpox inoculation controversy'))
+keywords : frozenset({'environmental ethics', 'classics', 'anthropology'})
+
+firstname : matthew
+lastname : sivils
+middlename : wynn
+year : 2006
+year_papertitle : ((2006, 'song of the oktahutche the complete journals and poems of alexander posey'),)
+keywords : frozenset({'native american studies', 'american studies', 'american history', 'american literature'})
+
+3/10 positive, 8/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : katarzyna
+lastname : pieprzak
+middlename : None
+year : 2003
+year_papertitle : ((2003, 'citizens and subjects in the bank corporate visions of modern art and moroccan identity'), (2007, 'ruins rumors and traces of the city of brass moroccan modernity and memories of the arab global city'), (2008, 'art in the streets modern art museum practice and the urban environment in contemporary morocco'), (2009, 'africa north south and in between'), (2009, 'nostalgia and the new cosmopolitan literary and artistic interventions in the city of casablanca'), (2009, 'what is africanity'))
+keywords : frozenset({'anthropology', 'visual arts', 'archaeology', 'media studies', 'aesthetics', 'literature'})
+
+firstname : katarzyna
+lastname : pieprzak
+middlename : maria
+year : 2001
+year_papertitle : ((2001, 'which way to the modern art museum cultural discourse on art and modernity in post colonial morocco'),)
+keywords : frozenset({'comparative literature', 'art history', 'middle eastern history'})
+
+3/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : tristram
+lastname : wolff
+middlename : None
+year : 2010
+year_papertitle : ((2010, 'romantic etymologies of walden'), (2016, 'arbitrary natural other j g herder and ideologies of linguistic will'), (2016, 'kevin gilmartin william hazlitt political essayist'), (2017, 'language in use and the literary artifact'), (2017, 'surface feeling or what ephemerality does to reading in hazlitt hogarth and keats'), (2017, 'talking with texts hazlitt s ephemeral style'))
+keywords : frozenset({'theology', 'artificial intelligence', 'computer vision', 'religious studies', 'linguistics', 'epistemology', 'aesthetics', 'literature'})
+
+firstname : tristram
+lastname : wolff
+middlename : nash
+year : 2013
+year_papertitle : ((2013, 'romantic etymology and language ecology'),)
+keywords : frozenset({'comparative literature'})
+
+4/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : rachael
+lastname : king
+middlename : scarborough
+year : 2014
+year_papertitle : ((2014, 'letters from the highlands scribal publication and media shift in victorian scotland'), (2015, 'old new media print paint and the early eighteenth century media revolution'), (2016, 'the manuscript newsletter and the rise of the newspaper 1665 1715'), (2016, 'the pleasures of the world rewriting epistolarity in burney edgeworth and austen'), (2018, 'l et a girl read periodicals and women s literary canon formation'), (2020, 'samuel johnson and spectral media'), (2021, 'cyberformalism histories of linguistic forms in the digital archive daniel shore'))
+keywords : frozenset({'anthropology', 'media studies', 'art history', 'literature'})
+
+firstname : rachael
+lastname : king
+middlename : scarborough
+year : 2014
+year_papertitle : ((2014, 'the known world the epistolary history of eighteenth century media'),)
+keywords : frozenset({'british and irish literature'})
+
+5/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jessica
+lastname : tanner
+middlename : None
+year : 2013
+year_papertitle : ((2013, 'turning tricks turning the tables plotting the brasserie a femmes in tabarant s virus d amour'), (2020, 'incipit reflections on gender studies in our field'))
+keywords : frozenset({'gender studies', 'literature'})
+
+firstname : jessica
+lastname : tanner
+middlename : leigh
+year : 2013
+year_papertitle : ((2013, 'mapping prostitution sex space taxonomy in the fin de siecle french novel'),)
+keywords : frozenset({'romance literature'})
+
+6/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : james
+lastname : elmborg
+middlename : k
+year : 1997
+year_papertitle : ((1997, 'classroom research implementing the scholarship of teaching'), (2001, 'service learning in the library and information science curriculum the perspectives and experiences of one multimedia user education class'), (2002, 'knowledge and knowing in library and information science a philosophical framework review'), (2002, 'teaching at the desk toward a reference pedagogy'), (2003, 'historical research as critical practice and relationship the carnegie libraries in iowa project'), (2003, 'information literacy and writing across the curriculum sharing the vision'))
+keywords : frozenset({'multimedia', 'pedagogy', 'library science'})
+
+firstname : james
+lastname : elmborg
+middlename : k
+year : 1994
+year_papertitle : ((1994, 'a pageant of its time edward dorn s gunslinger and the 1960 s'),)
+keywords : frozenset({'american literature', 'american studies'})
+
+6/10 positive, 10/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : juan
+lastname : wolf
+middlename : eduardo
+year : 2006
+year_papertitle : ((2006, 'the city of musical memory salsa record groves and popular culture in cali colombia'), (2007, 'black rhythms of peru reviving african musical heritage in the black pacific'), (2010, 'puyo runa imagery and power in modern amazonia'), (2012, 'foxboy intimacy and aesthetics in andean stories'))
+keywords : frozenset({'archaeology', 'gerontology', 'aesthetics', 'art history'})
+
+firstname : juan
+lastname : wolf
+middlename : eduardo
+year : 2013
+year_papertitle : ((2013, 'afro chile styles of blackness in music dance along chile s northern border'),)
+keywords : frozenset({'latin american studies', 'music', 'folklore', 'black studies'})
+
+6/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : teresa
+lastname : hancockparmer
+middlename : None
+year : 2018
+year_papertitle : ((2018, 'the spanish shulamite brides the song of songs in teresa of avila mariana de san joseph and maria de jesus de agreda'), (2019, 'kelly bulkeley lucrecia the dreamer prophecy cognitive science and the spanish inquisition stanford stanford university press 2018 viii 237 pp'), (2020, 'reviews of books lesley k twomey the sacred space of the virgin mary in medieval hispanic literature from gonzalo de berceo to ambrosio montesino woodbridge rochester ny tamesis 2019 x 483 pp 19 black and white illustrations'), (2020, 'st teresa of avila her writings and life edited by terence o reilly colin thompson and lesley twomey cambridge legenda 2018 xiv 259 pp'))
+keywords : frozenset({'theology', 'art history'})
+
+firstname : teresa
+lastname : hancockparmer
+middlename : a
+year : 2014
+year_papertitle : ((2014, 'embodying the bride performances of the i song of songs i in early modern and colonial hispanic convent writing'),)
+keywords : frozenset({'latin american literature', 'womens studies', 'european studies'})
+
+7/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : juan
+lastname : wolf
+middlename : eduardo
+year : 2006
+year_papertitle : ((2006, 'the city of musical memory salsa record groves and popular culture in cali colombia'), (2007, 'black rhythms of peru reviving african musical heritage in the black pacific'), (2010, 'puyo runa imagery and power in modern amazonia'), (2012, 'foxboy intimacy and aesthetics in andean stories'))
+keywords : frozenset({'archaeology', 'gerontology', 'aesthetics', 'art history'})
+
+firstname : juan
+lastname : wolf
+middlename : eduardo
+year : 2013
+year_papertitle : ((2013, 'afro chile styles of blackness in music dance along chile s northern border'),)
+keywords : frozenset({'latin american studies', 'music', 'folklore', 'black studies'})
+
+6/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished
+firstname : teresa
+lastname : hancockparmer
+middlename : None
+year : 2018
+year_papertitle : ((2018, 'the spanish shulamite brides the song of songs in teresa of avila mariana de san joseph and maria de jesus de agreda'), (2019, 'kelly bulkeley lucrecia the dreamer prophecy cognitive science and the spanish inquisition stanford stanford university press 2018 viii 237 pp'), (2020, 'reviews of books lesley k twomey the sacred space of the virgin mary in medieval hispanic literature from gonzalo de berceo to ambrosio montesino woodbridge rochester ny tamesis 2019 x 483 pp 19 black and white illustrations'), (2020, 'st teresa of avila her writings and life edited by terence o reilly colin thompson and lesley twomey cambridge legenda 2018 xiv 259 pp'))
+keywords : frozenset({'theology', 'art history'})
+
+firstname : teresa
+lastname : hancockparmer
+middlename : a
+year : 2014
+year_papertitle : ((2014, 'embodying the bride performances of the i song of songs i in early modern and colonial hispanic convent writing'),)
+keywords : frozenset({'latin american literature', 'womens studies', 'european studies'})
+
+6/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jane
+lastname : degenhardt
+middlename : hwang
+year : 2008
+year_papertitle : ((2008, 'matthew birchwood staging islam in england drama and culture 1640 1685 studies in renaissance literature vol 21 cambridge d s brewer 2007 pp 200 85 00 cloth'), (2010, 'islamic conversion and christian resistance on the early modern stage'))
+keywords : frozenset({'classics', 'religious studies', 'theology', 'literature'})
+
+firstname : jane
+lastname : degenhardt
+middlename : hwang
+year : 2005
+year_papertitle : ((2005, 'faith embodiment and turning turk islamic conversion on the early modern stage and the production of religious and racial identity'),)
+keywords : frozenset({'british and irish literature', 'theater'})
+
+6/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : nathaniel
+lastname : greenberg
+middlename : None
+year : 2013
+year_papertitle : ((2013, 'naguib mahfouz s children of the alley and the coming revolution'), (2014, 'the aesthetic of revolution in the film and literature of naguib mahfouz'), (2017, 'ideology as narrative the mythic discourse of al qaeda in the islamic maghrib'), (2017, 'mythical state the aesthetics and counter aesthetics of the islamic state in iraq and syria'), (2017, 'the maghreb beyond islamism'), (2017, 'the victory of sunni islam'), (2019, 'ahmed khaled towfik days of rage and horror in arabic science fiction'), (2019, 'deconstructing isis philippe joseph salazar s aesthetics of terror'), (2019, 'notes on the arab boom stasis and dynamism in the post revolutionary arabic novel'), (2020, 'mediating islamic state islamic state war documentaries'))
+keywords : frozenset({'classics', 'ancient history', 'economic history', 'media studies', 'art history', 'aesthetics', 'literature'})
+
+firstname : nathaniel
+lastname : greenberg
+middlename : None
+year : 2012
+year_papertitle : ((2012, 'secrecy secularism and the coming revolution in naguib mahfouz s postwar masterpieces 1952 1967'),)
+keywords : frozenset({'comparative literature', 'islamic studies', 'middle eastern literature', 'modern literature'})
+
+7/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : lauren
+lastname : stone
+middlename : shizuko
+year : 2015
+year_papertitle : ((2015, 'almost nothing almost everything'), (2015, 'almost nothing almost everything an introduction to the discourse of flirtation'), (2015, 'flirtations rhetoric and aesthetics this side of seduction'), (2015, 'interlude staging appeal performing ambivalence'), (2015, 'staging appeal performing ambivalence'), (2015, 'the irreducibly doubled stroke'), (2015, 'the irreducibly doubled stroke flirtation felicity and sincerity'), (2017, 'beilage zum brief on epistolarity and materiality in bettine von arnim s die gunderode'), (2017, 'rilke s kinderstube phenomenology in childhood spaces'))
+keywords : frozenset({'psychoanalysis', 'physical medicine and rehabilitation', 'art history', 'aesthetics', 'literature'})
+
+firstname : lauren
+lastname : stone
+middlename : shizuko
+year : 2013
+year_papertitle : ((2013, 'the turn to childhood toward a theory of the kinderstube in stifter rilke and benjamin'),)
+keywords : frozenset({'germanic literature', 'philosophy'})
+
+8/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : steven
+lastname : frye
+middlename : None
+year : 2001
+year_papertitle : ((2001, 'historiography and narrative design in the american romance a study of four authors'), (2003, 'foundations of the new traditionalism'), (2006, 'melvillean skepticism and alternative modernity in the lightning rod man'))
+keywords : frozenset({'aesthetics', 'epistemology', 'literature'})
+
+firstname : steven
+lastname : frye
+middlename : paul
+year : 1995
+year_papertitle : ((1995, 'the dialogics of metahistory historical consciousness in the american romance tradition'),)
+keywords : frozenset({'american literature', 'rhetoric', 'american studies'})
+
+9/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : lauren
+lastname : stone
+middlename : shizuko
+year : 2015
+year_papertitle : ((2015, 'almost nothing almost everything'), (2015, 'almost nothing almost everything an introduction to the discourse of flirtation'), (2015, 'flirtations rhetoric and aesthetics this side of seduction'), (2015, 'interlude staging appeal performing ambivalence'), (2015, 'staging appeal performing ambivalence'), (2015, 'the irreducibly doubled stroke'), (2015, 'the irreducibly doubled stroke flirtation felicity and sincerity'), (2017, 'beilage zum brief on epistolarity and materiality in bettine von arnim s die gunderode'), (2017, 'rilke s kinderstube phenomenology in childhood spaces'))
+keywords : frozenset({'psychoanalysis', 'physical medicine and rehabilitation', 'art history', 'aesthetics', 'literature'})
+
+firstname : lauren
+lastname : stone
+middlename : shizuko
+year : 2013
+year_papertitle : ((2013, 'the turn to childhood toward a theory of the kinderstube in stifter rilke and benjamin'),)
+keywords : frozenset({'germanic literature', 'philosophy'})
+
+8/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished
+firstname : steven
+lastname : frye
+middlename : None
+year : 2001
+year_papertitle : ((2001, 'historiography and narrative design in the american romance a study of four authors'), (2003, 'foundations of the new traditionalism'), (2006, 'melvillean skepticism and alternative modernity in the lightning rod man'))
+keywords : frozenset({'aesthetics', 'epistemology', 'literature'})
+
+firstname : steven
+lastname : frye
+middlename : paul
+year : 1995
+year_papertitle : ((1995, 'the dialogics of metahistory historical consciousness in the american romance tradition'),)
+keywords : frozenset({'american literature', 'rhetoric', 'american studies'})
+
+8/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : gayle
+lastname : rogers
+middlename : None
+year : 2009
+year_papertitle : ((2009, 'james joyce in his labyrinth'), (2012, 'modernism and the new spain britain cosmopolitan europe and literary history'), (2013, 'restaging the disaster dos passos and national literatures after the spanish american war'), (2014, 'jimenez modernism o and the languages of comparative modernist studies'), (2015, 'american modernisms in the world'), (2015, 'modernism evolution of an idea'), (2015, 'spanish is a language tu hemingway s cubist spanglish'), (2016, 'conclusion worlds between languages the spanglish quixote'), (2016, 'incomparable empires modernism and the translation of spanish and american literature'), (2016, 'introduction modernism translation and the fields of literary history'))
+keywords : frozenset({'classics', 'linguistics', 'art history', 'literature'})
+
+firstname : gayle
+lastname : rogers
+middlename : bishop
+year : 2008
+year_papertitle : ((2008, 'british modernism and ortega s spanish vanguard cosmopolitan visions of europe 1922 1939'),)
+keywords : frozenset({'romance literature', 'comparative literature', 'british and irish literature'})
+
+8/10 positive, 14/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : de
+lastname : kilgore
+middlename : witt douglas
+year : 2007
+year_papertitle : ((2007, 'carl abbott frontiers past and future science fiction and the american west lawrence university press of kansas 2006 pp viii 230 29 95'), (2008, 'african american literature beyond race an alternative reader ed gene andrew jarrett new york and london new york university press 2006 496 pages 80 50 cloth 25 00 paper'))
+keywords : frozenset({'theology', 'anthropology', 'media studies', 'art history'})
+
+firstname : de
+lastname : kilgore
+middlename : witt douglas
+year : 1994
+year_papertitle : ((1994, 'beyond earth popular science science fiction and the cultural construction of an american future in space'),)
+keywords : frozenset({'history', 'modern history', 'american studies', 'american literature'})
+
+9/10 positive, 14/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : yvette
+lastname : kisor
+middlename : None
+year : 2010
+year_papertitle : ((2010, 'numerical composition and beowulf a reconsideration'), (2016, 'beowulf unlocked new evidence from lexomic analysis'))
+keywords : frozenset({'mineralogy', 'algorithm'})
+
+firstname : yvette
+lastname : kisor
+middlename : louise
+year : 2001
+year_papertitle : ((2001, 'the inner beowulf theories of structure and composition of the poem and their implications for modern readers'),)
+keywords : frozenset({'rhetoric', 'british and irish literature', 'medieval literature', 'literature'})
+
+9/10 positive, 15/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : julia
+lastname : belser
+middlename : watts
+year : 2010
+year_papertitle : ((2010, 'ancient jewish magic a history'), (2012, 'food and identity in early rabbinic judaism by jordan d rosenblum cambridge university press new york 2010 xiv 223 pp isbn 978 0 521 19598 0 us 85 hardback'), (2012, 'socrates and the fat rabbis by daniel boyarin university of chicago press chicago 2009 xiv 388 pp isbn 978 0 226 06916 6 us 45 00 cloth isbn 978 0 226 06918 0 us 45 00 e book'))
+keywords : frozenset({'ancient history', 'theology'})
+
+firstname : julia
+lastname : belser
+middlename : watts
+year : 2008
+year_papertitle : ((2008, 'between the human and the holy the construction of talmudic theology in massekhet ta anit'),)
+keywords : frozenset({'judaic studies', 'theology', 'folklore'})
+
+9/10 positive, 16/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jordi
+lastname : marti
+middlename : sanchez
+year : 2001
+year_papertitle : ((2001, 'from youth to age through old english poetry with old norse parallels'), (2002, 'chaucer s makyng of the romaunt of the rose'), (2005, 'wynkyn de worde s editions of ipomydon a reassessment of the evidence'))
+keywords : frozenset({'genealogy', 'literature'})
+
+firstname : jordi
+lastname : marti
+middlename : sanchez
+year : 2003
+year_papertitle : ((2003, 'the middle english ipomedon reading the manuscripts and listening to the texts'),)
+keywords : frozenset({'british and irish literature', 'medieval literature', 'literature'})
+
+10/10 positive, 16/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jin
+lastname : liu
+middlename : None
+year : 2011
+year_papertitle : ((2008, 'signifying the local media productions rendered in local languages in mainland china since 2000'), (2011, 'deviant writing and youth identity representation of dialects with chinese characters on the internet'), (2012, 'chinese under globalization emerging trends in language use in china'), (2012, 'negotiating linguistic identities under globalization language use in contemporary china'), (2012, 'the use of chinese dialects on the internet youth language and local youth identity in urban china'), (2013, 'chapter eight multiplicity in mainstream studio films in local languages'), (2013, 'chapter seven the rhetoric of local languages as the marginal chinese underground and independent films by jia zhangke and others'), (2013, 'chapter six popular music and local youth identity in the age of the internet'), (2013, 'chapter two an overview of television series productions in the 2000s'), (2013, 'signifying the local media productions rendered in local languages in mainland china in the new millennium'))
+keywords : frozenset({'gender studies', 'visual arts', 'ethnology', 'media studies', 'linguistics', 'literature'})
+
+firstname : jing
+lastname : liu
+middlename : None
+year : 2000
+year_papertitle : ((2000, 'young children s novel word acquisition at the superordinate level sensitivity to multiple exemplars and object representation'),)
+keywords : frozenset({'linguistics', 'cognitive psychology', 'developmental psychology'})
+
+11/10 positive, 16/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : magali
+lastname : michael
+middlename : cornier
+year : 1987
+year_papertitle : ((1987, 'who is sarah a critique of the french lieutenant s woman s feminism'), (1994, 'angela carter s nights at the circus an engaged feminism via subversive postmodern strategies'), (1994, 'the political paradox within don delillo s libra'))
+keywords : frozenset({'gender studies', 'religious studies'})
+
+firstname : magali
+lastname : michael
+middlename : cornier
+year : 1990
+year_papertitle : ((1990, 'feminism and the postmodernist impulse doris lessing marge piercy margaret atwood and angela carter'),)
+keywords : frozenset({'literature', 'african literature', 'british and irish literature', 'canadian literature', 'modern literature', 'comparative literature', 'american literature', 'womens studies'})
+
+11/10 positive, 17/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : alkim
+lastname : salah
+middlename : almila akdag
+year : 2010
+year_papertitle : ((2010, 'maps on the basis of the arts humanities citation index the journals leonardo and art journal versus digital humanities as a topic'), (2011, 'need to categorize a comparative look at the categories of the universal decimal classification system udc and wikipedia'), (2011, 'the structure of the arts humanities citation index a mapping on the basis of aggregated citations among 1 157 journals'), (2012, 'evolution of wikipedia s category structure'), (2012, 'need to categorize a comparative look at the categories of universal decimal classification system and wikipedia'), (2012, 'the development of the journal environment of leonardo'), (2013, 'flow of innovation in deviantart following artists on an online social network site'), (2015, 'looking at mondrian s victory boogie woogie what do i feel'), (2016, 'a new database and protocol for image reuse detection'), (2016, 'knowledge maps of the udc uses and use cases'))
+keywords : frozenset({'natural language processing', 'information retrieval', 'data science', 'visual arts', 'database', 'world wide web', 'knowledge management', 'humanities', 'multimedia', 'artificial intelligence', 'human computer interaction'})
+
+firstname : alkim
+lastname : salah
+middlename : almila akdag
+year : 2008
+year_papertitle : ((2008, 'discontents of computer art a discourse analysis on the intersection of arts sciences and technology'),)
+keywords : frozenset({'art history'})
+
+11/10 positive, 18/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : maria
+lastname : barbosa
+middlename : jose somerlate
+year : 1991
+year_papertitle : ((1991, 'a hora da estrela and um sopro de vida parodies of narrative power'), (1992, 'sterne and machado parodic and intertextual play in tristram shandy and memorias'), (1998, 'chorar verbo transitivo'))
+keywords : frozenset({'art history', 'humanities', 'literature'})
+
+firstname : maria
+lastname : barbosa
+middlename : jose somerlate
+year : 1990
+year_papertitle : ((1990, 'whose voice is it anyway literary self consciousness in sterne machado lispector and barth'),)
+keywords : frozenset({'comparative literature', 'british and irish literature', 'american literature', 'latin american history'})
+
+11/10 positive, 18/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : astrida
+lastname : tantillo
+middlename : orle
+year : 1998
+year_papertitle : ((1998, 'goethe s botany and his philosophy of gender'), (1998, 'goethes romane aufbruch in die moderne'), (2001, 'a new reading of werther as goethe s critique of rousseau'), (2002, 'goethe s elective affinities and the critics'), (2002, 'the will to create'), (2003, 'falsche tendenzen der staatsdiener goethe und der dichter'), (2004, 'northern dreams of the south imagining italy in the eighteenth century'))
+keywords : frozenset({'classics', 'anthropology', 'ancient history', 'economic history', 'art history', 'literature'})
+
+firstname : astrida
+lastname : tantillo
+middlename : orle
+year : 1994
+year_papertitle : ((1994, 'nature s artistry goethe s science and die wahlverwandtschaften'),)
+keywords : frozenset({'science history', 'germanic literature', 'philosophy'})
+
+12/10 positive, 18/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : walter
+lastname : hakala
+middlename : n
+year : 2014
+year_papertitle : ((2014, 'a maṣnavī in praise of coffee prepared at the bidding of nawāb umdat al mulk amīr khān bahādur'), (2014, 'a sultan in the realm of passion coffee in eighteenth century delhi'), (2014, 'the authorial problem in the ḵẖāliq bārī of ḵẖusrau'), (2015, 'on equal terms the equivocal origins of an early mughal indo persian vocabulary'), (2016, '1 a plot discovered'), (2016, '2 1700 between microhistory and macrostructures'), (2016, '3 1800 through the veil of poetry'), (2016, '4 1900 lexicography and the self'), (2016, 'negotiating languages urdu hindi and the definition of modern south asia'), (2016, 'note on transliteration'))
+keywords : frozenset({'natural language processing', 'anthropology', 'soil science', 'art history', 'linguistics', 'artificial intelligence', 'literature'})
+
+firstname : walter
+lastname : hakala
+middlename : nils
+year : 2010
+year_papertitle : ((2010, 'diction and dictionaries language literature and learning in persianate south asia'),)
+keywords : frozenset({'south asian studies', 'asian literature', 'history', 'language', 'asian history'})
+
+13/10 positive, 18/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : eve
+lastname : raimon
+middlename : allegra
+year : 2006
+year_papertitle : ((2006, 'creole crossings domestic fiction and the reform of colonial slavery'), (2008, 'lioness dir and prod by meg mclagan and daria somners room 11 productions chicken egg pictures impact partners 2008 82 mins www lionessthefilm com'), (2009, 'writing group as sanctuary'), (2010, 'lost and found making claims on archives'), (2013, 'brutality and brotherhood james baldwin and prison sexuality'))
+keywords : frozenset({'genealogy', 'family medicine', 'gender studies', 'art history', 'ethnology'})
+
+firstname : eve
+lastname : raimon
+middlename : allegra
+year : 1995
+year_papertitle : ((1995, 's tra te gic mulattoes nationalism interraciality and the figure of the tragic mulatto in nineteenth century american reform fiction'),)
+keywords : frozenset({'american literature', 'womens studies', 'american studies'})
+
+13/10 positive, 18/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : isabel
+lastname : guzman
+middlename : molina
+year : 2003
+year_papertitle : ((2003, 'contesting the borders of the imagined nation the frame of religious marginalization in grassroots socially conservative discourses about sexuality in public education'), (2004, 'brain brow and booty latina iconicity in u s popular culture'), (2004, 'brown eyes on the web unique perspectives of an alternative online publication'), (2005, 'gendering latinidad through the elian news discourse about cuban women'), (2006, 'competing discourses of community ideological tensions between local general market and latino news media'), (2006, 'mediating frida negotiating discourses of latina o authenticity in global media representations of ethnic identity'), (2008, 'the elian gonzalez discursive template'))
+keywords : frozenset({'world wide web', 'gender studies', 'media studies', 'art history'})
+
+firstname : isabel
+lastname : guzman
+middlename : molina
+year : 2000
+year_papertitle : ((2000, 'culture wars in the classroom a discursive analysis of conflict in two public school districts'),)
+keywords : frozenset({'rhetoric', 'educational sociology', 'educational administration', 'linguistics', 'social structure'})
+
+13/10 positive, 19/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : julian
+lastname : holguin
+middlename : andres gonzalez
+year : 2018
+year_papertitle : ((2018, 'belonging in genesis biblical israel and the politics of identity formation written by amanda beckenstein mbuvi 2016'), (2020, 'painted eroticism sex and death in cain and abel s story'))
+keywords : frozenset({'religious studies', 'literature'})
+
+firstname : julian
+lastname : holguin
+middlename : andres gonzalez
+year : 2015
+year_papertitle : ((2015, 'questioning god a political analysis of genesis 4 1 16 and its interpretations'),)
+keywords : frozenset({'biblical studies', 'latin american literature', 'public administration'})
+
+13/10 positive, 20/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : christopher
+lastname : richards
+middlename : None
+year : 2016
+year_papertitle : ((2016, 'the models for africa accra s independence era fashion culture and the creations of chez julie'), (2017, 'disguise masks and global african art'))
+keywords : frozenset({'gender studies', 'visual arts'})
+
+firstname : christopher
+lastname : richards
+middlename : None
+year : 2014
+year_papertitle : ((2014, 'we have always been fashionable embodying cosmopolitanism and nationalism through fashion in accra ghana'),)
+keywords : frozenset({'african history', 'sub saharan africa studies', 'art history', 'fashion'})
+
+14/10 positive, 20/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : opal
+lastname : adisa
+middlename : palmer
+year : 1991
+year_papertitle : ((1991, 'review 9 plays by black women edited by margaret b wilkerson'), (1991, 'review of margaret b wilkerson ed 9 plays by black women'), (1992, 'review motherlands black women s writing from africa the caribbean and south asia edited by susheila nasta'), (1992, 'review of shay youngblood the big mama stories'), (1992, 'review of susheila nasta ed motherlands black women s writing from africa the caribbean and south asia'), (1992, 'review the big mama stories by shay youngblood'), (1994, 'review of doris davenport voodoo chile slight return poems'), (1994, 'review voodoo chile slight return poems by doris davenport'), (1995, 'review of jewell parker rhodes voodoo dreams'))
+keywords : frozenset({'anthropology', 'ancient history', 'gender studies', 'media studies', 'art history', 'cartography', 'ethnology', 'literature'})
+
+firstname : opal
+lastname : adisa
+middlename : palmer
+year : 1992
+year_papertitle : ((1992, 'three landscapes jamaican women writers at home and in the diaspora'),)
+keywords : frozenset({'african literature', 'caribbean literature', 'british and irish literature'})
+
+15/10 positive, 20/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+Finished labeling
+INFO:rlr.crossvalidation:using cross validation to find optimum alpha...
+INFO:rlr.crossvalidation:optimum alpha: 0.000010, score 0.4587668736335823
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (wholeFieldPredicate, lastname)
+Done in 7209.848141070207 minutes.

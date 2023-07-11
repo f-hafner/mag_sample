@@ -1,0 +1,760 @@
+Namespace(testing=False, verbose=1, field=['psychology'], train_name='mona_degree0', startyear=1985, endyear=2015, loadstartyear=1985, loadendyear=2015, mergemode='1:1', recall=0.9, institution='False', fieldofstudy_cat='False', fieldofstudy_str='False', keywords='True', retrain='True', linking_type='graduates', samplesize=50000, write_to='database')
+Have max 12 cores available
+Testing is False 
+
+I set the write connection to the main database.
+id_field is [15744967] and will be passed to sql queries.
+finished setup ... 
+Time elapsed: 0.0017932295799255372 minutes 
+
+
+    SELECT goid
+            , year
+            , firstname 
+            , lastname
+            , CASE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                WHEN 
+                    "" THEN NULL 
+                    ELSE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                END AS middlename
+            , fieldofstudy
+            , keywords
+            , institution
+            , coauthors
+            , year_papertitle
+    FROM (
+        SELECT goid
+            , degree_year AS year 
+            , fullname 
+            , SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) AS firstname
+            , REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "") AS lastname 
+            , TRIM(SUBSTR(fullname, length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1)) + 1)) AS middle_lastname 
+            , length(fullname) AS l_fullname 
+            , length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) ) AS l_firstname
+            , length(REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "")) AS l_lastname
+            , fieldname AS fieldofstudy
+            , university_id
+            , degree_year || "//" || thesistitle as year_papertitle 
+        FROM pq_authors 
+        INNER JOIN (
+            SELECT goid, fieldname 
+            FROM pq_fields_mag
+            WHERE mag_field0 IN (?)
+        ) USING (goid)
+    )
+    -- ## NOTE: use left join here as not all graduates have advisor (particularly pre-1980) and possibly also keywords
+    LEFT JOIN (
+        SELECT goid
+            , fields as keywords
+            , advisors as coauthors
+        FROm pq_info_linking
+    ) USING(goid)
+    INNER JOIN (
+        SELECT university_id, normalizedname as institution
+        FROM pq_unis
+        WHERE location like "%United States%"
+    ) USING(university_id)
+    WHERE year >= 1985 and year <= 2015 AND length(firstname) > 1
+     
+
+
+    SELECT f.AuthorId
+        , f.year
+        , f.firstname
+        , f.lastname
+        , CASE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            WHEN 
+                "" THEN NULL 
+                ELSE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            END as middlename 
+            -- ## NOTE this gives "" for middlename when it is missing 
+        , f.fieldofstudy
+        , g.keywords
+        , g.coauthors
+        , g.institution
+        , g.year_papertitle
+    FROM (
+        SELECT a.AuthorId
+            , a.YearFirstPub AS year
+            , a.FirstName AS firstname
+            , REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "") AS lastname 
+                    -- https://stackoverflow.com/questions/21388820/how-to-get-the-last-index-of-a-substring-in-sqlite
+            , TRIM(SUBSTR(b.NormalizedName, length(a.FirstName) + 1)) AS middle_lastname 
+                    -- this gives all except the first name 
+            , length(b.NormalizedName) as l_fullname 
+            , length(a.FirstName) as l_firstname
+            , length(REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "")) as l_lastname
+            , e.NormalizedName AS fieldofstudy
+        FROM author_sample AS a
+        INNER JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM Authors
+        ) AS b USING(AuthorId)
+        INNER JOIN (
+            SELECT AuthorId
+            FROM author_field0
+            WHERE FieldOfStudyId_lvl0 IN (?)
+                AND Degree <= 0
+        ) USING(AuthorId)
+        LEFT JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM author_fields c
+            INNER JOIN (
+                SELECT FieldOfStudyId, NormalizedName
+                FROM FieldsOfStudy
+            ) AS d USING(FieldOfStudyId)
+            -- ## Condition on fieldofstudy being in the level 0 id_field
+            INNER JOIN (
+                SELECT ParentFieldOfStudyId, ChildFieldOfStudyId
+                FROM crosswalk_fields
+                WHERE ParentLevel = 0
+                    AND ParentFieldOfStudyId IN (?)
+            ) AS e ON (e.ChildFieldOfStudyId = c.FieldOfStudyId)
+            WHERE FieldClass = 'first'
+        ) AS e USING(AuthorId)
+    ) f
+    LEFT JOIN (
+        SELECT AuthorId
+                , institutions as institution
+                , main_us_institutions_career
+                , coauthors
+                , keywords
+                , year_papertitle
+        FROM author_info_linking
+    ) AS g USING(AuthorId)
+    WHERE length(firstname) > 1 AND year >= 1985 - 5 AND year <= 2015 + 5 
+        -- ## use this to condition on people that have at least at some point their main affiliation in the US
+        AND g.main_us_institutions_career IS NOT NULL
+        AND g.institution != "chinese academy of sciences"
+     
+
+INFO:dedupe.canopy_index:Removing stop word ar
+INFO:dedupe.canopy_index:Removing stop word er
+INFO:dedupe.canopy_index:Removing stop word an
+INFO:dedupe.canopy_index:Removing stop word el
+INFO:dedupe.canopy_index:Removing stop word an
+INFO:dedupe.canopy_index:Removing stop word in
+INFO:dedupe.canopy_index:Removing stop word ar
+INFO:dedupe.canopy_index:Removing stop word or
+INFO:dedupe.canopy_index:Removing stop word re
+INFO:dedupe.canopy_index:Removing stop word on
+INFO:dedupe.canopy_index:Removing stop word ha
+INFO:dedupe.canopy_index:Removing stop word la
+INFO:dedupe.canopy_index:Removing stop word ma
+INFO:dedupe.canopy_index:Removing stop word ra
+INFO:dedupe.canopy_index:Removing stop word er
+INFO:dedupe.canopy_index:Removing stop word ne
+INFO:dedupe.canopy_index:Removing stop word ri
+INFO:dedupe.canopy_index:Removing stop word st
+INFO:dedupe.canopy_index:Removing stop word li
+INFO:dedupe.canopy_index:Removing stop word al
+INFO:dedupe.canopy_index:Removing stop word le
+INFO:dedupe.canopy_index:Removing stop word ro
+INFO:dedupe.canopy_index:Removing stop word te
+INFO:dedupe.canopy_index:Removing stop word an
+INFO:dedupe.canopy_index:Removing stop word el
+INFO:dedupe.canopy_index:Removing stop word ma
+INFO:dedupe.canopy_index:Removing stop word on
+INFO:dedupe.canopy_index:Removing stop word ne
+INFO:dedupe.canopy_index:Removing stop word ri
+INFO:dedupe.canopy_index:Removing stop word in
+INFO:dedupe.canopy_index:Removing stop word le
+INFO:dedupe.canopy_index:Removing stop word en
+INFO:dedupe.canopy_index:Removing stop word ch
+INFO:dedupe.canopy_index:Removing stop word ll
+INFO:dedupe.canopy_index:Removing stop word er
+INFO:dedupe.canopy_index:Removing stop word in
+INFO:dedupe.canopy_index:Removing stop word ar
+/home/mona/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/sklearn/feature_extraction/text.py:544: UserWarning: The parameter 'ngram_range' will not be used since 'analyzer' is callable'
+  warnings.warn(
+/home/mona/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/sklearn/feature_extraction/text.py:550: UserWarning: The parameter 'stop_words' will not be used since 'analyzer' != 'word'
+  warnings.warn(
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:TfidfTextSearchPredicate: (0.6, lastname)
+Time elapsed: 718.0118939995766 minutes 
+
+Starting active labeling...
+firstname : laura
+lastname : castroschilo
+middlename : None
+year : 2010
+year_papertitle : ((2010, 'gender differences in the relationship between emotional intelligence and right hemisphere lateralization for facial processing'), (2012, 'distinguishing ordinal and disordinal interactions'), (2013, 'abstract uncrossing the correlated trait correlated method model for multitrait multimethod data'), (2013, 'comparison of nomothetic versus idiographic oriented methods for making predictions about distal outcomes from time series data'), (2013, 'modeling intraindividual change in nonlinear growth models with latent change scores'), (2013, 'neglect the structure of multitrait multimethod data at your peril implications for associations with external variables'), (2013, 'parents optimism positive parenting and child peer competence in mexican origin families'), (2014, 'determinants of mental health and self rated health a model of socioeconomic status neighborhood safety and physical activity'), (2014, 'nonlinear gompertz curve models of achievement gaps in mathematics and reading'), (2014, 'toward improving the modeling of mtmm data a response to geiser koch and eid 2014'))
+keywords : frozenset({'gerontology', 'social psychology', 'econometrics', 'information retrieval', 'statistics', 'clinical psychology', 'developmental psychology'})
+
+firstname : laura
+lastname : castro
+middlename : marie
+year : 2000
+year_papertitle : ((2000, 'the effects of bilingual education on self esteem and ethnic identity in mexican children'),)
+keywords : frozenset({'bilingual education', 'educational psychology', 'developmental psychology', 'ethnic studies'})
+
+0/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished
+firstname : anne
+lastname : hunt
+middlename : None
+year : 1998
+year_papertitle : ((1998, 'building a community based research partnership lessons from the mohawk nation of akwesasne'), (2001, 'hyperactivity and impulsiveness in rats fed diets supplemented with either aroclor 1248 or pcb contaminated st lawrence river fish'))
+keywords : frozenset({'developmental psychology', 'public relations', 'animal science', 'public administration'})
+
+firstname : anne
+lastname : hunter
+middlename : elizabeth
+year : 1990
+year_papertitle : ((1990, 'multiple roles access to daily support and women s health the impact of institutional and interpersonal support'),)
+keywords : frozenset({'womens studies', 'social psychology'})
+
+0/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : sara
+lastname : baumann
+middlename : e
+year : 2019
+year_papertitle : ((2019, 'assessing the role of caste ethnicity in predicting menstrual knowledge attitudes and practices in nepal'), (2019, 'development of a community engaged classroom for teaching health communications lessons learned from nine semesters of implementation'), (2020, 'changes over time in disparities in health behaviors and outcomes by race in allegheny county 2009 to 2015'), (2020, 'collaborative filmmaking a participatory visual research method'), (2020, 'is film as a research tool the future of public health a review of study designs opportunities and challenges'), (2021, 'book review the palgrave handbook of critical menstruation studies'), (2021, 'exploring community art and its role in promoting health social cohesion and community resilience in the aftermath of the 2015 nepal earthquake'))
+keywords : frozenset({'psychoanalysis', 'public relations', 'data science', 'economic growth', 'mathematics education', 'demography'})
+
+firstname : sarah
+lastname : bauman
+middlename : e
+year : 2015
+year_papertitle : ((2015, 'utility of the dyadic parent child interaction coding system with children with autism spectrum disorder an investigation of reliability and validity'),)
+keywords : frozenset({'behavioral psychology', 'psychology'})
+
+0/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : cecile
+lastname : evans
+middlename : b
+year : 2012
+year_papertitle : ((2012, 'book review of chronic pain an integrated biobehavioral approach by herta flor and dennis turk'), (2013, 'chronic pain an integrated biobehavioral approach'), (2014, 'content analyses of a priori qualitative phantom limb pain descriptions and emerging categories in mid southerners with limb loss'), (2015, 'the evaluation of undergraduate nursing students knowledge of post op pain management after participation in simulation'), (2016, 'a note on veracity'), (2016, 'celebrating abstracts from the american society of pain management nursing s annual meeting'), (2016, 'editorial team transitions by cecile b evans phd rn with patricia bruckenthal phd aprn bc anp faan and helen turner dnp aprn pcns bc ap pmn faan'), (2018, 'a tragic swing of the pendulum in the opioid crisis'))
+keywords : frozenset({'psychoanalysis', 'gerontology', 'physical therapy', 'psychotherapist', 'physical medicine and rehabilitation', 'engineering ethics', 'nursing', 'humanities'})
+
+firstname : michael
+lastname : evans
+middlename : l
+year : 1992
+year_papertitle : ((1992, 'a comparison of staff nurse perceptions of job satisfaction in three nursing governance systems'),)
+keywords : frozenset({'health care', 'nursing', 'occupational psychology'})
+
+0/10 positive, 3/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : mary
+lastname : wood
+middlename : elizabeth
+year : 2019
+year_papertitle : ((2019, 'reasonable accommodations for meeting the unique needs of defendants with intellectual disability'), (2019, 'the association between specific competence related abilities and competence restoration treatment'), (2021, 'characteristics and outcomes for defendants charged with misdemeanors referred for court ordered competency evaluations'))
+keywords : frozenset({'internet privacy', 'psychiatry', 'clinical psychology'})
+
+firstname : mary
+lastname : wood
+middlename : danette
+year : 1999
+year_papertitle : ((1999, 'management factors influencing educational access for students with learning disabilities'),)
+keywords : frozenset({'special education', 'educational administration', 'nursing', 'health education'})
+
+0/10 positive, 4/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : gregory
+lastname : chung
+middlename : k w k
+year : 1998
+year_papertitle : ((1998, 'children s internet searching on complex problems performance and process analyses'), (1999, 'computer based performance assessments a solution to the narrow measurement and reporting of problem solving'), (1999, 'reliability and validity of a computer based knowledge mapping system to measure content understanding'), (1999, 'the use of computer based collaborative knowledge mapping to measure team processes and team outcomes'), (2001, 'the impact of a simulation based learning design project on student learning'), (2002, 'cognitive process validation of an online problem solving assessment'), (2003, 'issues in the computer based assessment of collaborative problem solving'), (2004, 'issues in the computer based assessment of collaborative problem solving cse report 620'), (2005, 'the role of anxiety on novices rifle marksmanship performance'))
+keywords : frozenset({'artificial intelligence', 'management science', 'knowledge management', 'social psychology', 'cognitive psychology', 'operations research', 'developmental psychology', 'mathematics education', 'applied psychology'})
+
+firstname : gregory
+lastname : chung
+middlename : k w k
+year : 1999
+year_papertitle : ((1999, 'an investigation of learners moment to moment cognitive processing with visual conceptual models and its relation to problem solving and free recall'),)
+keywords : frozenset({'reading instruction', 'cognitive therapy', 'educational psychology', 'literacy'})
+
+0/10 positive, 5/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : nancy
+lastname : dib
+middlename : ellen
+year : 2007
+year_papertitle : ((2007, 'the effects of verbal instruction modeling rehearsal and feedback on correct posture during flute playing'), (2011, 'effects of general case training instructions rehearsal and feedback on the reduction of sight reading errors by competent musicians'))
+keywords : frozenset({'developmental psychology', 'pedagogy', 'applied psychology', 'physical medicine and rehabilitation'})
+
+firstname : nancy
+lastname : dib
+middlename : ellen
+year : 2010
+year_papertitle : ((2010, 'the effect of general case training instructions feedback and rehearsal on the acquisition of music sight reading by advanced flute students'),)
+keywords : frozenset({'behavioral psychology', 'educational psychology', 'music education'})
+
+0/10 positive, 6/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : debra
+lastname : glaser
+middlename : b
+year : 2008
+year_papertitle : ((2008, 'on the positive relation between received social support and negative affect a test of the triage and self esteem threat models in women with breast cancer'), (2013, 'communicating the benefits of breastfeeding through social marketing'), (2014, 'use of the internet and mobile based apps for sex seeking among men who have sex with men in new york city'))
+keywords : frozenset({'gerontology', 'social psychology', 'multimedia', 'clinical psychology', 'marketing'})
+
+firstname : debra
+lastname : glaser
+middlename : beth
+year : 2007
+year_papertitle : ((2007, 'the paradoxical positive relation between received social support and emotional distress is self esteem the culprit'),)
+keywords : frozenset({'oncology', 'psychotherapy', 'health education', 'social psychology'})
+
+1/10 positive, 6/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : susan
+lastname : skidmore
+middlename : troncoso
+year : 2010
+year_papertitle : ((2010, 'statistical techniques used in published articles a historical review of reviews'), (2011, 'choosing the best correction formula for the pearson r 2effect size'), (2011, 'psychometric properties and administration measurement invariance of social phobia symptom measures paper pencil vs internet administrations'), (2012, 'an investigation of the efficacy of online expressive writing for trauma related psychological distress in hispanic individuals'), (2012, 'propagation of misinformation about frequencies of rfts rcts in education a cautionary tale'), (2012, 'spiritual integration predicts self reported mental and physical health'), (2012, 'things we now believe we know'), (2013, 'bias and precision of some classical anova effect sizes when assumptions are violated'), (2014, 'an exploration of factors influencing institutional cultures of assessment'), (2014, 'empirical reporting practices in community college journal of research and practice and journal of developmental education from 2002 to 2011 a systematic review'))
+keywords : frozenset({'public relations', 'medical education', 'social science', 'management science', 'social psychology', 'statistics', 'clinical psychology', 'epistemology', 'environmental resource management'})
+
+firstname : susana
+lastname : skidmore
+middlename : troncoso
+year : 2009
+year_papertitle : ((2009, 'effect size matters empirical investigations to help researchers make informed decisions on commonly used statistical techniques'),)
+keywords : frozenset({'educational psychology', 'statistics', 'quantitative psychology'})
+
+2/10 positive, 6/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : james
+lastname : cheek
+middlename : r
+year : 2002
+year_papertitle : ((2002, 'an intervention for helping elementary students reduce test anxiety'), (2003, 'using music therapy techniques to treat teacher burnout'))
+keywords : frozenset({'clinical psychology'})
+
+firstname : james
+lastname : cheek
+middlename : ralph
+year : 2002
+year_papertitle : ((2002, 'utilizing music techniques to treat teacher burnout a school counselor s response to school reform'),)
+keywords : frozenset({'psychotherapy', 'academic guidance counseling', 'music', 'occupational psychology'})
+
+2/10 positive, 7/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : william
+lastname : stankard
+middlename : None
+year : 1990
+year_papertitle : ((1990, 'arousal gradient and performance'),)
+keywords : frozenset({'audiology', 'developmental psychology'})
+
+firstname : william
+lastname : stankard
+middlename : None
+year : 1991
+year_papertitle : ((1991, 'arousal gradient and cognitive performance'),)
+keywords : frozenset({'experimental psychology', 'physical education'})
+
+3/10 positive, 7/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : amy
+lastname : roberts
+middlename : l d
+year : 2011
+year_papertitle : ((2011, 'cultural patterns in children s learning through keen observation and participation in their communities'), (2012, 'a cultural analysis is necessary in understanding intersubjectivity'))
+keywords : frozenset({'pedagogy', 'epistemology'})
+
+firstname : amy
+lastname : roberts
+middlename : l d
+year : 2009
+year_papertitle : ((2009, 'children s reflections on cultural differences in ways of working together'),)
+keywords : frozenset({'developmental psychology', 'social psychology'})
+
+4/10 positive, 7/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : reza
+lastname : rezaee
+middlename : None
+year : 2008
+year_papertitle : ((2008, 'rooting ability of persian walnut as affected by seedling vigour in response to stool layering'), (2008, 'walnut grafting success and bleeding rate as affected by different grafting methods and seedling vigour'), (2009, 'composting plant leachate treatment by coagulation flocculation process'), (2009, 'persian walnut juglans regia l grafting as influenced by different bench grafting methods and scion cultivars'), (2009, 'reduction of humic substances in water by application of ultrasound waves and ultraviolet irradiation'), (2009, 'variability of seedling vigour in persian walnut as influenced by the vigour and bearing habit of the mother tree'), (2010, 'assessment of chemical pollution of groundwater resources in downstream regions of sanandaj landfill'), (2010, 'bench grafting of persian walnut as affected by pre and postgrafting heating and chilling treatments'), (2011, 'factors controlling tight gas sandstone reservoir quality in the whicher range gas field southern perth basin western australia'), (2011, 'hydraulic fractures productivity performance in tight gas sands a numerical simulation approach'))
+keywords : frozenset({'nuclear chemistry', 'pulp and paper industry', 'geomorphology', 'water resource management', 'environmental chemistry', 'botany', 'petroleum engineering', 'geochemistry', 'inorganic chemistry', 'horticulture'})
+
+firstname : reza
+lastname : rezaee
+middlename : None
+year : 2008
+year_papertitle : ((2008, 'education behind the veil the impact of the cultural revolution on women s higher education in iran'),)
+keywords : frozenset({'higher education', 'educational psychology', 'education philosophy'})
+
+4/10 positive, 8/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jennifer
+lastname : housley
+middlename : None
+year : 2006
+year_papertitle : ((2006, 'navigating the maze of disaster mental health the journey of the palo alto medical reserve corps'), (2006, 'treating victims of mass disaster and terrorism'), (2007, 'the dirty dozen twelve failures of the hurricane katrina response and how psychology can help'))
+keywords : frozenset({'gerontology', 'medical education', 'public relations', 'clinical psychology', 'medical emergency', 'environmental health'})
+
+firstname : jennifer
+lastname : housley
+middlename : None
+year : 2007
+year_papertitle : ((2007, 'cognitive and experience predictors of the ability to tolerate discomfort in the service of goal achievement'),)
+keywords : frozenset({'physiological psychology', 'clinical psychology'})
+
+4/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : deborah
+lastname : horn
+middlename : h a van
+year : 2000
+year_papertitle : ((2000, 'interpreting the significance of drinking by alcohol dependent liver transplant patients fostering candor is the key to recovery'), (2000, 'introducing behavior therapy into a disease model dual diagnosis treatment program'), (2001, 'a pilot test of motivational interviewing groups for dually diagnosed inpatients'), (2001, 'alcoholism treatment after liver transplantation lessons learned from a clinical trial that failed'), (2001, 'drinking behavior and motivation for treatment among alcohol dependent liver transplant candidates'), (2007, 'site matters multisite randomized trial of motivational enhancement therapy in community drug abuse clinics'))
+keywords : frozenset({'psychotherapist', 'psychiatry', 'clinical psychology', 'surgery', 'intensive care medicine', 'internal medicine'})
+
+firstname : deborah
+lastname : horn
+middlename : h a van
+year : 1993
+year_papertitle : ((1993, 'attributional style as a predictor of relapse following treatment for alcoholism'),)
+keywords : frozenset({'behavioral psychology', 'clinical psychology'})
+
+4/10 positive, 10/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : james
+lastname : hartwick
+middlename : m m
+year : 2013
+year_papertitle : ((2013, 'spiritual practices as a means of coping with and ameliorating stress to reduce teacher attrition'), (2014, 'what s money got to do with it fostering productive discussions about campaign finance'), (2015, 'public school teachers beliefs in and conceptions of god what teachers believe and why it matters'), (2015, 'teacher prayerfulness identifying public school teachers who connect their spiritual and religious lives with their professional lives'), (2016, 'emphasis on diversity of religious views in social studies a national survey of social studies teachers'))
+keywords : frozenset({'pedagogy', 'public relations', 'social science', 'social psychology'})
+
+firstname : james
+lastname : hartwick
+middlename : m m
+year : 2004
+year_papertitle : ((2004, 'an investigation into the spiritual religious and prayer lives of wisconsin public school teachers the inner life of the teacher'),)
+keywords : frozenset({'religion', 'teacher education', 'occupational psychology'})
+
+4/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : mary
+lastname : mcdermott
+middlename : anne nelson
+year : 1993
+year_papertitle : ((1993, 'learned helplessness as an interacting variable with self care agency testing a theoretical model'), (1994, 'a literature review of the critical elements in translation theory'), (2000, 'pain as a mutual experience for patients nurses and families international and theoretical perspectives from the four countries'), (2000, 'pain as a mutual experience for patients nurses and families unique international perspectives from the peoples republic of china the united states malawi and spain'))
+keywords : frozenset({'artificial intelligence', 'natural language processing', 'social psychology', 'psychiatry', 'clinical psychology', 'developmental psychology', 'nursing'})
+
+firstname : mary
+lastname : mcdermott
+middlename : anne nelson
+year : 1989
+year_papertitle : ((1989, 'the relationship between learned helplessness and self care agency in adults as a function of gender and age'),)
+keywords : frozenset({'psychology', 'nursing', 'health education'})
+
+4/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : donna
+lastname : water
+middlename : a van de
+year : 1985
+year_papertitle : ((1985, 'in and about the poetic line'), (1986, 'from page to program some typographical and temporal variables in radio homilies'), (1987, 'erratum to speaking and writing comparisons of two psycholinguistic siblings'), (1987, 'speaking and writing comparisons of two psycholinguistic siblings'), (1989, 'allocation of time in reading aloud being fluent is not the same as being rhetorical'), (1989, 'generativity and erikson s belief in the species'))
+keywords : frozenset({'developmental psychology', 'social psychology', 'linguistics', 'communication'})
+
+firstname : donna
+lastname : water
+middlename : a van de
+year : 1987
+year_papertitle : ((1987, 'present and future in generativity erikson'),)
+keywords : frozenset({'developmental psychology'})
+
+5/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ruth
+lastname : loon
+middlename : anne van
+year : 2000
+year_papertitle : ((2000, 'redefining motherhood adaptation to role change for women with aids'), (2002, 'health care experiences and preferences of uninsured workers'))
+keywords : frozenset({'nursing', 'developmental psychology', 'social psychology'})
+
+firstname : ruth
+lastname : loon
+middlename : anne van
+year : 1996
+year_papertitle : ((1996, 'coping and adaptation in women with aids'),)
+keywords : frozenset({'public health', 'psychotherapy', 'behaviorial sciences', 'social work'})
+
+5/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : karla
+lastname : monteros
+middlename : espinosa de los
+year : 2007
+year_papertitle : ((2007, 'education psychosocial resources and metabolic syndrome variables in latinas'), (2008, 'individual and area based indicators of acculturation and the metabolic syndrome among low income mexican american women living in a border region'), (2009, 'do socioeconomic gradients in subclinical atherosclerosis vary according to acculturation level analyses of mexican americans in the multi ethnic study of atherosclerosis'), (2009, 'resiliency in the face of disadvantage do hispanic cultural characteristics protect health outcomes'), (2009, 'socioeconomic status and health what is the role of reserve capacity'), (2011, 'the relevance of fatalism in the study of latinas cancer screening behavior a systematic review of the literature'), (2012, 'associations between socioeconomic status and catecholamine levels vary by acculturation status in mexican american women'), (2012, 'individual and neighborhood socioeconomic status and inflammation in mexican american women what is the role of obesity'), (2012, 'socioeconomic status psychosocial resources and risk and cardiometabolic risk in mexican american women'), (2013, 'socioeconomic status and stress in mexican american women a multi method perspective'))
+keywords : frozenset({'pathology', 'gerontology', 'physical therapy', 'social psychology', 'clinical psychology', 'demography', 'environmental health'})
+
+firstname : karla
+lastname : monteros
+middlename : espinosa de los
+year : 2011
+year_papertitle : ((2011, 'acculturation behavioral risk factors and cardio metabolic dysfunction in mexican american women living in a border region'),)
+keywords : frozenset({'public health', 'clinical psychology'})
+
+6/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : vicki
+lastname : clark
+middlename : l plano
+year : 2002
+year_papertitle : ((2002, 'in conversation high school students talk to students about tobacco use and prevention strategies'), (2005, 'mixed methods research designs in counseling psychology'), (2006, 'designing and conducting mixed methods research'), (2006, 'how interpretive qualitative research extends mixed methods research'), (2006, 'self definition of women experiencing a nontraditional graduate fellowship program'), (2007, 'grounded theory and racial ethnic diversity'), (2007, 'how rural low income families have fun a grounded theory study'), (2008, 'mixed methods approaches in family science research'), (2008, 'student study guide to accompany creswell s educational research planning conducting and evaluating quantitative and qualitative research prepared by vicki l plano clark'), (2008, 'the mixed methods reader'))
+keywords : frozenset({'medical education', 'management science', 'social psychology', 'pedagogy', 'operations research', 'developmental psychology', 'gender studies', 'mathematics education'})
+
+firstname : vicki
+lastname : clark
+middlename : l plano
+year : 2005
+year_papertitle : ((2005, 'cross disciplinary analysis of the use of mixed methods in physics education research counseling psychology and primary care'),)
+keywords : frozenset({'educational psychology', 'social research'})
+
+7/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : joshua
+lastname : bernstein
+middlename : g w
+year : 2003
+year_papertitle : ((2003, 'effects of relative frequency absolute frequency and phase on fundamental frequency discrimination data and an autocorrelation model'), (2003, 'pitch discrimination of diotic and dichotic tone complexes harmonic resolvability or harmonic number'), (2004, 'correct tonotopic representation is necessary for complex pitch perception'), (2004, 'effects of stimulus level and harmonic resolvability on pitch discrimination'), (2005, 'an autocorrelation model with place dependence to account for the effect of harmonic number on fundamental frequency discrimination'), (2005, 'fundamental frequency discrimination and harmonic resolvability in sensorineural hearing impariment'), (2006, 'detection and f0 discrimination of harmonic complex tones in the presence of competing tones or noise'), (2006, 'the relationship between frequency selectivity and pitch discrimination effects of stimulus level'), (2006, 'the relationship between frequency selectivity and pitch discrimination sensorineural hearing loss'), (2008, 'the role of temporal fine structure in speech source segregation'))
+keywords : frozenset({'speech recognition', 'optics', 'acoustics', 'computational physics', 'audiology'})
+
+firstname : joshua
+lastname : bernstein
+middlename : g w
+year : 2006
+year_papertitle : ((2006, 'pitch perception and harmonic resolvability in normal hearing and hearing impaired listeners'),)
+keywords : frozenset({'experiments', 'audiology', 'psychology', 'neurology'})
+
+8/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : laura
+lastname : klein
+middlename : cousino
+year : 1993
+year_papertitle : ((1993, 'effect of stress on oral fentanyl consumption in female rats'), (1993, 'effect of stress on oral fentanyl consumption in rats in an operant self administration paradigm'), (1994, 'abstractstress predictability and fentanyl self administration in male and female rats'), (1995, 'book review adolescent substance abuse assessment prevention and treatment by oscar gary bukstein 260 pp new york john wiley 1995 39 95 0 471 55080 9'), (1997, 'sex differences in effects of predictable and unpredictable footshock on fentanyl self administration in rats'), (1998, 'sex differences in effects of opioid blockade on stress induced freezing behavior'), (1999, 'sex differences in salivary cortisol levels following naltrexone administration'), (2000, 'biobehavioral responses to stress in females tend and befriend not fight or flight'), (2000, 'sex differences in salivary cortisol levels following naltrexone administration1'))
+keywords : frozenset({'anesthesia', 'gerontology', 'pharmacology', 'psychiatry', 'developmental psychology', 'endocrinology', 'internal medicine'})
+
+firstname : laura
+lastname : klein
+middlename : cousino
+year : 1997
+year_papertitle : ((1997, 'sex differences and the effects of stress on subsequent opioid consumption in adult rats following adolescent nicotine exposure a psychopharmacologic examination of the gateway hypothesis'),)
+keywords : frozenset({'experiments', 'psychobiology', 'pharmacology', 'psychology'})
+
+9/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : james
+lastname : tanaka
+middlename : w
+year : 1991
+year_papertitle : ((1991, 'composites compromises and charm what is the evidence for blend memory representations'), (1991, 'object categories and expertise is the basic level in the eye of the beholder'), (1993, 'parts and wholes in face recognition'), (1995, 'what causes the face inversion effect'), (1997, 'expertise in object and face recognition'), (1997, 'features and their configuration in face recognition'), (1998, 'face recognition in young children when the whole is greater than the sum of its parts'), (1998, 'mapping attractor fields in face space the atypicality bias in face recognition'), (1998, 'training greeble experts a framework for studying expert object recognition processes'))
+keywords : frozenset({'artificial intelligence', 'cognitive science', 'natural language processing', 'social psychology', 'computer vision', 'human computer interaction', 'cognitive psychology', 'pattern recognition', 'developmental psychology', 'communication'})
+
+firstname : james
+lastname : tanaka
+middlename : william
+year : 1989
+year_papertitle : ((1989, 'object categorization and expertise'),)
+keywords : frozenset({'experiments', 'psychology'})
+
+10/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jennifer
+lastname : smith
+middlename : l
+year : 2013
+year_papertitle : ((2013, 'are we having fun yet savoring type a behavior and vacation enjoyment'), (2013, 'metacognitive strategies for making sense of cross cultural encounters'), (2013, 'violent and peaceful crowd reactions in the middle east cultural experiences and expectations'), (2015, 'appreciating life in the midst of adversity savoring in relation to mindfulness reappraisal and meaning'), (2015, 'savoring resilience and psychological well being in older adults'), (2016, 'the benefits of savoring life savoring as a moderator of the relationship between health and life satisfaction in older adults'), (2017, 'impact of present oriented savoring on older adults psychological well being'), (2018, 'latino conceptualizations of positive aging focus group results'), (2018, 're conceptualizing positive aging researcher and practitioner perspectives'), (2019, 'effects of a savoring intervention on resilience and well being of older adults'))
+keywords : frozenset({'developmental psychology', 'clinical psychology', 'social psychology'})
+
+firstname : jennifer
+lastname : smith
+middlename : l
+year : 2013
+year_papertitle : ((2013, 'reducing narcissistic defensiveness through the activation of belonging'),)
+keywords : frozenset({'clinical psychology', 'social psychology'})
+
+11/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : angela
+lastname : griffin
+middlename : m
+year : 2004
+year_papertitle : ((2004, 'origins of a stereotype categorization of facial attractiveness by 6 month old infants'), (2005, 'the role of facial attractiveness and facial masculinity femininity in sex classification of faces'), (2006, 'stereotype directionality and attractiveness stereotyping is beauty good or is ugly bad'))
+keywords : frozenset({'cognitive psychology', 'developmental psychology', 'social psychology'})
+
+firstname : angela
+lastname : griffin
+middlename : marie
+year : 2007
+year_papertitle : ((2007, 'why are attractive faces preferred an electrophysiological test of averageness theory'),)
+keywords : frozenset({'developmental psychology'})
+
+11/10 positive, 14/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : cristina
+lastname : wildermuth
+middlename : de mello e souza
+year : 2013
+year_papertitle : ((2013, 'a path to passion connecting personality psychological conditions and emotional engagement'), (2017, 'circles of ethics the impact of proximity on moral reasoning'))
+keywords : frozenset({'social psychology'})
+
+firstname : cristina
+lastname : wildermuth
+middlename : de mello e souza
+year : 2008
+year_papertitle : ((2008, 'engaged to serve the relationship between employee engagement and the personality of human services professionals and paraprofessionals'),)
+keywords : frozenset({'occupational psychology', 'personality psychology', 'social work'})
+
+12/10 positive, 14/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : margaret
+lastname : wright
+middlename : laurie comer
+year : 2003
+year_papertitle : ((2003, 'coital debut the role of religiosity and sex attitudes in the add health survey'), (2004, 'the impact of religiosity on adolescent sexual behavior a review of the evidence'), (2006, 'commitment in same sex relationships a qualitative analysis of couples conversations'))
+keywords : frozenset({'developmental psychology', 'social psychology'})
+
+firstname : margaret
+lastname : wright
+middlename : laurie comer
+year : 2004
+year_papertitle : ((2004, 'a feminist empowerment view of role strain in women faculty the impact of role conflict workplace gender bias and selected coping variables'),)
+keywords : frozenset({'psychotherapy', 'womens studies'})
+
+12/10 positive, 15/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : carol
+lastname : tate
+middlename : satterfield
+year : 1991
+year_papertitle : ((1991, 'adult age differences in explanations and memory for behavioral information'), (1992, 'direct and indirect assessments of memory for script based narratives in young and older adults'), (1993, 'aging and memory for schematically vs taxonomically organized verbal materials'))
+keywords : frozenset({'developmental psychology'})
+
+firstname : carol
+lastname : tate
+middlename : satterfield
+year : 1994
+year_papertitle : ((1994, 'the effects of perspective taking and adult coaching on children s ability to generate false reports'),)
+keywords : frozenset({'developmental psychology'})
+
+12/10 positive, 16/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ana
+lastname : fontes
+middlename : beatriz areas da luz
+year : 2008
+year_papertitle : ((2008, 'cross language mediated priming effects of context and lexical relationship'), (2010, 'on a different plane cross language effects on the conceptual representations of within language homonyms'), (2011, 'working memory influences on cross language activation during bilingual lexical disambiguation'), (2014, 'attributional gender bias teachers ability and effort explanations for students math performance'), (2015, 'bilingual access of homonym meanings individual differences in bilingual access of homonym meanings'), (2015, 'efeito cognato no processo de lexicalizacao bilingue'), (2015, 'the role of l1 knowledge on l2 speech perception investigating how native speakers and brazilian learners categorize different vot patterns in english'))
+keywords : frozenset({'developmental psychology', 'linguistics', 'social psychology'})
+
+firstname : ana
+lastname : fontes
+middlename : b areas da luz
+year : 2010
+year_papertitle : ((2010, 'an investigation of the individual differences in cognitive factors that contribute to bilingual lexical disambiguation'),)
+keywords : frozenset({'cognitive psychology', 'linguistics'})
+
+12/10 positive, 17/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : tabitha
+lastname : mingus
+middlename : t y
+year : 1999
+year_papertitle : ((1999, 'preservice teacher beliefs about proofs'), (1999, 'what constitutes a nurturing environment for the growth of mathematically gifted students'), (2005, 'cyclotomic polynomial factors'))
+keywords : frozenset({'pedagogy', 'combinatorics', 'mathematics education'})
+
+firstname : tabitha
+lastname : mingus
+middlename : t y
+year : 1996
+year_papertitle : ((1996, 'a qualitative and quantitative study examining the effect a conceptual constructivist approach to teaching linear algebra has on student attitudes and beliefs about mathematics'),)
+keywords : frozenset({'curricula', 'teacher education', 'mathematics education', 'teaching'})
+
+13/10 positive, 17/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : alison
+lastname : fries
+middlename : b wismer
+year : 2001
+year_papertitle : ((2001, 'perceptual asymmetries reflect developmental changes in the neuropsychological mechanisms of emotion recognition'), (2004, 'emotion understanding in postinstitutionalized eastern european children'), (2004, 'hemispheric asymmetries in children s perception of nonlinguistic human affective sounds'), (2005, 'early experience in humans is associated with changes in neuropeptides critical for regulating social behavior'), (2006, 'post institutionalized chinese and eastern european children heterogeneity in the development of emotion understanding'), (2008, 'neuroendocrine dysregulation following early social deprivation in children'))
+keywords : frozenset({'cognitive psychology', 'developmental psychology', 'clinical psychology'})
+
+firstname : alison
+lastname : fries
+middlename : b wismer
+year : 2008
+year_papertitle : ((2008, 'effects of early neglect on associative reward learning in children'),)
+keywords : frozenset({'cognitive psychology', 'clinical psychology'})
+
+13/10 positive, 18/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : leigh
+lastname : kieboom
+middlename : a van den
+year : 2005
+year_papertitle : ((2005, 'using sociocultural theory to guide teacher use and integration of instructional technology in two professional development schools'), (2012, 'cultivating algebraic representations'))
+keywords : frozenset({'pedagogy', 'mathematics education'})
+
+firstname : leigh
+lastname : kieboom
+middlename : a van den
+year : 2008
+year_papertitle : ((2008, 'developing and using mathematical knowledge for teaching fractions a case study of preservice teachers'),)
+keywords : frozenset({'teacher education', 'mathematics education'})
+
+13/10 positive, 19/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : roque
+lastname : neto
+middlename : do carmo amorim
+year : 2015
+year_papertitle : ((2015, 'social media use loneliness and academic achievement a correlational study with urban high school students'), (2017, 'exploring the relationship between entrepreneurial behavior and teachers job satisfaction'), (2018, 'teamwork and motivation to leave the teaching profession an exploratory study'), (2018, 'the influence of self efficacy on entrepreneurial behavior among k 12 teachers'), (2019, 'career adaptability and entrepreneurial behaviour in the k 12 classroom'), (2020, 'teamwork and entrepreneurial behavior among k 12 teachers in the united states'))
+keywords : frozenset({'medical education', 'social psychology', 'developmental psychology', 'mathematics education', 'applied psychology'})
+
+firstname : roque
+lastname : neto
+middlename : do carmo amorim
+year : 2013
+year_papertitle : ((2013, 'teachers job satisfaction and loneliness in brazil testing integrative models'),)
+keywords : frozenset({'educational leadership', 'occupational psychology'})
+
+13/10 positive, 20/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+Finished labeling
+INFO:rlr.crossvalidation:using cross validation to find optimum alpha...
+INFO:rlr.crossvalidation:optimum alpha: 0.001000, score 0.6003998588174407
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (firstTokenPredicate, lastname)
+Done in 7264.019593815009 minutes.
