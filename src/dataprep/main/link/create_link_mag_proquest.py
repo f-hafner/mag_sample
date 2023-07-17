@@ -178,17 +178,34 @@ if __name__ == "__main__":
     print("Filling links into db...", flush=True)
     
     if args.write_to == "csv":
+        # TODO: DELETE THIS FIRST PART OR ADAPT TO CSV WRITER
         #   links = [(i[0][0], i[0][1], i[1]) for i in links]
         #print(links[1:5])
-        filename = path_temp_files + "links" + file_suffix + ".csv"
-        with open(filename, "w") as csv_file:
-            writer = csv.writer(csv_file, delimiter=',')
-            writer.writerow(["grantid_authorposition","AuthorId","link_score"]) 
-            #writer.writerows(links) 
-            for link in links:
-                writer.writerow((link[0][0], link[0][1], link[1]))
+        # filename = path_temp_files + "links" + file_suffix + ".csv"
+        # with open(filename, "w") as csv_file:
+        #     print("opened csv file...", flush=True)
+        #     writer = csv.writer(csv_file, delimiter=',')
+        #     writer.writerow(["grantid_authorposition","AuthorId","link_score"]) 
+        #     print("wrote header to csv file...", flush=True)
+        #     #writer.writerows(links) 
+        #     for link in links:
+        #         writer.writerow((link[0][0], link[0][1], link[1]))
         
-        print("Filled links into csv...", flush=True)
+        # print("Filled links into csv...", flush=True)
+
+        counter = 1 
+        for link in links:
+            counter = counter + 1
+            write_con.execute(
+                f"INSERT INTO {tbl_linked_ids} VALUES (?, ?, ?, ?)",
+            # tupelize_links(links, iteration_id)
+            (link[0][0], link[0][1], link[1], iteration_id)
+            )
+            if counter % 10000 == 0:
+                write_con.commit()
+
+        write_con.commit()       
+        print("Filled links into db iteratively...", flush=True)
     else:
         links = [(i[0][0], i[0][1], i[1], iteration_id) for i in links] # XXX this will fail for large fields, need to iterate the insert into the db
         write_con.executemany(
@@ -251,9 +268,9 @@ if __name__ == "__main__":
           os.mkdir(path_temp_files)
 
         data_to_write = {
-            # "links": pd.read_sql(
-            #     con=write_con,
-            #     sql=f"select * from {tbl_linked_ids}"),
+            "links": pd.read_sql(
+                 con=write_con,
+                 sql=f"select * from {tbl_linked_ids}"),
             "linking_info": pd.read_sql(
                 con=write_con, 
                 sql=f"select * from {tbl_linking_info}")
