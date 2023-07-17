@@ -1,0 +1,712 @@
+Namespace(testing=False, verbose=1, field=['history'], train_name='mona_degree0', startyear=1985, endyear=2015, loadstartyear=1985, loadendyear=2015, mergemode='1:1', recall=0.9, institution='False', fieldofstudy_cat='False', fieldofstudy_str='False', keywords='True', retrain='True', linking_type='graduates', samplesize=50000, write_to='database')
+Have max 12 cores available
+Testing is False 
+
+I set the write connection to the main database.
+id_field is [95457728] and will be passed to sql queries.
+finished setup ... 
+Time elapsed: 0.0017723719278971354 minutes 
+
+
+    SELECT goid
+            , year
+            , firstname 
+            , lastname
+            , CASE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                WHEN 
+                    "" THEN NULL 
+                    ELSE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                END AS middlename
+            , fieldofstudy
+            , keywords
+            , institution
+            , coauthors
+            , year_papertitle
+    FROM (
+        SELECT goid
+            , degree_year AS year 
+            , fullname 
+            , SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) AS firstname
+            , REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "") AS lastname 
+            , TRIM(SUBSTR(fullname, length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1)) + 1)) AS middle_lastname 
+            , length(fullname) AS l_fullname 
+            , length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) ) AS l_firstname
+            , length(REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "")) AS l_lastname
+            , fieldname AS fieldofstudy
+            , university_id
+            , degree_year || "//" || thesistitle as year_papertitle 
+        FROM pq_authors 
+        INNER JOIN (
+            SELECT goid, fieldname 
+            FROM pq_fields_mag
+            WHERE mag_field0 IN (?)
+        ) USING (goid)
+    )
+    -- ## NOTE: use left join here as not all graduates have advisor (particularly pre-1980) and possibly also keywords
+    LEFT JOIN (
+        SELECT goid
+            , fields as keywords
+            , advisors as coauthors
+        FROm pq_info_linking
+    ) USING(goid)
+    INNER JOIN (
+        SELECT university_id, normalizedname as institution
+        FROM pq_unis
+        WHERE location like "%United States%"
+    ) USING(university_id)
+    WHERE year >= 1985 and year <= 2015 AND length(firstname) > 1
+     
+
+
+    SELECT f.AuthorId
+        , f.year
+        , f.firstname
+        , f.lastname
+        , CASE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            WHEN 
+                "" THEN NULL 
+                ELSE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            END as middlename 
+            -- ## NOTE this gives "" for middlename when it is missing 
+        , f.fieldofstudy
+        , g.keywords
+        , g.coauthors
+        , g.institution
+        , g.year_papertitle
+    FROM (
+        SELECT a.AuthorId
+            , a.YearFirstPub AS year
+            , a.FirstName AS firstname
+            , REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "") AS lastname 
+                    -- https://stackoverflow.com/questions/21388820/how-to-get-the-last-index-of-a-substring-in-sqlite
+            , TRIM(SUBSTR(b.NormalizedName, length(a.FirstName) + 1)) AS middle_lastname 
+                    -- this gives all except the first name 
+            , length(b.NormalizedName) as l_fullname 
+            , length(a.FirstName) as l_firstname
+            , length(REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "")) as l_lastname
+            , e.NormalizedName AS fieldofstudy
+        FROM author_sample AS a
+        INNER JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM Authors
+        ) AS b USING(AuthorId)
+        INNER JOIN (
+            SELECT AuthorId
+            FROM author_field0
+            WHERE FieldOfStudyId_lvl0 IN (?)
+                AND Degree <= 0
+        ) USING(AuthorId)
+        LEFT JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM author_fields c
+            INNER JOIN (
+                SELECT FieldOfStudyId, NormalizedName
+                FROM FieldsOfStudy
+            ) AS d USING(FieldOfStudyId)
+            -- ## Condition on fieldofstudy being in the level 0 id_field
+            INNER JOIN (
+                SELECT ParentFieldOfStudyId, ChildFieldOfStudyId
+                FROM crosswalk_fields
+                WHERE ParentLevel = 0
+                    AND ParentFieldOfStudyId IN (?)
+            ) AS e ON (e.ChildFieldOfStudyId = c.FieldOfStudyId)
+            WHERE FieldClass = 'first'
+        ) AS e USING(AuthorId)
+    ) f
+    LEFT JOIN (
+        SELECT AuthorId
+                , institutions as institution
+                , main_us_institutions_career
+                , coauthors
+                , keywords
+                , year_papertitle
+        FROM author_info_linking
+    ) AS g USING(AuthorId)
+    WHERE length(firstname) > 1 AND year >= 1985 - 5 AND year <= 2015 + 5 
+        -- ## use this to condition on people that have at least at some point their main affiliation in the US
+        AND g.main_us_institutions_career IS NOT NULL
+        AND g.institution != "chinese academy of sciences"
+     
+
+INFO:dedupe.canopy_index:Removing stop word ar
+INFO:dedupe.canopy_index:Removing stop word er
+INFO:dedupe.canopy_index:Removing stop word st
+INFO:dedupe.canopy_index:Removing stop word on
+INFO:dedupe.canopy_index:Removing stop word an
+INFO:dedupe.canopy_index:Removing stop word ra
+INFO:dedupe.canopy_index:Removing stop word el
+INFO:dedupe.canopy_index:Removing stop word re
+INFO:dedupe.canopy_index:Removing stop word al
+INFO:dedupe.canopy_index:Removing stop word la
+INFO:dedupe.canopy_index:Removing stop word or
+INFO:dedupe.canopy_index:Removing stop word ma
+INFO:dedupe.canopy_index:Removing stop word en
+INFO:dedupe.canopy_index:Removing stop word le
+INFO:dedupe.canopy_index:Removing stop word ro
+INFO:dedupe.canopy_index:Removing stop word in
+INFO:dedupe.canopy_index:Removing stop word ri
+INFO:dedupe.canopy_index:Removing stop word ch
+INFO:dedupe.canopy_index:Removing stop word an
+INFO:dedupe.canopy_index:Removing stop word an
+INFO:dedupe.canopy_index:Removing stop word er
+INFO:dedupe.canopy_index:Removing stop word ar
+INFO:dedupe.canopy_index:Removing stop word ha
+INFO:dedupe.canopy_index:Removing stop word ll
+INFO:dedupe.canopy_index:Removing stop word ne
+INFO:dedupe.canopy_index:Removing stop word el
+INFO:dedupe.canopy_index:Removing stop word on
+/home/mona/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/sklearn/feature_extraction/text.py:544: UserWarning: The parameter 'ngram_range' will not be used since 'analyzer' is callable'
+  warnings.warn(
+/home/mona/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/sklearn/feature_extraction/text.py:550: UserWarning: The parameter 'stop_words' will not be used since 'analyzer' != 'word'
+  warnings.warn(
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (commonSixGram, lastname)
+Time elapsed: 77.12747938632965 minutes 
+
+Starting active labeling...
+firstname : simone
+lastname : wegge
+middlename : a
+year : 1998
+year_papertitle : ((1998, 'chain migration and information networks evidence from nineteenth century hesse cassel'), (1998, 'migration decisions in mid nineteenth century germany'), (1999, 'to part or not to part emigration and inheritance institutions in nineteenth century hesse cassel'), (2001, 'modern europe lokales leben atlantische welt die entscheidung zur auswanderung vom rhein nach nordamerika im 18 jahrhundert by georg fertig osnabr ck rasch 2000 pp 466'), (2002, 'capitalists in spite of themselves elite conflict and economic transitions in early modern europe review'), (2002, 'occupational self selection of european emigrants evidence from nineteenth century hesse cassel'), (2003, 'the hesse cassel emigrants a new sample of transatlantic emigrants linked to their origins'))
+keywords : frozenset({'economic history', 'economic growth', 'economy', 'ethnology', 'demographic economics', 'genealogy', 'political economy', 'demography'})
+
+firstname : simone
+lastname : wegge
+middlename : alberta
+year : 1997
+year_papertitle : ((1997, 'migration decisions in mid nineteenth century germany'),)
+keywords : frozenset({'economic history', 'labor economics', 'european history'})
+
+0/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished
+firstname : john
+lastname : witt
+middlename : fabian
+year : 1998
+year_papertitle : ((1998, 'the transformation of work and the law of workplace accidents 1842 1910'), (1999, 'making the fifth the constitutionalization of american self incrimination doctrine 1791 1903'), (2000, 'from loss of services to loss of support the wrongful death statutes the origins of modern tort law and the making of the nineteenth century family'), (2000, 'rethinking the nineteenth century employment contract again'), (2001, 'toward a new history of american accident law classical tort law and the cooperative first party insurance movement'), (2003, 'speedy fred taylor and the ironies of enterprise liability'), (2004, 'crystal eastman and the internationalist beginnings of american civil liberties'), (2004, 'the accidental republic crippled workingmen destitute widows and the remaking of american law'), (2004, 'the inevitability of aggregate settlement an institutional account of american tort law'))
+keywords : frozenset({'law', 'law and economics'})
+
+firstname : john
+lastname : witt
+middlename : fabian
+year : 2000
+year_papertitle : ((2000, 'the accidental republic amputee workingmen destitute widows and the remaking of american law 1868 1922'),)
+keywords : frozenset({'law', 'american history', 'occupational safety', 'labor relations'})
+
+1/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:TfidfNGramSearchPredicate: (0.8, lastname)
+firstname : cheryl
+lastname : malone
+middlename : knott
+year : 1996
+year_papertitle : ((1996, 'accommodating access colored carnegie libraries 1905 1925'), (1999, 'information literacy essential skills for the information age'), (1999, 'information literacy essential skills for the information age by kathleen l sputzer with michael b eisenberg and carrie a lowe'), (2000, 'book review inventing the internet by janet abbate'), (2000, 'books for black children public library collections in louisville and nashville 1915 1925'), (2000, 'gateways to knowledge the role of academic libraries in teaching learning and research edited by l dowler'), (2000, 'toward a multicultural american public library history'), (2001, 'elaborate isolation metastructures of knowledge about women'), (2003, 'information as commodity and economic sector its emergence in the discourse of industrial classification'))
+keywords : frozenset({'media studies', 'mathematics education', 'cognitive science', 'medical education', 'library science', 'social science', 'economic system', 'epistemology', 'gender studies'})
+
+firstname : cheryl
+lastname : malone
+middlename : knott
+year : 1996
+year_papertitle : ((1996, 'accommodating access colored carnegie libraries 1905 1925'),)
+keywords : frozenset({'american history', 'library science', 'black history'})
+
+2/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : lee
+lastname : panich
+middlename : m
+year : 2006
+year_papertitle : ((2006, 'archaeology for the seventh generation'), (2007, 'native american management and the legacy of working landscapes in california'), (2008, 'total station mapping practical examples from alta and baja california'), (2009, 'the prison notebook lessons learned teaching anthropology at san quentin state prison'), (2010, 'missionization and the persistence of native identity on the colonial frontier of baja california'), (2010, 'spanish missions in the indigenous landscape a view from mission santa catalina baja california'), (2012, 'island of fogs archaeological and ethnohistorical investigations of isla cedros baja california'), (2012, 'obsidian sources of northern baja california the known and the unknown'), (2013, 'archaeologies of persistence reconsidering the legacies of colonialism in native north america'), (2013, 'the study of indigenous political economies and colonialism in native california implications for contemporary tribal groups and federal recognition'))
+keywords : frozenset({'economy', 'anthropology', 'ethnology', 'archaeology'})
+
+firstname : lee
+lastname : panich
+middlename : michael
+year : 2009
+year_papertitle : ((2009, 'persistence of native identity at mission santa catalina baja california 1797 1840'),)
+keywords : frozenset({'native american studies', 'latin american history', 'archaeology'})
+
+3/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:TfidfNGramSearchPredicate: (0.8, lastname)
+INFO:dedupe.training:TfidfNGramSearchPredicate: (0.8, middlename)
+firstname : brie
+lastname : arnold
+middlename : swenson
+year : 2012
+year_papertitle : ((2012, 'a review of articulating rights nineteenth century american women on race reform and the state'), (2014, 'children and youth during the civil war era'), (2015, 'an opportunity to challenge the color line gender race ethnicity and women s labor activism in late nineteenth century cedar rapids iowa'))
+keywords : frozenset({'economic history', 'economic growth', 'gender studies'})
+
+firstname : brie
+lastname : arnold
+middlename : anna swenson
+year : 2008
+year_papertitle : ((2008, 'competition for the virgin soil of kansas gendered and sexualized discourse about the kansas crisis in northern popular print and political culture 1854 1860'),)
+keywords : frozenset({'american history', 'gender studies', 'american literature'})
+
+4/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:TfidfTextSearchPredicate: (0.6, lastname)
+firstname : lawrence
+lastname : baron
+middlename : None
+year : 1993
+year_papertitle : ((1993, 'evangelical converts corrie ten boom and the holocaust a response to yaakov ariel'),)
+keywords : frozenset({'law', 'art history'})
+
+firstname : lawrence
+lastname : barone
+middlename : charles
+year : 2001
+year_papertitle : ((2001, 'industrial research and the building of regional innovative capabilities exploring the role of corporate laboratories'),)
+keywords : frozenset({'science history', 'administration of urban planning and community and rural development', 'american history', 'economics', 'urban planning'})
+
+4/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : mark
+lastname : wild
+middlename : None
+year : 2002
+year_papertitle : ((2002, 'red light kaleidoscope prostitution and ethnoracial relations in los angeles 1880 1940'), (2005, 'thinking about the civil rights movement in a conservative age'), (2007, 'matthew c whitaker race work the rise of civil rights in the urban west race and ethnicity in the american west lincoln university of nebraska press 2005 pp xiv 382 35 00'), (2007, 'review essay out of many many more immigrants and identity proliferation'))
+keywords : frozenset({'media studies', 'art history', 'anthropology', 'political economy', 'social science', 'telecommunications', 'gender studies'})
+
+firstname : mark
+lastname : wilderamsing
+middlename : u
+year : 2009
+year_papertitle : ((2009, 'steady as she goes a test of the gibbs model using the i queen anne s revenge i shipwreck site'),)
+keywords : frozenset({'modern history', 'archaeology'})
+
+4/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : lee
+lastname : berry
+middlename : None
+year : 2015
+year_papertitle : ((2015, 'community oral history toolkit by nancy mackay mary kay quinlan and barbara w sommer'), (2016, 'realities of environmental toxicity and their ramifications for community engagement'), (2016, 'sentenced to science one black man s story of imprisonment in america by allen m hornblum'))
+keywords : frozenset({'law', 'art history', 'environmental ethics', 'criminology'})
+
+firstname : lee
+lastname : bernstein
+middlename : adam
+year : 1997
+year_papertitle : ((1997, 'the greatest menace organized crime in united states culture and politics 1946 1961'),)
+keywords : frozenset({'american history', 'american studies', 'political science', 'criminology'})
+
+4/10 positive, 3/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : joseph
+lastname : rivera
+middlename : None
+year : 2009
+year_papertitle : ((2009, 'what would jesus deconstruct the good news of postmodernity for the church by john d caputo'), (2010, 'solomon among the postmoderns by peter leithart'), (2010, 'the call and the gifted in christological perspective a consideration of brian robinette s critique of jean luc marion'), (2011, 'book review derrida and theology'), (2011, 'book review derrida and theology steven shakespeare derrida and theology new york london continuum 2009 pp xv 233 14 99 isbn 978 0 567 03240 9'), (2011, 'generation interiority and the phenomenology of christianity in michel henry'), (2012, 'corpus mysticum and religious experience henry lacoste and marion'), (2013, 'figuring the porous self st augustine and the phenomenology of temporality'), (2013, 'jeffrey hanson and michael kelly eds michel henry the affects of thought'), (2013, 'toward a liturgical existentialism'))
+keywords : frozenset({'theology', 'psychoanalysis', 'epistemology', 'religious studies'})
+
+firstname : jose
+lastname : rivera
+middlename : richard
+year : 2008
+year_papertitle : ((2008, 'the evolution of the inclusion of mexican americans in the educational process a study of the weslaco independent school district 1926 2006'),)
+keywords : frozenset({'education history', 'multicultural education', 'hispanic american studies'})
+
+4/10 positive, 4/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : eswar
+lastname : prasad
+middlename : s
+year : 1992
+year_papertitle : ((1992, 'are prices countercyclical'), (1993, 'labor market aspects of industrial restructuring in canada'), (1994, 'are prices countercyclical evidence from the g 7'), (1994, 'changes in the relationship between the long term interest rate and its determinants'), (1994, 'shocks and structural breaks labor market reforms in the united kingdom'), (1994, 'the canadian labor market developments prospects and policy'), (1996, 'skill heterogeneity and the business cycle'), (1996, 'the employment and wage effects of oil price changes a sectoral analysis'), (1997, 'labor market adjustment in canada and the united states'), (1997, 'possible effects of european monetary union on switzerland a case study of policy dilemmas caused by low inflation and the nominal interest rate floor'))
+keywords : frozenset({'labour economics', 'humanities', 'monetary economics', 'market economy', 'keynesian economics'})
+
+firstname : anshuman
+lastname : prasad
+middlename : None
+year : 1994
+year_papertitle : ((1994, 'institutional ideology and industry level action a macro analysis of corporate legitimation in the united states petroleum industry'),)
+keywords : frozenset({'history', 'management', 'social research'})
+
+4/10 positive, 5/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : natasha
+lastname : iskander
+middlename : None
+year : 2007
+year_papertitle : ((2007, 'informal work and protest undocumented immigrant activism in france 1996 2000'), (2010, 'creative state forty years of migration and development policy in morocco and mexico'), (2010, 'hidden talent tacit skill formation and labor market incorporation of latino immigrants in the united states'), (2010, 'revealing talent informal skills intermediation as an emergent pathway to immigrant labor market incorporation'), (2010, 'the rise and fall of a micro learning region mexican immigrants and construction in center south philadelphia'), (2011, 'palestinians in lebanon refugees living with long term displacement'), (2012, 'spiritual economies islam globalization and the afterlife of development by daromir rudnyckyj'), (2012, 'street vendors television extras walmart stockers and more worker subjectivity and labor processes in atypical work'), (2013, 'building job quality from the inside out mexican immigrants skills and jobs in the construction industry'), (2013, 'learning in place immigrants spatial and temporal strategies for occupational advancement'))
+keywords : frozenset({'labour economics', 'economic growth', 'economy', 'demographic economics', 'gender studies'})
+
+firstname : natasha
+lastname : iskander
+middlename : n
+year : 2006
+year_papertitle : ((2006, 'innovating government migration development and the state in morocco and mexico 1963 2005'),)
+keywords : frozenset({'labor economics', 'latin american history', 'management', 'african history', 'political science'})
+
+4/10 positive, 6/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : kennetta
+lastname : perry
+middlename : hammond
+year : 2011
+year_papertitle : ((2011, 'from scottsboro to munich race and political culture in 1930s britain'), (2014, 'black britain and the politics of race in the 20th century'), (2018, 'decolonizing the republic african and caribbean migrants in postwar paris 1946 1974 by felix f germain'))
+keywords : frozenset({'media studies', 'ethnology', 'gender studies'})
+
+firstname : kennetta
+lastname : perry
+middlename : hammond
+year : 2007
+year_papertitle : ((2007, 'black migrants citizenship and the transnational politics of race in postwar britain'),)
+keywords : frozenset({'caribbean studies', 'european history', 'black history'})
+
+5/10 positive, 6/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : kathleen
+lastname : martin
+middlename : callanan
+year : 2007
+year_papertitle : ((2007, 'women welfare and local politics 1880 1920 we might be trusted review'), (2008, 'blame welfare ignore poverty and inequality review'), (2009, 'ellen bayuk rosenman and claudia c klaver eds other mothers beyond the maternal ideal columbus ohio state university press 2008 isbn 978 0814202869 us 55 95'))
+keywords : frozenset({'media studies', 'political economy', 'public economics', 'religious studies'})
+
+firstname : kathleen
+lastname : martin
+middlename : callanan
+year : 2004
+year_papertitle : ((2004, 'hard and unreal advice mothers social science and the victorian poor law'),)
+keywords : frozenset({'public policy', 'european history', 'modern history'})
+
+5/10 positive, 7/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : brian
+lastname : black
+middlename : None
+year : 1997
+year_papertitle : ((1997, 'recasting the unalterable order of nature photography and the first oil boom'), (1997, 'the artificial river the erie canal and the paradox of progress 1817 1862 by carol sheriff new york hill and wang 1996 xviii 251 pp illustrations notes bibliography index 21 00'), (1998, 'oil creek as industrial apparatus re creating the industrial process through the landscape of pennsylvania s oil boom'), (1999, 'a triumph of individualism the rule of capture and the ethic of extraction in pennsylvania s oil boom'), (2000, 'great camps of the adirondacks by harvey h kaiser hope human and wild true stories of living lightly on earth by bill mckibben adirondack explorations nature writings of verplanck colvin edited by paul schaefer the adirondacks a history of america s first wilderness by paul schneider contested terrain a new history of nature and people in the adirondacks by philip g terrie'), (2001, 'david vaught cultivating california growers specialty crops and labor 1875 1920 baltimore md johns hopkins university press 1999 x 280 pp isbn 0 8018 6221 3 38 00'), (2002, 'organic planning the intersection of nature and economic planning in the early tennessee valley authority'), (2003, 'gerald markowitz and david rosner deceit and denial the deadly politics of industrial pollution berkeley university of california press 2002 xx 408 pp isbn 0 520 21748 7 34 95'), (2003, 'redefining efficiency pollution concerns regulatory mechanisms and technological change in the u s petroleum industry by hugh s gorman akron university of akron press 2001 xvi 451 pp cloth 49 95 isbn 1 884836 74 7 paper 39 95 isbn 1 884836 75 5'), (2004, 'gallery brian black on the copse at gettysburg'))
+keywords : frozenset({'economic history', 'art history', 'archaeology', 'keynesian economics', 'political economy', 'public administration', 'law and economics', 'classics', 'environmental ethics'})
+
+firstname : brian
+lastname : black
+middlename : clyde
+year : 1996
+year_papertitle : ((1996, 'petrolia the landscape of pennsylvania s oil boom 1859 1873'),)
+keywords : frozenset({'mining', 'geography', 'american history', 'american studies', 'environmental science'})
+
+5/10 positive, 8/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : frank
+lastname : biess
+middlename : None
+year : 1994
+year_papertitle : ((1994, 'american policy and the reconstruction of west germany 1945 1955 edited by jeffry m diefendorf axel frohn and hermann josef rupieper cambridge cambridge university press 1993 pp xviii 537 69 95'), (1996, 'visions of modernity american business and the modernization of germany by mary nolan new york oxford university press 1994 pp x 324 45 00 cloth 19 95 paper'), (1999, 'pioneers of a new germany returning pows from the soviet union and the making of east german citizens 1945 1950'))
+keywords : frozenset({'development economics', 'economic history', 'ancient history'})
+
+firstname : frank
+lastname : biess
+middlename : peter
+year : 2000
+year_papertitle : ((2000, 'the protracted war returning pows and the making of east and west german citizens 1945 1955'),)
+keywords : frozenset({'history', 'european history'})
+
+6/10 positive, 8/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : christine
+lastname : jenkins
+middlename : a
+year : 1996
+year_papertitle : ((1996, 'professional jurisdiction and ala youth services women of nightingales newberies realism and the right books 1937 1945'), (1996, 'women of ala youth services and professional jurisdiction of nightingales newberies realism and the right books 1937 1945'), (1999, 'mapping the dimensions of a dynamic field'))
+keywords : frozenset({'data science', 'law', 'library science', 'social science', 'public administration'})
+
+firstname : christine
+lastname : jenkins
+middlename : alice
+year : 1995
+year_papertitle : ((1995, 'the strength of the inconspicuous youth services librarians the american library association and intellectual freedom for the young 1939 1955'),)
+keywords : frozenset({'american history', 'womens studies', 'library science'})
+
+7/10 positive, 8/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : richard
+lastname : carrier
+middlename : None
+year : 2002
+year_papertitle : ((2002, 'the function of the historian in society'), (2003, 'hitler s table talk troubling finds'), (2004, 'the argument from biogenesis probabilities against a natural origin of life'), (2007, 'fatal flaws in michael almeida s alleged defeat of rowe s new evidential argument from evil'))
+keywords : frozenset({'art history', 'mathematical economics', 'epistemology'})
+
+firstname : richard
+lastname : carrier
+middlename : c
+year : 2008
+year_papertitle : ((2008, 'attitudes toward the natural philosopher in the early roman empire 100 bc to 313 ad'),)
+keywords : frozenset({'education history', 'science history', 'ancient history'})
+
+7/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : stephen
+lastname : halsey
+middlename : r
+year : 2012
+year_papertitle : ((2012, 'a review of health and hygiene in chinese east asia policies and publics in the long twentieth century'), (2017, 'pacific strife the great powers and their political and economic rivalries in asia and the western pacific 1870 1914 by keesvandijk amsterdam the netherlands amsterdam university press 2015 pp 523 149 00 book review'), (2018, 'warfare imperialism and the making of modern chinese history a review essay'))
+keywords : frozenset({'media studies', 'economic history', 'economic growth'})
+
+firstname : stephen
+lastname : halsey
+middlename : None
+year : 2007
+year_papertitle : ((2007, 'european imperialism and the evolution of chinese statecraft 1850 1927'),)
+keywords : frozenset({'history'})
+
+7/10 positive, 10/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : daniel
+lastname : bush
+middlename : a
+year : 2000
+year_papertitle : ((2000, 'luminescence dating of middle stone age deposits at die kelders'), (2003, 'application of osl single aliquot and single grain dating to quartz from anthropogenic soil profiles in the se united states'), (2005, 'watson brake a middle archaic mound complex in northeast louisiana'))
+keywords : frozenset({'paleontology', 'mineralogy', 'archaeology'})
+
+firstname : daniel
+lastname : bush
+middlename : a
+year : 2007
+year_papertitle : ((2007, 'application of luminescence dating to the study of archaic age anthropogenic mounds from the lower mississippi river valley'),)
+keywords : frozenset({'geology', 'archaeology'})
+
+7/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : thomas
+lastname : loebel
+middlename : j
+year : 2008
+year_papertitle : ((2008, 'geoarchaeology of the clary ranch paleoindian sites western nebraska'), (2009, 'withington 47gt158 a clovis gainey campsite in grant county wisconsin'), (2011, 'site structure and activity organization at a late paleoindian base camp in western nebraska'), (2011, 'the younger dryas and late pleistocene peoples of the great lakes region'), (2012, 'pattern or bias a critical evaluation of midwestern fluted point distributions using raster based gis'), (2013, 'working with wilmsen paleoindian end scraper design and use at nobles pond'))
+keywords : frozenset({'humanities', 'archaeology', 'hydrology', 'cartography', 'ecology', 'gerontology'})
+
+firstname : thomas
+lastname : loebel
+middlename : j
+year : 2005
+year_papertitle : ((2005, 'the organization of early paleoindian economies in the western great lakes'),)
+keywords : frozenset({'archaeology'})
+
+7/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : julian
+lastname : zelizer
+middlename : e
+year : 1997
+year_papertitle : ((1997, 'defining health care reform'), (1997, 'where is the money coming from the reconstruction of social security finance 1939 1950'), (1998, 'taxing america wilbur d mills congress and the state 1945 1975'), (1999, 'jonathan j bean beyond the broker state federal policies toward small business 1936 1961 business society and the state chapel hill university of north carolina press 1996 pp xiv 281 cloth 45 00 paper 16 95'), (2000, 'bridging state and society the origins of 1970s congressional reform'), (2000, 'clio s lost tribe public policy history since 1978'), (2000, 'introduction to roundtable the u s congress in the twentieth century'), (2000, 'the forgotten legacy of the new deal fiscal conservatism and the roosevelt administration 1933 1938'), (2000, 'the hidden welfare state tax expenditures and social policy in the united states by christopher howard princeton princeton university press 1997 xi 250 pp appendices index notes and tables 17 95 isbn 069100529x'))
+keywords : frozenset({'economic history', 'economy', 'political economy', 'public administration', 'finance'})
+
+firstname : julian
+lastname : zelizer
+middlename : emmanuel
+year : 1996
+year_papertitle : ((1996, 'taxing america wilbur mills and the culture of fiscal policy 1949 1969'),)
+keywords : frozenset({'biographies', 'american history', 'economic history', 'political science'})
+
+7/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ethan
+lastname : knapp
+middlename : None
+year : 1999
+year_papertitle : ((1999, 'bureaucratic identity and the construction of the self in hoccleve s formulary and la male regle'), (2001, 'thomas hoccleve the regiment of princes ed charles r blyth middle english texts kalamazoo mich medieval institute publications western michigan university for teams in association with the university of rochester 1999 paper pp viii 278'), (2004, 'nation court and culture new essays on fifteenth century english poetry helen cooney'))
+keywords : frozenset({'theology', 'classics', 'aesthetics', 'literature'})
+
+firstname : ethan
+lastname : knapp
+middlename : e h
+year : 1995
+year_papertitle : ((1995, 'thomas hoccleve bureaucracy and the poetics of selfhood in the post chaucerian tradition'),)
+keywords : frozenset({'medieval history', 'british and irish literature', 'medieval literature', 'literature'})
+
+8/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : mary
+lastname : trubitt
+middlename : beth d
+year : 2000
+year_papertitle : ((2000, 'mound building and prestige goods exchange changing strategies in the cahokia chiefdom'), (2000, 'the archaeology of downtown cahokia the tract 15a and dunham tract excavations timothy r pauketat 1998 studies in archaeology no 1 illinois transportation archaeological research program university of illinois urbana xxii 420 pp 122 tables 110 figures 21 plates 10 appendices bibliography index 27 50 paper isbn 0 9644881 4 0'), (2003, 'archaeological studies of gender in the southeastern united states jane m eastman and christopher b rodning editor 2001 university press of florida gainesville xv 219 pp 59 95 cloth isbn 0 8130 1875 7'), (2003, 'the caddo indian burial ground 3mn386 norman arkansas'), (2003, 'the production and exchange of marine shell prestige goods'), (2005, 'crafting marine shell prestige goods at cahokia'), (2005, 'mapping a novaculite quarry in hot springs national park'), (2006, 'one hundred years of archaeology at gordontown a fortified mississippian town in middle tennessee'), (2007, 'the organization of novaculite tool production quarry workshop debitage comparisons'))
+keywords : frozenset({'economy', 'commerce', 'anthropology', 'archaeology'})
+
+firstname : mary
+lastname : trubitt
+middlename : beth d
+year : 1996
+year_papertitle : ((1996, 'household status marine shell bead production and the development of cahokia in the mississippian period'),)
+keywords : frozenset({'cultural anthropology', 'archaeology'})
+
+8/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : dixie
+lastname : west
+middlename : None
+year : 1995
+year_papertitle : ((1995, 'the recognition and use of dermestid insecta coleoptera pupation chambers in paleoecology'), (1997, 'hunting strategies in central europe during the last glacial maximum'), (2000, 'human remains from the moravian gravettian morphology and taphonomy of isolated elements from the dolni věstonice ii site'), (2001, 'identification of parasitoses in a child burial from adak island central aleutian islands alaska'), (2001, 'proceedings of the international conference on mammoth site studies'))
+keywords : frozenset({'paleontology', 'ecology', 'archaeology'})
+
+firstname : dixie
+lastname : west
+middlename : lee
+year : 1995
+year_papertitle : ((1995, 'epigravettian hunting strategy and animal use in the middle danube'),)
+keywords : frozenset({'archaeology'})
+
+9/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : margaretha
+lastname : kramerhajos
+middlename : None
+year : 2012
+year_papertitle : ((2012, 'the land and the heroes of lokris in the iliad'), (2016, 'modeling collapse and revival'), (2016, 'mycenaean greece and the aegean world palace and province in the late bronze age'), (2016, 'prehistoric politics the creation of the periphery'), (2016, 'reactions to collapse the rise of a sailor warrior culture'), (2016, 'the ethos of the sword the creation of early mycenaean elite culture'), (2016, 'the role of elite networks in the mycenaeanization of the provinces'))
+keywords : frozenset({'economic history', 'literature', 'archaeology', 'economy', 'ancient history', 'classics', 'forensic engineering'})
+
+firstname : margaretha
+lastname : kramerhajos
+middlename : theodora
+year : 2005
+year_papertitle : ((2005, 'mycenaean civilization in east lokris'),)
+keywords : frozenset({'classical literature', 'classical studies', 'geography', 'archaeology'})
+
+9/10 positive, 14/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jo
+lastname : tilburg
+middlename : anne van
+year : 1984
+year_papertitle : ((1984, 'rock art treasures of ancient america 1983 produced and directed by dave caldwell'), (1987, 'symbolic stratigraphy rock art and the monolithic statues of easter island'), (1990, 'respect for rapa nui exhibition and conservation of easter island stone statues'))
+keywords : frozenset({'archaeology'})
+
+firstname : jo
+lastname : tilburg
+middlename : anne van
+year : 1986
+year_papertitle : ((1986, 'power and symbol the stylistic analysis of easter island monolithic sculpture'),)
+keywords : frozenset({'archaeology'})
+
+9/10 positive, 15/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : kathleen
+lastname : sander
+middlename : waters
+year : 1998
+year_papertitle : ((1998, 'the business of charity'), (2000, 'the business of charity the woman s exchange movement 1832 1900'), (2001, 'sarah deutsch women and the city gender space and power in boston 1870 1940 new york oxford university press 2000 pp xi 387 35 00'))
+keywords : frozenset({'economy', 'political economy', 'humanities'})
+
+firstname : kathleen
+lastname : sander
+middlename : waters
+year : 1994
+year_papertitle : ((1994, 'not a lady among us entrepreneural philanthropy and economic independence as expressed through the woman s exchange movement 1832 1900'),)
+keywords : frozenset({'american history', 'american studies', 'womens studies'})
+
+10/10 positive, 15/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jacob
+lastname : hamblin
+middlename : darwin
+year : 1998
+year_papertitle : ((1998, 'supplying the nuclear arsenal american production reactors 1942 1992'), (2000, 'science in isolation american marine geophysics research 1950 1968'), (2000, 'visions of international scientific cooperation the case of oceanic science 1920 1955'), (2002, 'environmental diplomacy in the cold war the disposal of radioactive waste at sea during the 1960s'), (2002, 'the navy s sophisticated pursuit of science'), (2003, 'helen rozwadowski the sea knows no boundaries a century of marine science under ices ix 410 pp illus bibl index seattle university of washington press 2002 50 37 95 cloth'), (2005, 'oceanographers and the cold war disciples of marine science'), (2005, 'science in the early twentieth century an encyclopedia'), (2005, 'the machine in neptune s garden historical perspectives on technology and the marine environment edited by helen m rozwadowski and david k van keuren canton mass science history publications 2004 399 pp bibliographical references and index cloth 49 95'))
+keywords : frozenset({'art history', 'oceanography', 'law', 'public relations', 'waste management', 'social science', 'classics', 'environmental ethics', 'industrial engineering'})
+
+firstname : jacob
+lastname : hamblin
+middlename : darwin
+year : 2001
+year_papertitle : ((2001, 'oceanography and international cooperation during the early cold war'),)
+keywords : frozenset({'international relations', 'science history', 'oceanography', 'american history', 'international law'})
+
+11/10 positive, 15/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : rachel
+lastname : riedl
+middlename : beatty
+year : 2012
+year_papertitle : ((2012, 'transforming politics dynamic religion religion s political impact in contemporary africa'), (2012, 'turning points in african democracy edited by abdul raufu mustapha and lindsay whitfield woodbridge james currey 2009 pp 235 55 00 hbk'), (2013, 'political parties and uncertainty in developing democracies'), (2014, 'authoritarian origins of democratic party systems in africa'), (2014, 'party systems and decentralization in africa'), (2015, 'individualism and empowerment in pentecostal sermons new evidence from nairobi kenya'), (2015, 'religion as a stimulant of political participation experimental evidence from nairobi kenya'), (2016, 'party systems and democracy in africa edited by renske doorenspleet and lia nijzink new york ny palgrave macmillan 2014 pp 191 79 99 hbk'), (2017, 'sub national cross national variation method and analysis in sub saharan africa'), (2019, 'from pews to politics religious sermons and political participation in africa'))
+keywords : frozenset({'media studies', 'regional science', 'religious studies', 'political economy', 'economic system', 'social psychology', 'development economics', 'gender studies'})
+
+firstname : rachel
+lastname : riedl
+middlename : beatty
+year : 2008
+year_papertitle : ((2008, 'institutions in new democracies variations in african political party systems'),)
+keywords : frozenset({'african history', 'organizational behavior', 'political science'})
+
+11/10 positive, 15/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : brian
+lastname : murphy
+middlename : phillips
+year : 2012
+year_papertitle : ((2012, 'columbia rising civil life on the upper hudson from the revolution to the age of jackson'), (2015, 'building the empire state political economy in the early republic'), (2015, 'chapter 1 the most dangerous and effectual engine of power'), (2015, 'chapter 2 an enlarged american scale'), (2015, 'conclusion corporate political economy'), (2015, 'introduction strength in structure'))
+keywords : frozenset({'composite material', 'climatology', 'political economy', 'systems engineering', 'ancient history', 'demography', 'automotive engineering'})
+
+firstname : brian
+lastname : murphy
+middlename : phillips
+year : 2008
+year_papertitle : ((2008, 'empire state building interests institutions and the formation of states and parties in new york 1783 1845'),)
+keywords : frozenset({'american history', 'economic history'})
+
+11/10 positive, 16/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : charles
+lastname : perreault
+middlename : None
+year : 2010
+year_papertitle : ((2010, 'a note on reconstructing animal social networks from independent small group observations'), (2010, 'detecting the effects of selection and stochastic forces in archaeological assemblages'), (2011, 'mobility driven cultural transmission along the forager collector continuum'), (2011, 'the impact of site sample size on the reconstruction of culture histories'), (2012, 'a bayesian approach to the evolution of social learning'), (2012, 'cultural evolution in spatially structured populations a review of alternative modeling frameworks'), (2012, 'dating the origin of language using phonemic diversity'), (2012, 'the pace of cultural evolution'), (2013, 'late occupation of the high elevation northern tibetan plateau based on cosmogenic luminescence and radiocarbon ages'), (2013, 'measuring the complexity of lithic technology'))
+keywords : frozenset({'archaeology', 'data science', 'simulation', 'linguistics', 'zoology', 'genealogy', 'paleontology', 'statistics', 'artificial intelligence', 'social psychology', 'econometrics', 'cognitive psychology'})
+
+firstname : charles
+lastname : perreault
+middlename : None
+year : 2011
+year_papertitle : ((2011, 'cultural evolution in behavioral and taphonomic contexts'),)
+keywords : frozenset({'archaeology'})
+
+11/10 positive, 16/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+Traceback (most recent call last):
+  File "/home/mona/anaconda3/envs/science-career-tempenv/lib/python3.9/runpy.py", line 197, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/home/mona/anaconda3/envs/science-career-tempenv/lib/python3.9/runpy.py", line 87, in _run_code
+    exec(code, run_globals)
+  File "/home/mona/mag_sample/src/dataprep/main/link/train_link_mag_proquest.py", line 238, in <module>
+    dedupe.console_label(linker)
+  File "/home/mona/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/dedupe/convenience.py", line 76, in console_label
+    user_input = input()
+  File "/home/mona/anaconda3/envs/science-career-tempenv/lib/python3.9/codecs.py", line 322, in decode
+    (result, consumed) = self._buffer_decode(data, self.errors, final)
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0xc3 in position 0: invalid continuation byte
