@@ -487,31 +487,32 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
         {where_stmt_pq}
         """
     elif args.linking_type == "grants":
+        # we do not condition on directorate here bc there is substantial overlap between fields and directorates
         # condition the nsf data on major directorate
-        fields_to_directorate = {
-            "geology": ["GEOSCIENCES"], 
-            "economics": ["SOCIAL, BEHAV & ECONOMIC SCIE"],
-            "engineering": ["ENGINEERING", "COMPUTER & INFO SCIE & ENGINR"],
-            "physics": ["MATHEMATICAL & PHYSICAL SCIEN"], 
-            "chemistry": ["MATHEMATICAL & PHYSICAL SCIEN"],
-            "mathematics": ["MATHEMATICAL & PHYSICAL SCIEN"],
-            "biology": ["BIOLOGICAL SCIENCES"],
-            "psychology": ["SOCIAL, BEHAV & ECONOMIC SCIE"],
-            "sociology": ["SOCIAL, BEHAV & ECONOMIC SCIE"],
-            "computer science": ["COMPUTER & INFO SCIE & ENGINR"],
-            "environmental science": ["GEOSCIENCES"],
-            "political science": ["SOCIAL, BEHAV & ECONOMIC SCIE"],
-            "geography": ["GEOSCIENCES"]
-        }
+        # fields_to_directorate = {
+        #     "geology": ["GEOSCIENCES"], 
+        #     "economics": ["SOCIAL, BEHAV & ECONOMIC SCIE"],
+        #     "engineering": ["ENGINEERING", "COMPUTER & INFO SCIE & ENGINR"],
+        #     "physics": ["MATHEMATICAL & PHYSICAL SCIEN"], 
+        #     "chemistry": ["MATHEMATICAL & PHYSICAL SCIEN"],
+        #     "mathematics": ["MATHEMATICAL & PHYSICAL SCIEN"],
+        #     "biology": ["BIOLOGICAL SCIENCES"],
+        #     "psychology": ["SOCIAL, BEHAV & ECONOMIC SCIE"],
+        #     "sociology": ["SOCIAL, BEHAV & ECONOMIC SCIE"],
+        #     "computer science": ["COMPUTER & INFO SCIE & ENGINR"],
+        #     "environmental science": ["GEOSCIENCES"],
+        #     "political science": ["SOCIAL, BEHAV & ECONOMIC SCIE"],
+        #     "geography": ["GEOSCIENCES"]
+        # }
         
-        # check if filed not found in crosswalk -- field may be a list (!)
-        if not any([f in fields_to_directorate.keys() for f in field]):
-            print(f"Exiting: no directorate defined for any of current fields. Current fields are: {field}")
-            exit()
+        # # check if filed not found in crosswalk -- field may be a list (!)
+        # if not any([f in fields_to_directorate.keys() for f in field]):
+        #     print(f"Exiting: no directorate defined for any of current fields. Current fields are: {field}")
+        #     exit()
 
-        directorates = [i for f in field for i in fields_to_directorate[f]]
-        directorates = set(directorates)
-        directorates = f"('{', '.join(directorates)}')"
+        # directorates = [i for f in field for i in fields_to_directorate[f]]
+        # directorates = set(directorates)
+        # directorates = f"('{', '.join(directorates)}')"
 
         query_nsf = f"""
         SELECT a.GrantID || "_" || c.author_position as grantid_authorposition
