@@ -22,9 +22,13 @@ fields=("chemistry")
       #  "geography"
       #  "economics")
 
+fields=("chemistry")
+
 for i in "${!fields[@]}"; do 
     field=${fields[$i]} 
     echo $field
-    screen -dmS "grants.$field" sh main/link/link_onefield_grants.sh $RECALL "$field" $train_name $institution $fieldofstudy_cat $fieldofstudy_str $keywords $logfile_path
-    # TODO: need dynamic path here 
+
+   # screen -dmS "earlygrants.$field" sh main/link/link_onefield_grants.sh $RECALL "$field" $train_name $institution $fieldofstudy_cat $fieldofstudy_str $keywords $logfile_path "1980" "2009"
+
+    screen -dmS "lategrants.$field" sh main/link/link_onefield_grants.sh $RECALL "$field" $train_name $institution $fieldofstudy_cat $fieldofstudy_str $keywords $logfile_path "2010" "2020"
 done 
