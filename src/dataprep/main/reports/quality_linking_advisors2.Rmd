@@ -1,0 +1,225 @@
+---
+title: "Performance of linking researchers to theses"
+author: "Flavio & Christoph & Mona"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  pdf_document:
+    toc: true
+    toc_depth: 3
+---
+
+This script makes some plots of the advisor links and saves the most plausible links to a table in the database. 
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(1234)
+```
+
+```{r, echo = FALSE, include = FALSE}
+packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "ggplot2", "stringdist")
+
+lapply(packages, library, character.only = TRUE)
+
+datapath <- "/mnt/ssd/"
+db_file  <- paste0(datapath, "AcademicGraph/AcademicGraph.sqlite")
+select_fields <- c("biology",
+                    "business",
+                    "chemistry",
+                    "computer science" ,
+                    "economics",
+                    "engineering",
+                    "environmental science",
+                    "geography",
+                    "geology" ,
+                    "history",
+                    "materials science",
+                    "mathematics",
+                    "physics",
+                    "political science",
+                    "philosophy",
+                    "psychology" ,
+                    "sociology") # art, medicine linked but not included yet 
+
+
+# ## db connection
+con <- DBI::dbConnect(RSQLite::SQLite(), db_file)
+cat("The database connection is: \n")
+src_dbi(con)
+```
+
+
+
+```{r}
+# parameters for selecting links 
+min_score_advisors <- 0.7 # minimum score from dedupe 
+
+```
+
+Linking Mona vs Christoph
+```{r}
+# Function to process the data for a specific field
+field <- c("sociology")
+#"biology", "business", "chemistry", "computer science", "economics", "engineering", "environmental science", "geography", "geology", "history", "materials science", "mathematics", "philosophy", "physics", "political science", "psychology", "sociology"
+
+  
+  # Read the data for the specified field
+  links_advisors_mona <- read.csv(paste0("/mnt/ssd/linked_ids_temp/links_advisors_", field, "_mona_degree0_19902015.csv")) %>%
+    rename(relationship_id = grantid_authorposition)
+
+  links_advisors_christoph <- read.csv(paste0("/mnt/ssd/linked_ids_temp/links_advisors_", field, "_christoph_degree0_19902015.csv"))
+
+  linked_advisors_mona <- collect(links_advisors_mona)
+  linked_advisors_christoph <- collect(links_advisors_christoph)
+
+  # Perform the left join
+  linked_advisors <- linked_advisors_mona %>%
+    left_join(linked_advisors_christoph, by = c("AuthorId", "relationship_id")) %>%
+    mutate(difference = ifelse(!is.na(link_score.x) & !is.na(link_score.y), link_score.x - link_score.y, NA))
+  
+  linked_advisors %>%
+    ggplot(aes(x = difference)) +
+    geom_histogram(bins = 100, aes(y = after_stat(density))) 
+```
+
+business: okay?
+econ: almost same
+engineering, geography, materials science, physics, political science, sociology problem?
+
+
+
+
+## Overview
+
+```{r, include = FALSE}
+
+linking_info <- tbl(con,
+                    sql("select iteration_id, field
+                          from (
+                              select *, max(iteration_id) OVER(partition by field) as max_iter
+                              from linking_info_advisors
+                              where recall = 0.9 
+                                  and testing = 0
+                                  and institution = 'True'
+                                  and fieldofstudy_cat = 'False'
+                                  and fieldofstudy_str = 'False' 
+                                  and keywords = 'False' 
+                                  and mergemode = 'm:1'
+                          )
+                          where iteration_id = max_iter "))
+linked_advisors <- tbl(con, sql("select * 
+                                from linked_ids_advisors
+                                ")) %>%
+  inner_join(linking_info %>% 
+               select(iteration_id),
+             by = "iteration_id")
+
+
+
+theses <- tbl(con, sql("
+                       select * from pq_advisors 
+                       inner join (
+                         select goid, degree_year, uni_name 
+                         from pq_authors
+                         inner join (
+                          select university_id, normalizedname as uni_name 
+                          from pq_unis
+                          where location like '%United States%'
+                         ) using(university_id)
+                       ) using(goid)
+                       inner join (
+                        select goid, normalizedname as fieldname0_mag
+                        from pq_fields_mag
+                        inner join(
+                          select fieldofstudyid, normalizedname
+                          from fieldsofstudy
+                        ) on (mag_field0 = fieldofstudyid)
+                        where position = 0
+                       ) using(goid)
+                       ")
+              )
+
+pq_fields_mag <- tbl(con,
+                     sql("select goid, normalizedname as field 
+                          from pq_fields_mag
+                          inner join (
+                            select fieldofstudyid, normalizedname
+                            from FieldsOfStudy
+                            ) ON (mag_field0 = FieldOfStudyId)
+                         where position = 0"))
+
+```
+
+
+```{r}
+linked_advisors <- collect(linked_advisors)
+theses <- collect(theses)
+linking_info <- collect(linking_info)
+pq_fields_mag <- collect(pq_fields_mag)
+
+```
+
+
+## Linking scores 
+
+- conditioning on link score > 0.7 is fine 
+- 
+
+```{r}
+
+linked_advisors %>%
+  left_join(linking_info, by = "iteration_id") %>%
+  filter(link_score>=0.7) %>%
+  ggplot(aes(x = link_score)) +
+  geom_histogram(bins = 100, aes( y = after_stat(density))) +
+  facet_wrap(~field)
+
+```
+
+## Link performance by graduation year
+
+- fraction of listed advisors where the link_score is above the treshold
+- the mean link score for advisors where dedupe finds a link (link_score is not NA)
+- NOTE: the field here is assigned based on the first reported in the dissertation, and the crosswalked to the MAG field
+- in the figure above, we used the field from iteration_id, but this only works for advisors that dedupe suggests to be a link 
+
+```{r}
+
+keep_fields <- select_fields
+# c("biology", "chemistry", "computer science", 
+#                 "economics", "engineering", "environmental science", 
+#                 "geography", "geology", "mathetmatics", "physics",
+#                 "political science", "psychology", "sociology")
+
+score_by_year <- theses %>% 
+  filter(degree_year >= 1990) %>%
+  left_join(linked_advisors,
+            by = "relationship_id") %>%
+  left_join(pq_fields_mag, by = "goid") %>%
+  filter(field %in% keep_fields)
+
+# %>%
+#   left_join(linking_info,
+#             by = "iteration_id")
+
+score_by_year %>%
+  mutate(link_score_adj = ifelse(is.na(link_score), -1, link_score)) %>%
+  group_by(degree_year, field) %>%
+  summarise(mean_score = mean(link_score, na.rm = TRUE),
+            #p50_score = quantile(link_score, probs = 0.5),
+            share_linked = mean(link_score_adj > min_score_advisors),
+            .groups = "drop") %>%
+  pivot_longer(cols = all_of(c("mean_score", "share_linked")),
+               names_to = "stat") %>%
+  ggplot(aes(x = degree_year, y = value)) + 
+  geom_line(aes(linetype = stat)) + 
+  facet_wrap(~field) + 
+  theme(legend.position = "bottom")
+
+```
+
+
+
+
+```{r, include = FALSE}
+DBI::dbDisconnect(con)
+```
