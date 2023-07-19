@@ -15,7 +15,7 @@ set.seed(1234)
 ```
 
 ```{r, echo = FALSE, include = FALSE}
-packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "ggplot2", "stringdist")
+packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "ggplot2", "stringdist", "knitr") 
 
 lapply(packages, library, character.only = TRUE)
 
@@ -50,31 +50,109 @@ src_dbi(con)
 ```
 
 
-Problem: relationship_id in Christoph's files is not the same as grantid_authorposition in Mona's 
 ```{r}
-# Function to process the data for a specific field
-field <- c("sociology")
-#"biology", "business", "chemistry", "computer science", "economics", "engineering", "environmental science", "geography", "geology", "history", "materials science", "mathematics", "philosophy", "physics", "political science", "psychology", "sociology"
+ # Function to process the data for a specific field
+# Fields to process
+# missing fields: ""art, "chemistry", "geography", "history", "mathematics","medicine", "sociology"
 
+
+fields_to_process <- c("biology", "business", "computer science", "economics", "engineering", "environmental science", "geology", "materials science", "philosophy", "physics", "political science", "psychology")
+
+# Loop through the fields
+
+process_data <- function(field) {
   
   # Read the data for the specified field
-  links_graduates_mona <- read.csv(paste0("/mnt/ssd/linked_ids_temp/links_graduates_", field, "_mona_degree0_19852015.csv"))
-   # rename(relationship_id = grantid_authorposition)
-
-  links_graduates_christoph <- read.csv(paste0("/mnt/ssd/linked_ids_temp/links_advisors_", field, "_christoph_degree0_19902015.csv"))
-
-  linked_graduates_mona <- collect(links_graduates_mona)
-  linked_graduates_christoph <- collect(links_graduates_christoph)
-
-  # Perform the left join
-  linked_graduates <- linked_graduates_mona %>%
-    left_join(linked_graduates_christoph, by = c("AuthorId")) %>%
-    mutate(difference = ifelse(!is.na(link_score.x) & !is.na(link_score.y), link_score.x - link_score.y, NA))
   
-  linked_graduates %>%
-    ggplot(aes(x = difference)) +
-    geom_histogram(bins = 100, aes(y = after_stat(density))) 
+  links_graduates_mona <- read.csv(paste0("/mnt/ssd/linked_ids_temp/links_graduates_", field, "_mona_degree0_19852015.csv")) %>%
+    rename(authorid_mona = grantid_authorposition) %>%
+    rename(goid = AuthorId) %>%
+    rename(linkscore_mona=link_score)
+
+  if (field %in% c("biology", "computer science","economics", "engineering", "environmental science", "geology", "physics", "political science", "psychology")) {
+  links_graduates_christoph <- read.csv(paste0("/mnt/ssd/linked_ids_temp/links_graduates_", field, "_christoph_fielddegree0.csv")) %>%
+    rename(authorid_christoph = AuthorId) %>%
+    rename(linkscore_christoph=link_score) 
+  } else {
+  links_graduates_christoph <- read.csv(paste0("/mnt/ssd/linked_ids_temp/links_graduates_", field, "_christoph_degree0_19852015.csv")) %>%
+    rename(authorid_christoph = AuthorId) %>%
+    rename(linkscore_christoph=link_score)     
+  }    
+      
+
+links_graduates_mona <- collect(links_graduates_mona)
+links_graduates_christoph <- collect(links_graduates_christoph)
+
+# Performs the full join: bothlink=1 if same authorID assigned in both, 0 if different authorID assigned
+# Then calculates the share of links found by Christoph also found by Mona (number links found by both divided by number of links found by Christoph) (share_bothlink)
+
+links_graduates <- links_graduates_mona %>%
+  full_join(links_graduates_christoph, by = c("goid")) %>%
+  mutate(
+    field = field,
+    monalink = ifelse(!is.na(authorid_mona), 1, 0),
+    chrislink = ifelse(!is.na(authorid_christoph), 1, 0),
+    bothlink = ifelse(is.na(authorid_christoph) | is.na(authorid_mona),
+                      NA,
+                      ifelse(authorid_christoph == authorid_mona, 1, 0)),
+     share_bothlink = sum(bothlink == 1 & chrislink == 1, na.rm = TRUE) / sum(chrislink == 1, na.rm = TRUE)
+  )
+
+# Look closer at link differences: 
+# share of ProQuest goids assigned to same AuthorId (share_sameauthor), distinct AuthorId (share_diffauthor), or missing (share_missing) in one of the two linkings
+
+
+links_graduates <- links_graduates %>%
+ mutate(
+    share_sameauthor = sum(bothlink == 1, na.rm = TRUE) / n_distinct(goid),
+    share_diffauthor = sum(bothlink == 0 & !is.na(bothlink), na.rm = TRUE) / n_distinct(goid),
+    share_missing = sum(is.na(bothlink)) / n_distinct(goid),
+    share_missing_mona = sum(is.na(bothlink) & monalink == 0) / n_distinct(goid),
+    share_missing_chris = sum(is.na(bothlink) & chrislink == 0) / n_distinct(goid)
+ ) 
+
+# Select the desired fields for the table
+shares_table <- links_graduates %>%
+  select(field, share_bothlink, share_sameauthor, share_diffauthor, share_missing)
+
+# To do: Display the table using kable: not yet working when using the loop
+
+cat(paste0("## ", field, ":\n"))
+kable(head(shares_table,1), format = "markdown")
+
+# Select the shares for the bar chart: total number of goids as base
+
+shares_data <- links_graduates %>%
+  summarise(
+    share_sameauthor = mean(share_sameauthor, na.rm = TRUE),
+    share_diffauthor = mean(share_diffauthor, na.rm = TRUE),
+    share_missing = mean(share_missing, na.rm = TRUE)
+  ) %>%
+  gather(variable, value)
+
+# Create the bar chart
+bar_chart <- ggplot(shares_data, aes(x = variable, y = value, fill = variable)) +
+  geom_bar(stat = "identity", width = 0.7) +
+  theme_minimal() +
+  labs(
+    x = NULL,
+    y = "Fraction",
+    title = paste("Fraction of ProQuest goids based on assignment of AuthorID  for",field),
+    fill= NULL
+  ) +
+  scale_x_discrete(labels = c("different author ID", " author ID missing", "same author ID"))
+
+
+# Print the bar chart
+print(bar_chart)
+} 
+
+for (field in fields_to_process) {
+  process_data(field)
+  cat("\n\n")
+}  
 ```
+
 
 
 ```{r, include = FALSE}
@@ -82,118 +160,3 @@ DBI::dbDisconnect(con)
 ```
 
 
-
-
-
-
-
-```{r}
-linked_advisors_maths <- linked_advisors_maths  %>% mutate(difference = ifelse(!is.na(link_score.x) & !is.na(link_score.y), link_score.x - link_score.y, NA))
-linked_advisors_maths %>%
-   ggplot(aes(x = difference)) +
-  geom_histogram(bins = 100, aes( y = after_stat(density)))
-```
-
-
-
-
-
-
-
-
-
-## Overview
-
-
-
-
-```{r}
-linked_grants <- collect(linked_grants)
-grants <- collect(grants)
-linking_info <- collect(linking_info)
-```
-
-
-## Linking scores 
-- conditioning on link score > 0.7 is fine
-
-```{r}
-
-linked_grants %>%
-  left_join(linking_info, by = "iteration_id") %>%
-  filter(link_score>=0.7) %>%
-  ggplot(aes(x = link_score)) +
-  geom_histogram(bins = 100, aes( y = after_stat(density))) +
-  facet_wrap(~field)
-  
-```
-
-## Link performance by graduation year: so far only for geology
-
-- fraction of grants where the link_score is above the treshold
-- the mean link score for grants where dedupe finds a link (link_score is not NA)
-- in the figure above, we used the field from iteration_id, but this only works for grants that dedupe suggests to be a link 
-
-```{r}
-keep_fields <- select_fields
-# c("biology", "chemistry", "computer science", 
-#                 "economics", "engineering", "environmental science", 
-#                 "geography", "geology", "mathetmatics", "physics",
-#                 "political science", "psychology", "sociology")
-
-
-score_by_year <- grants %>% 
-   left_join(linked_grants,
-           by = "grantid_authorposition")%>% 
-   filter(year >= 1980) #%>%
-   #filter(link_score>=0.7) #%>%
-   filter(field %in% keep_fields)
-
-
-
-#New: linked_grants_share is share of linked grants to total number of grants 
-# add restriction of only keeping GrantID with highest score if GrantID exists several times?
-
-score_by_year %>%
-  mutate(link_score_adj = ifelse(is.na(link_score), -1, link_score)) %>%
-  group_by(year) %>%
-  #p50_score = quantile(link_score, probs = 0.5),
- summarise(grants_total = n_distinct(GrantID),
-            mean_score = mean(link_score, na.rm = TRUE),
-            share_linked = mean(link_score_adj > min_score_grants),
-            .groups = "drop") %>%
- filter(link_score > min_score_grants) %>%
-  summarise(ngrants_linked = n_distinct(GrantID),
-             .groups = "drop") %>%
-  summarise(linked_grants_share=ngrants_linked/grants_total)
-  pivot_longer(cols = all_of(c("linked_grants_share", "mean_score", "share_linked")),
-               names_to = "stat") %>%
-  ggplot(aes(x = year, y = value)) +
-  geom_line(aes(linetype = stat)) +
-  facet_wrap(~field) +
-  theme(legend.position = "bottom")
-
-# Don't really understand old code below
-# Share link is not really the share of linked grants or is it? 
-# Why share linked < mean_score if restriction to link_score>0.7?
-
-# score_by_year %>%
-#   mutate(link_score_adj = ifelse(is.na(link_score), -1, link_score)) %>%
-#   group_by(year) %>%
-#   #p50_score = quantile(link_score, probs = 0.5),
-#   summarise(mean_score = mean(link_score, na.rm = TRUE),
-#             share_linked = mean(link_score_adj > min_score_grants),
-#             .groups = "drop") %>%
-#   pivot_longer(cols = all_of(c("mean_score", "share_linked")),
-#                names_to = "stat") %>%
-#   ggplot(aes(x = year, y = value)) +
-#   geom_line(aes(linetype = stat)) +
-#   facet_wrap(~field) +
-#   theme(legend.position = "bottom")
-```
-
-
-
-```{r, include = FALSE}
-DBI::dbDisconnect(con)
-```
