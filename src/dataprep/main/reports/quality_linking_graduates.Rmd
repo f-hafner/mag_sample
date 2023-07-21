@@ -19,34 +19,7 @@ packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "ggplot2", "stringdist"
 
 lapply(packages, library, character.only = TRUE)
 
-datapath <- "/mnt/ssd/"
-db_file  <- paste0(datapath, "AcademicGraph/AcademicGraph.sqlite")
-
-
- select_fields <- c("biology",
-                    "business",
-                    "chemistry",
-                    "computer science" ,
-                    "economics",
-                    "engineering",
-                    "environmental science",
-                    "geography",
-                    "geology" ,
-                    "history",
-                    "materials science",
-                    "mathematics",
-                    "physics",
-                    "political science",
-                    "philosophy",
-                    "psychology" ,
-                    "sociology") # art, medicine linked but not included yet
-```
-
-```{r}
-# ## db connection
-con <- DBI::dbConnect(RSQLite::SQLite(), db_file)
-cat("The database connection is: \n")
-src_dbi(con)
+datapath <- "/mnt/ssd/linked_ids_temp/"
 ```
 
 
@@ -56,7 +29,7 @@ src_dbi(con)
 # missing fields: ""art, "chemistry", "geography", "history", "mathematics","medicine", "sociology"
 
 
-fields_to_process <- c("biology", "business", "computer science", "economics", "engineering", "environmental science", "geology", "materials science", "philosophy", "physics", "political science", "psychology")
+fields_to_process <- c("biology", "business", "computer science", "economics", "engineering", "environmental science", "geology", "history", "materials science", "philosophy", "physics", "political science", "psychology")
 
 # Loop through the fields
 
@@ -64,17 +37,22 @@ process_data <- function(field) {
   
   # Read the data for the specified field
   
-  links_graduates_mona <- read.csv(paste0("/mnt/ssd/linked_ids_temp/links_graduates_", field, "_mona_degree0_19852015.csv")) %>%
+  if (field %in% c("history")) {
+  links_graduates_mona <- read.csv(paste0(datapath,"links_graduates_", field, "_mona_degree0_19852015.csv")) %>%
+    rename(authorid_mona = AuthorId) %>%
+    rename(linkscore_mona=link_score)
+  } else {
+    links_graduates_mona <- read.csv(paste0(datapath,"/links_graduates_", field, "_mona_degree0_19852015.csv")) %>%
     rename(authorid_mona = grantid_authorposition) %>%
     rename(goid = AuthorId) %>%
     rename(linkscore_mona=link_score)
-
+}
   if (field %in% c("biology", "computer science","economics", "engineering", "environmental science", "geology", "physics", "political science", "psychology")) {
-  links_graduates_christoph <- read.csv(paste0("/mnt/ssd/linked_ids_temp/links_graduates_", field, "_christoph_fielddegree0.csv")) %>%
+  links_graduates_christoph <- read.csv(paste0(datapath,"links_graduates_", field, "_christoph_fielddegree0.csv")) %>%
     rename(authorid_christoph = AuthorId) %>%
     rename(linkscore_christoph=link_score) 
   } else {
-  links_graduates_christoph <- read.csv(paste0("/mnt/ssd/linked_ids_temp/links_graduates_", field, "_christoph_degree0_19852015.csv")) %>%
+  links_graduates_christoph <- read.csv(paste0(datapath,"links_graduates_", field, "_christoph_degree0_19852015.csv")) %>%
     rename(authorid_christoph = AuthorId) %>%
     rename(linkscore_christoph=link_score)     
   }    
@@ -111,14 +89,27 @@ links_graduates <- links_graduates %>%
     share_missing_chris = sum(is.na(bothlink) & chrislink == 0) / n_distinct(goid)
  ) 
 
-# Select the desired fields for the table
-shares_table <- links_graduates %>%
-  select(field, share_bothlink, share_sameauthor, share_diffauthor, share_missing)
+# Create table with the shares by field
+# Problem: not shown in pdf, ugly table here
 
-# To do: Display the table using kable: not yet working when using the loop
+shares_table  <- links_graduates %>%
+  select(field, share_bothlink, share_sameauthor, share_diffauthor, share_missing) %>%
+  group_by(field) %>%
+  summarize(
+    share_bothlink = mean(share_bothlink, na.rm = TRUE),
+    share_sameauthor = mean(share_sameauthor, na.rm = TRUE),
+    share_diffauthor = mean(share_diffauthor, na.rm = TRUE),
+    share_missing = mean(share_missing, na.rm = TRUE)
+  )
 
-cat(paste0("## ", field, ":\n"))
-kable(head(shares_table,1), format = "markdown")
+# Print the summary table in Markdown format (not shown in pdf, ugly here)
+
+cat(kable(shares_table, format = "markdown",
+           align = c("l", "c", "c", "c", "c"), # Align columns (left, center, center, center, center)
+           caption = "Share Statistics by Field", # Table caption
+           digits = 4, # Number of digits to display for numeric values
+           booktabs = TRUE # Use booktabs style for the table
+           ))
 
 # Select the shares for the bar chart: total number of goids as base
 
@@ -152,11 +143,9 @@ for (field in fields_to_process) {
   cat("\n\n")
 }  
 ```
-
-
-
-```{r, include = FALSE}
-DBI::dbDisconnect(con)
-```
-
+------------
+- many missings between Christoph's and Mona's links
+- share of Mona's links compared to Christoph's links low (share_bothlink) but mostly due to missings and different author assignment 
+- in most fields, goids linked to the same authors, only few that were linked to different ones
+- exception in physics, most authors linked differently, why? (no obvious mistakes when renaming variables and joining the datasets)
 
