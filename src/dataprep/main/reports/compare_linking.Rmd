@@ -1,0 +1,129 @@
+---
+title: "Compare Linking across linking runs"
+author: "Christoph, Flavio, Mona"
+date: "2023-07-23"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+datapath <- "/mnt/ssd/linked_ids_temp/"
+packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "ggplot2", 
+              "stringdist", "knitr", "bit64", "kableExtra") 
+
+lapply(packages, library, character.only = TRUE)
+
+```
+
+
+## Linking Advisors and Graduates from ProQuest to MAG AuthorIds
+
+To check whether the linking makes sense we compare the links across several independent runs of the labelling. 
+
+```{r comparison function, include = FALSE}
+
+compare <- function(field, linktype, linker1, linker2, years){
+  
+  if (linktype=="advisors"){
+      col_names1 = c("pqid","AuthorId_1","link_score_1")
+      col_names2 = c("pqid","AuthorId_2","link_score_2")
+  } else {
+      col_names1 = c("AuthorId_1","pqid","link_score_1")
+      col_names2 = c("AuthorId_2","pqid","link_score_2")
+    
+  }
+  
+  file1 = paste0(datapath,"links_",linktype,"_", field, "_",linker1,"_degree0_",years,".csv")
+  file1 <- ifelse(file.exists(file1), file1, 
+                   paste0(datapath,"links_",linktype,"_", field, "_",linker1,"_fielddegree0.csv"))
+  
+  links_1 <- read_csv(file1, 
+                      skip=1, 
+                      col_names=col_names1,
+                      col_types=list(col_character(), 
+                                     col_character(), 
+                                     col_double())) %>% filter(link_score_1>0.7)
+  
+  file2 = paste0(datapath,"links_",linktype,"_", field, "_",linker2,"_degree0_",years,".csv")
+  file2 <- ifelse(file.exists(file2), file2, 
+                   paste0(datapath,"links_",linktype,"_", field, "_",linker2,"_fielddegree0.csv"))
+  
+  links_2 <- read_csv(file2, 
+                      skip=1, 
+                      col_names=col_names2,
+                      col_types=list(col_character(), 
+                                     col_character(), 
+                                     col_double()))%>% filter(link_score_2>0.7)
+
+ 
+  
+  links <- full_join(links_1, links_2, by="pqid") 
+  
+  links <- links %>% mutate(
+                  samelink = (AuthorId_1==AuthorId_2)&!is.na(AuthorId_1),
+                  link1 = !is.na(AuthorId_1),
+                  link2 = !is.na(AuthorId_2),
+                  link_only1 = !is.na(AuthorId_1)&is.na(AuthorId_2),
+                  link_only2 = !is.na(AuthorId_2)&is.na(AuthorId_1),
+                  bothlink = !is.na(AuthorId_1)&!is.na(AuthorId_2),
+                  difflink = (AuthorId_1!=AuthorId_2)&bothlink
+                  )
+  
+  shares <- links %>% summarize(same = sum(samelink, na.rm=TRUE)/n_distinct(pqid),
+                                only1 = mean(link_only1),
+                                only2 = mean(link_only2),
+                                diff = mean(difflink),
+                                diff_rel1 = sum(difflink*link1)/sum(link1),
+                                nlink1 = n_distinct(AuthorId_1),
+                                nlink2 = n_distinct(AuthorId_2)
+                                )
+
+  #print(paste("Field", field, " linktype ", linktype, "comparison for ", linker1, "and", linker2))
+  #print(shares)
+  return(shares %>% gather(variable, value))
+  }
+
+
+``` 
+
+### Comparison  for Graduates
+
+```{r comparison graduates, include=FALSE}
+fields_to_process <- c("biology", "business", "computer science", "economics", "engineering", "environmental science", "geology", "history", "materials science", "philosophy", "physics", "political science", "psychology")
+
+# Loop through the fields
+res <- lapply(fields_to_process, function(x) compare(x,  "graduates", "christoph", "mona", "19852015"))
+names(res) <- fields_to_process
+res <- map2(res, fields_to_process, ~ rename(.x, !!.y := value))
+
+```
+
+```{r comparison graduates table, include=TRUE}
+res_combined <- reduce(res, inner_join, by = "variable")
+
+res_combined %>%
+  mutate(across(where(is.numeric), round, digits = 2)) %>%  # this is an updated form of mutate_if()
+  kable(format = "latex", digits = 2, booktabs = TRUE) %>%
+  kable_styling(latex_options = c("striped", "scale_down"))
+
+```
+### Comparison  for Advisors
+```{r comparison advisors, include=FALSE}
+fields_to_process <- c("biology", "business", "computer science", "economics", "engineering", "environmental science", "geology", "history", "materials science", "philosophy", "physics", "political science", "psychology")
+
+# Loop through the fields
+res <- lapply(fields_to_process, function(x) compare(x,  "advisors", "christoph", "mona", "19902015"))
+names(res) <- fields_to_process
+res <- map2(res, fields_to_process, ~ rename(.x, !!.y := value))
+
+```
+
+```{r comparison advisors table, include=TRUE}
+res_combined <- reduce(res, inner_join, by = "variable")
+
+res_combined %>%
+  mutate(across(where(is.numeric), round, digits = 2)) %>%  # this is an updated form of mutate_if()
+  kable(format = "latex", digits = 2, booktabs = TRUE) %>%
+  kable_styling(latex_options = c("striped", "scale_down"))
+
+```
