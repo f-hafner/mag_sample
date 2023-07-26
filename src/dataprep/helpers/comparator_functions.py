@@ -220,6 +220,53 @@ def compare_range_from_tuple_tempfix(a, b):
 # NOTE: it is well possible that dedupe compares also records *within* data sets when doing a 
     # record-linking task--after all, it needs to block them eventually.
 
+# 3.1. compare start of range
+def compare_startrange_from_tuple(a, b):
+    """
+    Check whether start of a smaller than start of b
+
+    Parameters:
+    ----------
+    a, b : tuples of numbers. 
+    """
+    # print("comparing ranges..", flush=True)
+    # print(f"--a is {a}", flush=True)
+    # print(f"--b is {b}", flush=True)
+    if isinstance(a, tuple) and isinstance(b, tuple): 
+        mina = min(a)
+        minb = min(b)
+    else:
+        raise TypeError("a, b need to be tuples.")
+    
+    if (mina <= minb):
+        return mina-minb
+    else:
+        return 0
+
+
+# 3.2. compare end of range
+def compare_endrange_from_tuple(a, b):
+    """
+    Check whether end of a bigger than end of b
+
+    Parameters:
+    ----------
+    a, b : tuples of numbers. 
+    """
+    # print("comparing ranges..", flush=True)
+    # print(f"--a is {a}", flush=True)
+    # print(f"--b is {b}", flush=True)
+    if isinstance(a, tuple) and isinstance(b, tuple): 
+        maxa = max(a)
+        maxb = max(b)
+    else:
+        raise TypeError("a, b need to be tuples.")
+    
+    if (maxa >= maxb):
+        return maxa-maxb
+    else:
+        return 0
+
 # 4. Compare paper titles
 
 def year_title_comparator(x, y):

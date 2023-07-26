@@ -137,14 +137,18 @@ if __name__ == "__main__":
                 {"field": "firstname", "variable name": "firstname", "type": "String", "has missing": False},
                 {"field": "lastname", "variable name": "lastname", "type": "String", "has missing": False},
                 {"field": "middlename", "variable name": "middlename", "type": "String", "has missing": True},
-                {"field": "year_range", "variable name": "year_range", "type": "Custom", "comparator": cf.compare_range_from_tuple_tempfix, "has missing": True}
-            ]
+                {"field": "year_range", "variable name": "year_range", "type": "Custom", "comparator": cf.compare_range_from_tuple_tempfix, "has missing": True},
+                {"field": "year_range", "variable name": "year_range", "type": "Custom", "comparator": cf.compare_startrange_from_tuple, "has missing": True},
+                {"field": "year_range", "variable name": "year_range", "type": "Custom", "comparator": cf.compare_endrange_from_tuple, "has missing": True}
+            ] 
         elif args.linking_type == "grants":
             fields = [
                 {"field": "firstname", "variable name": "firstname", "type": "String", "has missing": False},
                 {"field": "lastname", "variable name": "lastname", "type": "String", "has missing": False},
                 {"field": "middlename", "variable name": "middlename", "type": "String", "has missing": True},
-                {"field": "year_range", "variable name": "year_range", "type": "Custom", "comparator": cf.compare_range_from_tuple_tempfix, "has missing": True}
+                {"field": "year_range", "variable name": "year_range", "type": "Custom", "comparator": cf.compare_range_from_tuple_tempfix, "has missing": True},
+                {"field": "year_range", "variable name": "year_range", "type": "Custom", "comparator": cf.compare_startrange_from_tuple, "has missing": True},
+                {"field": "year_range", "variable name": "year_range", "type": "Custom", "comparator": cf.compare_endrange_from_tuple, "has missing": True}
             ] 
      
         if args.institution == "True":
