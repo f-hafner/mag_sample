@@ -260,7 +260,7 @@ if __name__ == "__main__":
     analyze_db(write_con)
 
     if args.write_to == "csv":
-        print("Copying to csv (just linking info, links done directly to csv)...", flush=True)
+        print("Copying to csv...", flush=True)
         # need both the linked_ids table and the linking_info 
             # the iteration id will need to be added separately when writing to db 
 
