@@ -480,8 +480,19 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
             FROM pq_info_linking
         ) USING(goid) 
         INNER JOIN (
-            SELECT university_id, normalizedname as institution
-            FROM pq_unis --## mark: previously we linked advisors anywhere in the world (as career outcomes). for now, focus on US
+            SELECT university_id, cng_institutions.normalizedname as institution
+            FROM pq_unis
+            INNER JOIN (
+                SELECT from_id, unitid
+                FROM links_to_cng
+                WHERE from_dataset = "pq"
+            ) AS cng_links
+            ON university_id = from_id
+            INNER JOIN (
+                SELECT unitid, normalizedname
+                FROM cng_institutions
+            ) AS cng_institutions
+            USING(unitid)
             WHERE location like "%United States%"
         ) USING(university_id)
         {where_stmt_pq}
