@@ -13,6 +13,12 @@ packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "ggplot2",
 
 lapply(packages, library, character.only = TRUE)
 
+datapath <- "/mnt/ssd/"
+db_file  <- paste0(datapath, "AcademicGraph/AcademicGraph.sqlite")
+con <- DBI::dbConnect(RSQLite::SQLite(), db_file)
+cat("The database connection is: \n")
+src_dbi(con)
+
 ```
 
 ## Linking Advisors and Graduates from ProQuest to MAG AuthorIds
@@ -30,8 +36,9 @@ compare <- function(field, linktype, linker1, linker2, years){
       col_names1 = c("AuthorId_1","pqid","link_score_1")
       col_names2 = c("AuthorId_2","pqid","link_score_2") 
   }
-  file1 = paste0(datapath,"links_",linktype,"_", field, "_",linker1,"_",years,".csv")
-  file2 = paste0(datapath,"links_",linktype,"_", field, "_",linker2,"_",years,".csv")  
+  
+  file1 = paste0(datapath,"linked_ids_temp/links_",linktype,"_", field, "_",linker1,"_",years,".csv")
+  file2 = paste0(datapath,"linked_ids_temp/links_",linktype,"_", field, "_",linker2,"_",years,".csv")  
   file1 <- ifelse(file.exists(file1), file1, 
                  paste0(datapath,"links_",linktype,"_", field, "_",str_replace(linker1, "_degree0", ""),"_fielddegree0.csv"))
   file2 <- ifelse(file.exists(file2), file2, 
@@ -45,7 +52,7 @@ compare <- function(field, linktype, linker1, linker2, years){
                                      col_character(), 
                                      col_double())) %>% filter(link_score_1>0.7)
   
-  
+
   links_2 <- read_csv(file2, 
                       skip=1, 
                       col_names=col_names2,
@@ -67,21 +74,37 @@ compare <- function(field, linktype, linker1, linker2, years){
                   difflink = (AuthorId_1!=AuthorId_2)&bothlink
                   ) # check that NA is correct or if "" is in there
   
+  
+  ids1 <- links %>% select(AuthorId=AuthorId_1) %>% drop_na() %>% pull(AuthorId)
+  ids2 <- links %>% select(AuthorId=AuthorId_2) %>% drop_na() %>% pull(AuthorId)
+  ids <- union(ids1, ids2)  
+ # load NormalizedName of AuthorId_1 and AuthorId_2
+  author_names <- tbl(con,
+                    sql("select AuthorId, NormalizedName, PaperCount from Authors")) 
+  links <- author_names %>% right_join(links, by=c("AuthorId" = "AuthorId_1"), copy=TRUE) %>% rename(NormalizedName_1=NormalizedName, PaperCount_1 = PaperCount) %>% rename(AuthorId_1=AuthorId)
+  links <- links %>% collect() 
+   links <- author_names %>% right_join(links, by=c("AuthorId" = "AuthorId_2"), copy=TRUE) %>% rename(NormalizedName_2=NormalizedName, PaperCount_2 = PaperCount) %>%  rename(AuthorId_2=AuthorId)
+  links <- links %>% collect() 
+  
+
+  links <- links %>% mutate(namedist = stringdist(NormalizedName_1, NormalizedName_2, method="jw"))
+ 
   shares <- links %>% summarize(same = sum(samelink, na.rm=TRUE)/n_distinct(pqid),
                                 only1 = mean(link_only1),
                                 only2 = mean(link_only2),
                                 diff = mean(difflink),
                                 diff_rel1 = sum(difflink*link1)/sum(link1),
                                 nlink1 = n_distinct(AuthorId_1),
-                                nlink2 = n_distinct(AuthorId_2)
+                                nlink2 = n_distinct(AuthorId_2),
+                                namedist = mean(namedist * difflink, na.rm=TRUE)/mean(difflink)
                                 )
-
+  
   #print(paste("Field", field, " linktype ", linktype, "comparison for ", linker1, "and", linker2))
   #print(shares)
   return(shares %>% gather(variable, value))
   }
 
-
+ 
 ```
 
 ### Which fields and which linking runs to compare?
@@ -148,4 +171,79 @@ res_combined_advisors %>%
 
 res_combined_advisors %>%
   mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>% View()
+
+```
+
+# Compare names manually
+
+```{r}
+ 
+field="economics"
+linktype="advisors"
+
+if (linktype=="advisors"){
+    col_names1 = c("pqid","AuthorId_1","link_score_1")
+    col_names2 = c("pqid","AuthorId_2","link_score_2")
+} else {
+    col_names1 = c("AuthorId_1","pqid","link_score_1")
+    col_names2 = c("AuthorId_2","pqid","link_score_2") 
+}
+
+file1 = paste0(datapath,"linked_ids_temp/links_",linktype,"_", field, "_",linker1,"_",years,".csv")
+file2 = paste0(datapath,"linked_ids_temp/links_",linktype,"_", field, "_",linker2,"_",years,".csv")  
+file1 <- ifelse(file.exists(file1), file1, 
+               paste0(datapath,"links_",linktype,"_", field, "_",str_replace(linker1, "_degree0", ""),"_fielddegree0.csv"))
+file2 <- ifelse(file.exists(file2), file2, 
+               paste0(datapath,"links_",linktype,"_", field, "_",str_replace(linker2, "_degree0", ""),"_fielddegree0.csv"))
+
+
+links_1 <- read_csv(file1, 
+                    skip=1, 
+                    col_names=col_names1,
+                    col_types=list(col_character(), 
+                                   col_character(), 
+                                   col_double())) %>% filter(link_score_1>0.7)
+
+
+links_2 <- read_csv(file2, 
+                    skip=1, 
+                    col_names=col_names2,
+                    col_types=list(col_character(), 
+                                   col_character(), 
+                                   col_double()))%>% filter(link_score_2>0.7)
+
+
+
+links <- full_join(links_1, links_2, by="pqid") 
+
+links <- links %>% mutate(
+                samelink = (AuthorId_1==AuthorId_2)&!is.na(link_score_1),
+                link1 = !is.na(link_score_1),
+                link2 = !is.na(link_score_2),
+                link_only1 = !is.na(link_score_1)&is.na(link_score_2),
+                link_only2 = !is.na(link_score_2)&is.na(link_score_1),
+                bothlink = !is.na(link_score_1)&!is.na(link_score_2),
+                difflink = (AuthorId_1!=AuthorId_2)&bothlink
+                ) # check that NA is correct or if "" is in there
+
+
+ids1 <- links %>% select(AuthorId=AuthorId_1) %>% drop_na() %>% pull(AuthorId)
+ids2 <- links %>% select(AuthorId=AuthorId_2) %>% drop_na() %>% pull(AuthorId)
+ids <- union(ids1, ids2)  
+# load NormalizedName of AuthorId_1 and AuthorId_2
+author_names <- tbl(con,
+                  sql("select AuthorId, NormalizedName, PaperCount from Authors")) 
+links <- author_names %>% right_join(links, by=c("AuthorId" = "AuthorId_1"), copy=TRUE) %>% rename(NormalizedName_1=NormalizedName, PaperCount_1 = PaperCount) %>% rename(AuthorId_1=AuthorId)
+links <- links %>% collect() 
+ links <- author_names %>% right_join(links, by=c("AuthorId" = "AuthorId_2"), copy=TRUE) %>% rename(NormalizedName_2=NormalizedName, PaperCount_2 = PaperCount) %>%  rename(AuthorId_2=AuthorId)
+links <- links %>% collect() 
+
+
+links <- links %>% mutate(namedist = stringdist(NormalizedName_1, NormalizedName_2, method="jw"))
+
+View(links %>% filter(difflink==1) %>% select(starts_with("Normalized"), namedist, starts_with("Paper"), starts_with("link_score")))
+```
+
+```{r, include = FALSE}
+DBI::dbDisconnect(con)
 ```
