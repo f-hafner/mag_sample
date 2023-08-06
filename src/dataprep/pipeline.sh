@@ -64,8 +64,6 @@ python3 $script_path/prep_mag/paper_outcomes.py &> $logfile_path/paper_outcomes.
 
 # TODO: add here venue_citations
 
-python3 $script_path/prep_mag/author_info_linking.py --years_first_field 7 \
-    &> $logfile_path/author_info_linking.log
 
 python -m $script_path.prep_mag.author_field0 \
     &> $logfile_path/author_field0.log
@@ -86,6 +84,11 @@ python -m $script_path.load_proquest.proquest_to_db &> \
 
 python -m $script_path.load_proquest.correspond_fieldofstudy &> \
     $logfile_path/correspond_fieldofstudy.log
+
+# moved this down because we need the output from `clean_link_institutions` here
+python3 -m $script_path.prep_mag.author_info_linking \
+    --years_first_field 7 \
+    &> $logfile_path/author_info_linking.log
 
 python -m $script_path.load_proquest.pq_author_info_linking &> \
     $logfile_path/pq_author_info_linking.log
