@@ -78,16 +78,50 @@ compare <- function(field, linktype, linker1, linker2, years){
   ids1 <- links %>% select(AuthorId=AuthorId_1) %>% drop_na() %>% pull(AuthorId)
   ids2 <- links %>% select(AuthorId=AuthorId_2) %>% drop_na() %>% pull(AuthorId)
   ids <- union(ids1, ids2)  
- # load NormalizedName of AuthorId_1 and AuthorId_2
-  author_names <- tbl(con,
-                    sql("select AuthorId, NormalizedName, PaperCount from Authors")) 
-  links <- author_names %>% right_join(links, by=c("AuthorId" = "AuthorId_1"), copy=TRUE) %>% rename(NormalizedName_1=NormalizedName, PaperCount_1 = PaperCount) %>% rename(AuthorId_1=AuthorId)
-  links <- links %>% collect() 
-   links <- author_names %>% right_join(links, by=c("AuthorId" = "AuthorId_2"), copy=TRUE) %>% rename(NormalizedName_2=NormalizedName, PaperCount_2 = PaperCount) %>%  rename(AuthorId_2=AuthorId)
-  links <- links %>% collect() 
-  
 
-  links <- links %>% mutate(namedist = stringdist(NormalizedName_1, NormalizedName_2, method="jw"))
+ # load NormalizedName of AuthorId_1 and AuthorId_2
+  query <- paste0(
+    "SELECT AuthorId, NormalizedName, PaperCount 
+    FROM Authors
+    WHERE AuthorId IN (", 
+    paste0(ids, collapse = ","),
+    ") "
+  )
+  
+  author_names <- tbl(con, sql(query)) |>
+    collect() |>
+    mutate(AuthorId = as.character(AuthorId))
+
+
+  links <- author_names %>% 
+    right_join(links, by=c("AuthorId" = "AuthorId_1")) %>% 
+    rename(NormalizedName_1=NormalizedName, PaperCount_1 = PaperCount) %>% 
+    rename(AuthorId_1=AuthorId)
+  
+  links <- author_names %>% 
+   right_join(links, by=c("AuthorId" = "AuthorId_2")) %>% 
+   rename(NormalizedName_2=NormalizedName, PaperCount_2 = PaperCount) %>%  
+   rename(AuthorId_2=AuthorId)
+  
+  # load name from PQ
+  pq_ids <- links |> pull(pqid) |> unique()
+  query <- paste0(
+    "SELECT relationship_id as pqid
+     , firstname || ' ' || lastname as normalizedname_pq
+    FROM pq_advisors 
+    WHERE relationship_id IN (",
+    paste0(paste0("'", pq_ids, "'"), collapse = ","),
+    ")"
+  )
+  pq_names <- tbl(con, sql(query)) |>
+    collect()
+
+  links <- links |> 
+    left_join(pq_names, by = "pqid") 
+  links <- links %>% 
+    mutate(namedist = stringdist(NormalizedName_1, NormalizedName_2, method="jw"),
+           namedist_pq_1 = stringdist(NormalizedName_1, normalizedname_pq, method = "jw"),
+           namedist_pq_2 = stringdist(NormalizedName_2, normalizedname_pq, method = "jw"))
  
   shares <- links %>% summarize(same = sum(samelink, na.rm=TRUE)/n_distinct(pqid),
                                 only1 = mean(link_only1),
@@ -96,7 +130,9 @@ compare <- function(field, linktype, linker1, linker2, years){
                                 diff_rel1 = sum(difflink*link1)/sum(link1),
                                 nlink1 = n_distinct(AuthorId_1),
                                 nlink2 = n_distinct(AuthorId_2),
-                                namedist = mean(namedist * difflink, na.rm=TRUE)/mean(difflink)
+                                namedist = mean(namedist * difflink, na.rm=TRUE)/mean(difflink),
+                                namedist_pq_1 = mean(namedist_pq_1 * difflink, na.rm=TRUE)/mean(difflink),
+                                namedist_pq_2 = mean(namedist_pq_2 * difflink, na.rm=TRUE)/mean(difflink)
                                 )
   
   #print(paste("Field", field, " linktype ", linktype, "comparison for ", linker1, "and", linker2))
