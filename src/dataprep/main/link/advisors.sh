@@ -2,7 +2,7 @@
 
 logfile_path=$1
 RECALL=0.9
-train_name="${USER}_degree0_with_protocol_updated"
+train_name="${USER}_with_protocol_cleaninst"
 keywords=False
 fieldofstudy_cat=False 
 fieldofstudy_str=False 
@@ -26,6 +26,9 @@ fields=("art"
     "political science"
     "psychology" 
     "sociology")
+fields=("economics"
+    "mathematics"
+    "physics")
 
 
 for i in "${!fields[@]}"; do     
