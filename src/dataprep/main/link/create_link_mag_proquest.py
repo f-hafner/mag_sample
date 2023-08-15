@@ -111,7 +111,7 @@ if __name__ == "__main__":
     elif args.linking_type == "advisors": # this is important: we link many theses in proquest to one record on mag 
         pairs = linker.pairs(data_1 = otherdata, data_2 = magdata)
     elif args.linking_type == "grants":
-        pairs = linker.pairs(data_1 = magdata, data_2 = otherdata)
+        pairs = linker.pairs(data_1 = otherdata, data_2 = magdata)
     
     print("made pairs", flush=True)
     scores = linker.score(pairs)
@@ -176,16 +176,45 @@ if __name__ == "__main__":
     # HERE FLAVIO DELETED LINKS FROM OLD RUNS. SEE link_mag_proquest.py if you want to readd it.
     # ### Write links 
     print("Filling links into db...", flush=True)
-    links = [(i[0][0], i[0][1], i[1], iteration_id) for i in links]
     
-    write_con.executemany(
-        f"INSERT INTO {tbl_linked_ids} VALUES (?, ?, ?, ?)",
-       # tupelize_links(links, iteration_id)
-       links
-    )
-    write_con.commit()
+    if args.write_to == "csv":
+        # TODO: DELETE THIS FIRST PART OR ADAPT TO CSV WRITER
+        #   links = [(i[0][0], i[0][1], i[1]) for i in links]
+        #print(links[1:5])
+        # filename = path_temp_files + "links" + file_suffix + ".csv"
+        # with open(filename, "w") as csv_file:
+        #     print("opened csv file...", flush=True)
+        #     writer = csv.writer(csv_file, delimiter=',')
+        #     writer.writerow(["grantid_authorposition","AuthorId","link_score"]) 
+        #     print("wrote header to csv file...", flush=True)
+        #     #writer.writerows(links) 
+        #     for link in links:
+        #         writer.writerow((link[0][0], link[0][1], link[1]))
+        
+        # print("Filled links into csv...", flush=True)
 
-    print("Filled links into db...", flush=True)
+        counter = 1 
+        for link in links:
+            counter = counter + 1
+            write_con.execute(
+                f"INSERT INTO {tbl_linked_ids} VALUES (?, ?, ?, ?)",
+            # tupelize_links(links, iteration_id)
+            (link[0][0], link[0][1], link[1], iteration_id)
+            )
+            if counter % 10000 == 0:
+                write_con.commit()
+
+        write_con.commit()       
+        print("Filled links into db iteratively...", flush=True)
+    else:
+        links = [(i[0][0], i[0][1], i[1], iteration_id) for i in links] # XXX this will fail for large fields, need to iterate the insert into the db
+        write_con.executemany(
+            f"INSERT INTO {tbl_linked_ids} VALUES (?, ?, ?, ?)",
+        # tupelize_links(links, iteration_id)
+        links
+        )
+        write_con.commit()
+        print("Filled links into db...", flush=True)
 
     # ### Write iteration info
     current_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -240,8 +269,8 @@ if __name__ == "__main__":
 
         data_to_write = {
             "links": pd.read_sql(
-                con=write_con,
-                sql=f"select * from {tbl_linked_ids}"),
+                 con=write_con,
+                 sql=f"select * from {tbl_linked_ids}"),
             "linking_info": pd.read_sql(
                 con=write_con, 
                 sql=f"select * from {tbl_linking_info}")

@@ -2,7 +2,7 @@
 
 logfile_path=$1
 RECALL=0.9
-train_name="${USER}_degree0"
+train_name="${USER}_with_protocol_cleaninst"
 keywords=False
 fieldofstudy_cat=False 
 fieldofstudy_str=False 

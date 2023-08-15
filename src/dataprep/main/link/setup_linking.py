@@ -13,7 +13,7 @@ import pandas as pd
 from datetime import datetime
 from tqdm import tqdm
 import sqlite3 as sqlite
-
+import csv 
 import dedupe
 import dedupe.backport
 from collections import OrderedDict
@@ -498,31 +498,32 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
         {where_stmt_pq}
         """
     elif args.linking_type == "grants":
+        # we do not condition on directorate here bc there is substantial overlap between fields and directorates
         # condition the nsf data on major directorate
-        fields_to_directorate = {
-            "geology": ["GEOSCIENCES"], 
-            "economics": ["SOCIAL, BEHAV & ECONOMIC SCIE"],
-            "engineering": ["ENGINEERING", "COMPUTER & INFO SCIE & ENGINR"],
-            "physics": ["MATHEMATICAL & PHYSICAL SCIEN"], 
-            "chemistry": ["MATHEMATICAL & PHYSICAL SCIEN"],
-            "mathematics": ["MATHEMATICAL & PHYSICAL SCIEN"],
-            "biology": ["BIOLOGICAL SCIENCES"],
-            "psychology": ["SOCIAL, BEHAV & ECONOMIC SCIE"],
-            "sociology": ["SOCIAL, BEHAV & ECONOMIC SCIE"],
-            "computer science": ["COMPUTER & INFO SCIE & ENGINR"],
-            "environmental science": ["GEOSCIENCES"],
-            "political science": ["SOCIAL, BEHAV & ECONOMIC SCIE"],
-            "geography": ["GEOSCIENCES"]
-        }
+        # fields_to_directorate = {
+        #     "geology": ["GEOSCIENCES"], 
+        #     "economics": ["SOCIAL, BEHAV & ECONOMIC SCIE"],
+        #     "engineering": ["ENGINEERING", "COMPUTER & INFO SCIE & ENGINR"],
+        #     "physics": ["MATHEMATICAL & PHYSICAL SCIEN"], 
+        #     "chemistry": ["MATHEMATICAL & PHYSICAL SCIEN"],
+        #     "mathematics": ["MATHEMATICAL & PHYSICAL SCIEN"],
+        #     "biology": ["BIOLOGICAL SCIENCES"],
+        #     "psychology": ["SOCIAL, BEHAV & ECONOMIC SCIE"],
+        #     "sociology": ["SOCIAL, BEHAV & ECONOMIC SCIE"],
+        #     "computer science": ["COMPUTER & INFO SCIE & ENGINR"],
+        #     "environmental science": ["GEOSCIENCES"],
+        #     "political science": ["SOCIAL, BEHAV & ECONOMIC SCIE"],
+        #     "geography": ["GEOSCIENCES"]
+        # }
         
-        # check if filed not found in crosswalk -- field may be a list (!)
-        if not any([f in fields_to_directorate.keys() for f in field]):
-            print(f"Exiting: no directorate defined for any of current fields. Current fields are: {field}")
-            exit()
+        # # check if filed not found in crosswalk -- field may be a list (!)
+        # if not any([f in fields_to_directorate.keys() for f in field]):
+        #     print(f"Exiting: no directorate defined for any of current fields. Current fields are: {field}")
+        #     exit()
 
-        directorates = [i for f in field for i in fields_to_directorate[f]]
-        directorates = set(directorates)
-        directorates = f"('{', '.join(directorates)}')"
+        # directorates = [i for f in field for i in fields_to_directorate[f]]
+        # directorates = set(directorates)
+        # directorates = f"('{', '.join(directorates)}')"
 
         query_nsf = f"""
         SELECT a.GrantID || "_" || c.author_position as grantid_authorposition
@@ -550,9 +551,11 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
         USING (GrantID)
         WHERE AWARD_TranType = 'grant' AND AWARD_Agency = 'nsf' 
             AND a.AwardInstrument_Value IN ('standard grant', 'continuing grant')
-            AND a.Organization_Directorate_ShortName IN {directorates}
             AND c.lastname != 'data not available'
             AND CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) >= {args.startyear}
             AND CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) <= {args.endyear}
             AND b.institution != "travel award"
         """
+
+# deleted in 542 to use all fields for linking: AND a.Organization_Directorate_ShortName IN {directorates}
+# adjust endyear for grants?

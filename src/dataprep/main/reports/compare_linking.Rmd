@@ -1,0 +1,291 @@
+---
+title: "Compare Linking across linking runs"
+author: "Christoph, Flavio, Mona"
+date: "2023-07-23"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+datapath <- "/mnt/ssd/linked_ids_temp/"
+packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "ggplot2", 
+              "stringdist", "knitr", "bit64", "kableExtra") 
+
+lapply(packages, library, character.only = TRUE)
+
+datapath <- "/mnt/ssd/"
+db_file  <- paste0(datapath, "AcademicGraph/AcademicGraph.sqlite")
+con <- DBI::dbConnect(RSQLite::SQLite(), db_file)
+cat("The database connection is: \n")
+src_dbi(con)
+
+```
+
+## Linking Advisors and Graduates from ProQuest to MAG AuthorIds
+
+To check whether the linking makes sense we compare the links across several independent runs of the labelling.
+
+```{r comparison function, include = FALSE}
+
+compare <- function(field, linktype, linker1, linker2, years, inspect=FALSE){
+  
+  if (linktype=="advisors"){
+      col_names1 = c("pqid","AuthorId_1","link_score_1")
+      col_names2 = c("pqid","AuthorId_2","link_score_2")
+  } else {
+      col_names1 = c("AuthorId_1","pqid","link_score_1")
+      col_names2 = c("AuthorId_2","pqid","link_score_2") 
+  }
+  
+  file1 = paste0(datapath,"linked_ids_temp/links_",linktype,"_", field, "_",linker1,"_",years,".csv")
+  file2 = paste0(datapath,"linked_ids_temp/links_",linktype,"_", field, "_",linker2,"_",years,".csv")  
+  file1 <- ifelse(file.exists(file1), file1, 
+                 paste0(datapath,"linked_ids_temp/links_",linktype,"_", field, "_",str_replace(linker1, "_degree0", ""),"_fielddegree0.csv"))
+  file2 <- ifelse(file.exists(file2), file2, 
+                 paste0(datapath,"linked_ids_temp/links_",linktype,"_", field, "_",str_replace(linker2, "_degree0", ""),"_fielddegree0.csv"))
+
+  
+  links_1 <- read_csv(file1, 
+                      skip=1, 
+                      col_names=col_names1,
+                      col_types=list(col_character(), 
+                                     col_character(), 
+                                     col_double())) %>% filter(link_score_1>0.7)
+  
+
+  links_2 <- read_csv(file2, 
+                      skip=1, 
+                      col_names=col_names2,
+                      col_types=list(col_character(), 
+                                     col_character(), 
+                                     col_double()))%>% filter(link_score_2>0.7)
+
+ 
+  
+  links <- full_join(links_1, links_2, by="pqid") 
+  
+  links <- links %>% mutate(
+                  samelink = (AuthorId_1==AuthorId_2)&!is.na(link_score_1),
+                  link1 = !is.na(link_score_1),
+                  link2 = !is.na(link_score_2),
+                  link_only1 = !is.na(link_score_1)&is.na(link_score_2),
+                  link_only2 = !is.na(link_score_2)&is.na(link_score_1),
+                  bothlink = !is.na(link_score_1)&!is.na(link_score_2),
+                  difflink = (AuthorId_1!=AuthorId_2)&bothlink
+                  ) # check that NA is correct or if "" is in there
+  
+  
+  ids1 <- links %>% select(AuthorId=AuthorId_1) %>% drop_na() %>% pull(AuthorId)
+  ids2 <- links %>% select(AuthorId=AuthorId_2) %>% drop_na() %>% pull(AuthorId)
+  ids <- union(ids1, ids2)  
+
+ # load NormalizedName of AuthorId_1 and AuthorId_2
+  query <- paste0(
+    "SELECT AuthorId, NormalizedName, PaperCount 
+    FROM Authors
+    WHERE AuthorId IN (", 
+    paste0(ids, collapse = ","),
+    ") "
+  )
+  
+  author_names <- tbl(con, sql(query)) |>
+    collect() |>
+    mutate(AuthorId = as.character(AuthorId))
+
+
+  links <- author_names %>% 
+    right_join(links, by=c("AuthorId" = "AuthorId_1")) %>% 
+    rename(NormalizedName_1=NormalizedName, PaperCount_1 = PaperCount) %>% 
+    rename(AuthorId_1=AuthorId)
+  
+  links <- author_names %>% 
+   right_join(links, by=c("AuthorId" = "AuthorId_2")) %>% 
+   rename(NormalizedName_2=NormalizedName, PaperCount_2 = PaperCount) %>%  
+   rename(AuthorId_2=AuthorId)
+  if (linktype=="advisors"){
+  # load name from PQ
+  pq_ids <- links |> pull(pqid) |> unique()
+  query <- paste0(
+    "SELECT relationship_id as pqid
+     , firstname || ' ' || lastname as normalizedname_pq
+    FROM pq_advisors 
+    WHERE relationship_id IN (",
+    paste0(paste0("'", pq_ids, "'"), collapse = ","),
+    ")"
+  )
+  } else {
+  # load name from PQ
+  pq_ids <- links |> pull(pqid) |> unique()
+  query <- paste0(
+    "SELECT goid as pqid
+     , fullname as normalizedname_pq
+    FROM pq_authors 
+    WHERE goid IN (",
+    paste0(paste0("'", pq_ids, "'"), collapse = ","),
+    ")"
+  )
+  }
+  pq_names <- tbl(con, sql(query)) |>
+    collect() %>% mutate(pqid=as.character(pqid))
+
+  links <- links |> 
+    left_join(pq_names, by = "pqid") 
+  links <- links %>% 
+    mutate(namedist = stringdist(NormalizedName_1, NormalizedName_2, method="jw", p=0),
+           namedist_pq_1 = stringdist(NormalizedName_1, normalizedname_pq, method = "jw", p=0),
+           namedist_pq_2 = stringdist(NormalizedName_2, normalizedname_pq, method = "jw", p=0),
+           namedist_lv = stringdist(NormalizedName_1, NormalizedName_2, method="lv"),
+           namedist_lv_pq_1 = stringdist(NormalizedName_1, normalizedname_pq, method = "lv"),
+           namedist_lv_pq_2 = stringdist(NormalizedName_2, normalizedname_pq, method = "lv"),
+           namedist_qgram = stringdist(NormalizedName_1, NormalizedName_2, method="qgram"),
+           namedist_qgram_pq_1 = stringdist(NormalizedName_1, normalizedname_pq, method = "qgram"),
+           namedist_qgram_pq_2 = stringdist(NormalizedName_2, normalizedname_pq, method = "qgram"))
+ 
+  shares <- links %>% summarize(same = sum(samelink, na.rm=TRUE)/n_distinct(pqid),
+                                only1 = mean(link_only1),
+                                only2 = mean(link_only2),
+                                diff = mean(difflink),
+                                diff_rel1 = sum(difflink*link1)/sum(link1),
+                                nlink1 = n_distinct(AuthorId_1),
+                                nlink2 = n_distinct(AuthorId_2),
+                                namedist_pq_1 = sum(namedist_pq_1,
+                                                         na.rm=TRUE)/sum(link1),
+                                namedist_pq_2 = sum(namedist_pq_2,
+                                                         na.rm=TRUE)/sum(link2),
+                                namedist_diff = sum(namedist * difflink, na.rm=TRUE)/sum(difflink),
+                                namedist_diff_pq_1 = sum(namedist_pq_1 * difflink,
+                                                         na.rm=TRUE)/sum(difflink),
+                                namedist_diff_pq_2 = sum(namedist_pq_2 * difflink,
+                                                         na.rm=TRUE)/sum(difflink),
+                                namedist_pq_only1 = sum(namedist_pq_1 * link_only1,
+                                                        na.rm=TRUE)/sum(link_only1*!is.na(namedist_pq_1)),
+                                namedist_pq_only2 = sum(namedist_pq_2 * link_only1,
+                                                        na.rm=TRUE)/sum(link_only2*!is.na(namedist_pq_2))
+                                )
+  shares$field = field
+  shares <- shares %>% relocate(field)
+  #print(paste("Field", field, " linktype ", linktype, "comparison for ", linker1, "and", linker2))
+  #print(shares)
+  if (inspect){
+    return(links)
+  } else {
+  return(shares)
+  }
+}
+ 
+```
+
+### Which fields and which linking runs to compare?
+
+### Comparison for Graduates
+
+```{r comparison setup graduates, include=TRUE}
+fields_to_process <-c( #"art", <- dropped
+  "biology", 
+  "business",
+  "chemistry",
+  "computer science" ,
+  "economics",
+  "engineering",
+  "environmental science", 
+  "geography", 
+  "geology" ,
+  "history",
+  "materials science",
+  "mathematics",
+  #"medicine",   <- dropped
+  "philosophy",
+  "physics",
+  "political science",
+  "psychology" ,
+  "sociology")
+
+linker1 = "mona_degree0"
+linker2 = "christoph_degree0"
+```
+
+```{r comparison graduates, include=FALSE}
+
+# Loop through the fields
+res <- lapply(fields_to_process, function(x) compare(x,  "graduates", linker1, linker2, "19852015"))
+
+```
+
+```{r comparison graduates table, include=TRUE}
+res_combined_graduates <- reduce(res, rbind)
+
+res_combined_graduates %>%
+  mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>%  # this is an updated form of mutate_if()
+  kable(format = "latex", digits = 2, booktabs = TRUE) %>%
+  kable_styling(latex_options = c("striped", "scale_down"))
+
+#res_combined_graduates %>% mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>% View()
+```
+
+### Comparison for Advisors
+#### Christoph and Flavio with Protocol and cleaned institutions
+
+
+```{r comparison setup advisors, include=TRUE}
+
+fields_to_process <-c( #"art", <- dropped
+  "biology", 
+  "business",
+  "chemistry",
+  "computer science" ,
+  "economics",
+  "engineering",
+  "environmental science", 
+  "geography", 
+  "geology" ,
+  "history",
+  "materials science",
+  "mathematics",
+  #"medicine",   <- dropped
+  "philosophy",
+  "physics",
+  "political science",
+  "psychology" ,
+  "sociology")
+
+linker1 = "flavio_with_protocol_cleaninst" # flavio_with_protocol_cleaninst
+linker2 = "christoph_with_protocol_cleaninst" #christoph_degree0_with_protocol_updated
+```
+
+```{r comparison advisors, include=FALSE}
+
+# Loop through the fields
+res <- lapply(fields_to_process, function(x) compare(x,  "advisors", linker1, linker2 , "19902015"))
+
+```
+
+```{r comparison advisors table, include=TRUE}
+res_combined_advisors <- reduce(res, rbind)
+
+res_combined_advisors %>%
+  mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>%  # this is an updated form of mutate_if()
+  kable(format = "latex", digits = 2, booktabs = TRUE) %>%
+  kable_styling(latex_options = c("striped", "scale_down"))
+
+# res_combined_advisors %>%
+#   mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>% View()
+
+```
+
+# Compare names manually
+
+```{r}
+
+field="chemistry"
+linktype="advisors"
+years="19902015"
+
+links <- compare(field, linktype, linker1, linker2, years, inspect=TRUE)
+
+
+
+```
+
+```{r, include = FALSE}
+DBI::dbDisconnect(con)
+```

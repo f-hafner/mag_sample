@@ -1,0 +1,232 @@
+---
+title: "Combine Linking"
+author: "Christoph, Flavio"
+date: "2023-08-14"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+datapath <- "/mnt/ssd/linked_ids_temp/"
+packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "ggplot2", 
+              "stringdist", "knitr", "bit64", "kableExtra", "data.table") 
+
+lapply(packages, library, character.only = TRUE)
+
+datapath <- "/mnt/ssd/"
+db_file  <- paste0(datapath, "AcademicGraph/AcademicGraph.sqlite")
+con <- DBI::dbConnect(RSQLite::SQLite(), db_file)
+cat("The database connection is: \n")
+src_dbi(con)
+
+```
+
+## Linking Advisors and Graduates from ProQuest to MAG AuthorIds
+
+Take two linking runs and use decision rule to pick which links to use.
+
+```{r comparison function, include = FALSE}
+
+combine <- function(field, linktype, linker1, linker2, years, inspect=FALSE){
+  
+  if (linktype=="advisors"){
+      col_names1 = c("pqid","AuthorId_1","link_score_1")
+      col_names2 = c("pqid","AuthorId_2","link_score_2")
+  } else {
+      col_names1 = c("AuthorId_1","pqid","link_score_1")
+      col_names2 = c("AuthorId_2","pqid","link_score_2") 
+  }
+  
+  file1 = paste0(datapath,"linked_ids_temp/links_",linktype,"_", field, "_",linker1,"_",years,".csv")
+  file2 = paste0(datapath,"linked_ids_temp/links_",linktype,"_", field, "_",linker2,"_",years,".csv")  
+  file_info1 = paste0(datapath,"linked_ids_temp/linking_info_",linktype,"_", field, "_",linker1,"_",years,".csv")
+  file_info2 = paste0(datapath,"linked_ids_temp/linking_info_",linktype,"_", field, "_",linker2,"_",years,".csv")  
+  
+  linking_info <- read_csv(file_info1) %>% mutate(train_name="combined")
+  write_csv(linking_info, paste0(datapath, "linked_ids_temp/linking_info_",linktype,"_", field,"_combined_",years,".csv"))
+  
+  links_1 <- read_csv(file1, 
+                      skip=1, 
+                      col_names=col_names1,
+                      col_types=list(col_character(), 
+                                     col_character(), 
+                                     col_double())) %>% filter(link_score_1>0.7)
+  
+
+  links_2 <- read_csv(file2, 
+                      skip=1, 
+                      col_names=col_names2,
+                      col_types=list(col_character(), 
+                                     col_character(), 
+                                     col_double()))%>% filter(link_score_2>0.7)
+
+
+  
+  links <- full_join(links_1, links_2, by="pqid") 
+  
+  links <- links %>% mutate(
+                  samelink = (AuthorId_1==AuthorId_2)&!is.na(link_score_1),
+                  link1 = !is.na(link_score_1),
+                  link2 = !is.na(link_score_2),
+                  link_only1 = !is.na(link_score_1)&is.na(link_score_2),
+                  link_only2 = !is.na(link_score_2)&is.na(link_score_1),
+                  bothlink = !is.na(link_score_1)&!is.na(link_score_2),
+                  difflink = (AuthorId_1!=AuthorId_2)&bothlink
+                  ) # check that NA is correct or if "" is in there
+  
+  
+  ids1 <- links %>% select(AuthorId=AuthorId_1) %>% drop_na() %>% pull(AuthorId)
+  ids2 <- links %>% select(AuthorId=AuthorId_2) %>% drop_na() %>% pull(AuthorId)
+  ids <- union(ids1, ids2)  
+
+ # load NormalizedName of AuthorId_1 and AuthorId_2
+  query <- paste0(
+    "SELECT AuthorId, NormalizedName, PaperCount 
+    FROM Authors
+    WHERE AuthorId IN (", 
+    paste0(ids, collapse = ","),
+    ") "
+  )
+  
+  author_names <- tbl(con, sql(query)) |>
+    collect() |>
+    mutate(AuthorId = as.character(AuthorId))
+
+
+  links <- author_names %>% 
+    right_join(links, by=c("AuthorId" = "AuthorId_1")) %>% 
+    rename(NormalizedName_1=NormalizedName, PaperCount_1 = PaperCount) %>% 
+    rename(AuthorId_1=AuthorId)
+  
+  links <- author_names %>% 
+   right_join(links, by=c("AuthorId" = "AuthorId_2")) %>% 
+   rename(NormalizedName_2=NormalizedName, PaperCount_2 = PaperCount) %>%  
+   rename(AuthorId_2=AuthorId)
+  if (linktype=="advisors"){
+  # load name from PQ
+  pq_ids <- links |> pull(pqid) |> unique()
+  query <- paste0(
+    "SELECT relationship_id as pqid
+     , firstname || ' ' || lastname as normalizedname_pq
+    FROM pq_advisors 
+    WHERE relationship_id IN (",
+    paste0(paste0("'", pq_ids, "'"), collapse = ","),
+    ")"
+  )
+  } else {
+  # load name from PQ
+  pq_ids <- links |> pull(pqid) |> unique()
+  query <- paste0(
+    "SELECT goid as pqid
+     , fullname as normalizedname_pq
+    FROM pq_authors 
+    WHERE goid IN (",
+    paste0(paste0("'", pq_ids, "'"), collapse = ","),
+    ")"
+  )
+  }
+  pq_names <- tbl(con, sql(query)) |>
+    collect() %>% mutate(pqid=as.character(pqid))
+  
+  links <- links |> 
+    left_join(pq_names, by = "pqid") 
+  links <- links %>% 
+    mutate(namedist = stringdist(NormalizedName_1, NormalizedName_2, method="jw", p=0),
+           namedist_pq_1 = stringdist(NormalizedName_1, normalizedname_pq, method = "jw", p=0),
+           namedist_pq_2 = stringdist(NormalizedName_2, normalizedname_pq, method = "jw", p=0),
+           namedist_lv = stringdist(NormalizedName_1, NormalizedName_2, method="lv"),
+           namedist_lv_pq_1 = stringdist(NormalizedName_1, normalizedname_pq, method = "lv"),
+           namedist_lv_pq_2 = stringdist(NormalizedName_2, normalizedname_pq, method = "lv"),
+           namedist_qgram = stringdist(NormalizedName_1, NormalizedName_2, method="qgram"),
+           namedist_qgram_pq_1 = stringdist(NormalizedName_1, normalizedname_pq, method = "qgram"),
+           namedist_qgram_pq_2 = stringdist(NormalizedName_2, normalizedname_pq, method = "qgram"))
+ 
+  links <- data.table(links)
+  # if both linked to the same AuthorId, pick that ID
+  links[samelink==TRUE, AuthorId := AuthorId_1]
+  links[samelink==TRUE, link_score := link_score_1]
+    # if only 1 or 2 links use that ID, but only if name is almost identical
+  links[link_only1==TRUE & namedist_pq_1 < 0.1, AuthorId := AuthorId_1]
+  links[link_only1==TRUE & namedist_pq_1 < 0.1, link_score := link_score_1]
+  
+  links[link_only2==TRUE & namedist_pq_2 < 0.1, AuthorId := AuthorId_2]
+  links[link_only2==TRUE & namedist_pq_2 < 0.1, link_score := link_score_2]
+  
+  
+  # in case of difflink - check if they are potentially duplicates -> then pick the one with the overlapping career
+  # if they are not obvious duplicates -> NA
+  
+  #difflink to 1 or 2
+  #if 1 and 2 are matched to the almost identical name and one has many many more papers (e.g. 10 times)
+  #if 1 and 2 are matched to the almost identical name and one overlaps in activity with the dissertation year and     dissertation year -5
+  # difflink is often an issue of duplicates in MAG
+  # check if they have the almost same name
+  links[ ,difflink_samename := (difflink==TRUE) & (namedist < 0.01)]
+
+  links[(difflink_samename == TRUE)&(PaperCount_1>PaperCount_2*5), AuthorId := AuthorId_1]
+  links[(difflink_samename == TRUE)&(PaperCount_1>PaperCount_2*5), link_score := link_score_1]
+
+  links[(difflink_samename == TRUE)&(PaperCount_2>PaperCount_1*5), AuthorId := AuthorId_2]
+  links[(difflink_samename == TRUE)&(PaperCount_2>PaperCount_1*5), link_score := link_score_2]
+
+  if (linktype=="advisors"){
+    colnames(links)[colnames(links) == "pqid"] <- "relationship_id"  # Rename the column which was names "c"
+  }
+  links = links[,c("relationship_id", "AuthorId", "link_score")]
+  links = links[complete.cases(links)]
+    write_csv(linking_info, paste0(datapath, "linked_ids_temp/linking_info_",linktype,"_", field,"_combined_",years,".csv"))
+
+  fwrite(links, file=paste0(datapath, "linked_ids_temp/links_",linktype,"_", field,"_combined_",years,".csv"))
+  if (inspect){
+    return(links)
+  } 
+}
+ 
+
+
+```
+ 
+
+### Combine for Advisors
+#### Christoph and Flavio with Protocol and cleaned institutions
+
+
+```{r comparison setup advisors, include=TRUE}
+
+fields_to_process <-c( #"art", <- dropped
+  "biology",  
+  "business",
+  "chemistry",
+  "computer science" ,
+  "economics",
+  "engineering",
+  "environmental science", 
+  "geography", 
+  "geology" ,
+  "history",
+  "materials science",
+  "mathematics",
+  #"medicine",   <- dropped
+  "philosophy",
+  "physics",
+  "political science",
+  "psychology" ,
+  "sociology")
+
+linker1 = "flavio_with_protocol_cleaninst" 
+linker2 = "christoph_with_protocol_cleaninst"  
+```
+
+```{r combine advisors, include=FALSE}
+
+# Loop through the fields
+lapply(fields_to_process, function(x) combine(x,  "advisors", linker1, linker2 , "19902015"))
+```
+
+
+
+```{r, include = FALSE}
+DBI::dbDisconnect(con)
+```
+ 

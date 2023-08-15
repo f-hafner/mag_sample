@@ -83,12 +83,39 @@ def test_compare_range_from_tuple():
     with pytest.raises(TypeError, match="need to be tuples"):
         cf.compare_range_from_tuple(notuple, long)
 
+def test_compare_startrange_from_tuple():
+    short = (1990, )
+    long = (1995, 2005)
+    assert cf.compare_startrange_from_tuple(short, long) == -5, "wrong output"
+
+    short = (1999, )
+    long = (1995, 2005)
+    assert cf.compare_startrange_from_tuple(short, long) == 0, "wrong output"    
+
+    notuple = 3
+    with pytest.raises(TypeError, match="need to be tuples"):
+        cf.compare_startrange_from_tuple(notuple, long)
+
+def test_compare_endrange_from_tuple():
+    short = (1990, )
+    long = (1995, 2005)
+    assert cf.compare_endrange_from_tuple(short, long) == 0, "wrong output"
+
+    short = (2006, )
+    long = (1995, 2005)
+    assert cf.compare_endrange_from_tuple(short, long) == 1, "wrong output"    
+
+    notuple = 3
+    with pytest.raises(TypeError, match="need to be tuples"):
+        cf.compare_endrange_from_tuple(notuple, long)
+
 def test_compare_range_from_tuple_tempfix(capfd):
     long1 = (1995, 2005)
     long2 = (2000, 2010)
     assert cf.compare_range_from_tuple_tempfix(long1, long2) is None 
     out, err = capfd.readouterr()
     assert "error occurred" in out
+
 
 
 thesis_title = ["a dissertation about my favorized topics"]

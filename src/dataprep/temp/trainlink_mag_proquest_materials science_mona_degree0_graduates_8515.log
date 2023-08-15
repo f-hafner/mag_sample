@@ -1,0 +1,853 @@
+Namespace(testing=False, verbose=1, field=['materials science'], train_name='mona_degree0', startyear=1985, endyear=2015, loadstartyear=1985, loadendyear=2015, mergemode='1:1', recall=0.9, institution='False', fieldofstudy_cat='False', fieldofstudy_str='False', keywords='True', retrain='True', linking_type='graduates', samplesize=50000, write_to='database')
+Have max 12 cores available
+Testing is False 
+
+I set the write connection to the main database.
+id_field is [192562407] and will be passed to sql queries.
+finished setup ... 
+Time elapsed: 0.0019127408663431804 minutes 
+
+
+    SELECT goid
+            , year
+            , firstname 
+            , lastname
+            , CASE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                WHEN 
+                    "" THEN NULL 
+                    ELSE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                END AS middlename
+            , fieldofstudy
+            , keywords
+            , institution
+            , coauthors
+            , year_papertitle
+    FROM (
+        SELECT goid
+            , degree_year AS year 
+            , fullname 
+            , SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) AS firstname
+            , REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "") AS lastname 
+            , TRIM(SUBSTR(fullname, length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1)) + 1)) AS middle_lastname 
+            , length(fullname) AS l_fullname 
+            , length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) ) AS l_firstname
+            , length(REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "")) AS l_lastname
+            , fieldname AS fieldofstudy
+            , university_id
+            , degree_year || "//" || thesistitle as year_papertitle 
+        FROM pq_authors 
+        INNER JOIN (
+            SELECT goid, fieldname 
+            FROM pq_fields_mag
+            WHERE mag_field0 IN (?)
+        ) USING (goid)
+    )
+    -- ## NOTE: use left join here as not all graduates have advisor (particularly pre-1980) and possibly also keywords
+    LEFT JOIN (
+        SELECT goid
+            , fields as keywords
+            , advisors as coauthors
+        FROm pq_info_linking
+    ) USING(goid)
+    INNER JOIN (
+        SELECT university_id, normalizedname as institution
+        FROM pq_unis
+        WHERE location like "%United States%"
+    ) USING(university_id)
+    WHERE year >= 1985 and year <= 2015 AND length(firstname) > 1
+     
+
+
+    SELECT f.AuthorId
+        , f.year
+        , f.firstname
+        , f.lastname
+        , CASE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            WHEN 
+                "" THEN NULL 
+                ELSE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            END as middlename 
+            -- ## NOTE this gives "" for middlename when it is missing 
+        , f.fieldofstudy
+        , g.keywords
+        , g.coauthors
+        , g.institution
+        , g.year_papertitle
+    FROM (
+        SELECT a.AuthorId
+            , a.YearFirstPub AS year
+            , a.FirstName AS firstname
+            , REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "") AS lastname 
+                    -- https://stackoverflow.com/questions/21388820/how-to-get-the-last-index-of-a-substring-in-sqlite
+            , TRIM(SUBSTR(b.NormalizedName, length(a.FirstName) + 1)) AS middle_lastname 
+                    -- this gives all except the first name 
+            , length(b.NormalizedName) as l_fullname 
+            , length(a.FirstName) as l_firstname
+            , length(REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "")) as l_lastname
+            , e.NormalizedName AS fieldofstudy
+        FROM author_sample AS a
+        INNER JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM Authors
+        ) AS b USING(AuthorId)
+        INNER JOIN (
+            SELECT AuthorId
+            FROM author_field0
+            WHERE FieldOfStudyId_lvl0 IN (?)
+                AND Degree <= 0
+        ) USING(AuthorId)
+        LEFT JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM author_fields c
+            INNER JOIN (
+                SELECT FieldOfStudyId, NormalizedName
+                FROM FieldsOfStudy
+            ) AS d USING(FieldOfStudyId)
+            -- ## Condition on fieldofstudy being in the level 0 id_field
+            INNER JOIN (
+                SELECT ParentFieldOfStudyId, ChildFieldOfStudyId
+                FROM crosswalk_fields
+                WHERE ParentLevel = 0
+                    AND ParentFieldOfStudyId IN (?)
+            ) AS e ON (e.ChildFieldOfStudyId = c.FieldOfStudyId)
+            WHERE FieldClass = 'first'
+        ) AS e USING(AuthorId)
+    ) f
+    LEFT JOIN (
+        SELECT AuthorId
+                , institutions as institution
+                , main_us_institutions_career
+                , coauthors
+                , keywords
+                , year_papertitle
+        FROM author_info_linking
+    ) AS g USING(AuthorId)
+    WHERE length(firstname) > 1 AND year >= 1985 - 5 AND year <= 2015 + 5 
+        -- ## use this to condition on people that have at least at some point their main affiliation in the US
+        AND g.main_us_institutions_career IS NOT NULL
+        AND g.institution != "chinese academy of sciences"
+     
+
+/home/mona/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/sklearn/feature_extraction/text.py:544: UserWarning: The parameter 'ngram_range' will not be used since 'analyzer' is callable'
+  warnings.warn(
+/home/mona/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/sklearn/feature_extraction/text.py:550: UserWarning: The parameter 'stop_words' will not be used since 'analyzer' != 'word'
+  warnings.warn(
+Time elapsed: 680.9149880647659 minutes 
+
+Starting active labeling...
+firstname : charo
+lastname : genio
+middlename : i del
+year : 2009
+year_papertitle : ((2009, 'depth dependent critical behavior in v2h'), (2010, 'anomalous ordering in inhomogeneously strained materials'), (2010, 'depth dependent ordering two length scale phenomena and crossover behavior in a crystal featuring a skin layer with defects'), (2010, 'efficient and exact sampling of simple graphs with given arbitrary degree sequence'), (2010, 'efficient sampling of graphs with arbitrary degree sequence'), (2011, 'all scale free networks are sparse'), (2011, 'anomalous ordering in inhomogeneously strained materials surface critical behavior in the bulk'), (2011, 'phase diagram for a 2 d two temperature diffusive xy model'), (2013, 'endemic infections are always possible on regular networks'), (2014, 'sampling networks with prescribed degree correlations'))
+keywords : frozenset({'condensed matter physics', 'algorithm', 'statistical physics', 'applied mathematics', 'discrete mathematics', 'statistics', 'bioinformatics'})
+
+firstname : charo
+lastname : genio
+middlename : i del
+year : 2010
+year_papertitle : ((2010, 'anomalous ordering in inhomogeneously strained materials'),)
+keywords : frozenset({'condensed matter physics', 'materials science', 'theoretical physics'})
+
+0/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished
+firstname : cara
+lastname : stepp
+middlename : e
+year : 2004
+year_papertitle : ((2004, 'enhancement of polynuclear aromatic hydrocarbon desorption by complexing agents in weathered soil'), (2005, 'acoustics of the human middle ear air space'), (2007, 'training effects on speech production using a hands free electromyographically controlled electrolarynx'), (2008, 'electromyographic control of prosthetic voice after total laryngectomy'), (2008, 'post laryngectomy speech respiration patterns'), (2009, 'characterization and improvement of the clinical assessment of vocal hyperfunction'), (2009, 'electromyographic control of a hands free electrolarynx using neck strap muscles'), (2009, 'neck and face surface electromyography for prosthetic voice control after total laryngectomy'), (2009, 'poster 37 bilateral intermuscular beta coherence is reduced in individuals with vocal hyperfunction'), (2009, 'the role of source and filter characteristics in human talker identification experiments with laryngeal and electrolarynx speech'))
+keywords : frozenset({'cognitive science', 'gerontology', 'inorganic chemistry', 'physical medicine and rehabilitation', 'speech recognition', 'communication', 'acoustics', 'environmental chemistry', 'audiology'})
+
+firstname : cara
+lastname : stepp
+middlename : elizabeth
+year : 2009
+year_papertitle : ((2009, 'characterization and improvement of the clinical assessment of vocal hyperfunction'),)
+keywords : frozenset({'speech therapy', 'communication', 'biomedical engineering'})
+
+1/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : guang
+lastname : yang
+middlename : None
+year : 2011
+year_papertitle : ((2011, 'synthesis of amphiphilic hyperbranched polymers for the controlled release of double guest molecules'), (2014, 'a review of organic and inorganic biomaterials for neural interfaces'), (2014, 'biomaterials a review of organic and inorganic biomaterials for neural interfaces adv mater 12 2014'), (2014, 'biosensors high performance conducting polymer nanofiber biosensors for detection of biomolecules adv mater 29 2014'), (2014, 'direct patterning hydrogel mediated direct patterning of conducting polymer films with multiple surface chemistries adv mater 18 2014'), (2014, 'high performance conducting polymer nanofiber biosensors for detection of biomolecules'), (2014, 'hydrogel mediated direct patterning of conducting polymer films with multiple surface chemistries'), (2014, 'linear g hyperbranched and cyclodextrin based amphiphilic block copolymer as a multifunctional nanocarrier'), (2015, 'a dual stimuli responsive fluorescent probe carrier from a double hydrophilic block copolymer capped with β cyclodextrin'), (2016, 'poly arylene ether based single ion conductors for lithium ion batteries'))
+keywords : frozenset({'combinatorial chemistry', 'nanotechnology', 'chemical engineering', 'organic chemistry', 'polymer chemistry'})
+
+firstname : mingche
+lastname : yang
+middlename : None
+year : 2012
+year_papertitle : ((2012, 'strategies to improve the electrochemical performance of electrodes for lithium ion batteries'),)
+keywords : frozenset({'inorganic chemistry', 'nanotechnology', 'materials science'})
+
+2/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : andrew
+lastname : fox
+middlename : o
+year : 2012
+year_papertitle : ((2012, 'probing the adhesion of submicron thin films fabricated on a polymer substrate via nano transfer printing'), (2013, 'integrated metal forming and vibration analysis of sheet metal parts'), (2019, 'strength of graphene grain boundaries under arbitrary in plane tension'), (2019, 'thermal conductivity of graphene grain boundaries along arbitrary in plane directions a comprehensive molecular dynamics study'))
+keywords : frozenset({'mechanical engineering', 'condensed matter physics', 'nanotechnology'})
+
+firstname : matthew
+lastname : fox
+middlename : r
+year : 1999
+year_papertitle : ((1999, 'interface fracture and composite deformation of model laminates'),)
+keywords : frozenset({'mechanical engineering', 'materials science'})
+
+2/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : maria
+lastname : chan
+middlename : k y
+year : 2005
+year_papertitle : ((2005, 'ab initio study of sodium ordering in na 0 75 co o 2 and its relation to co 3 co 4 charge ordering'), (2006, 'ab initio study on na ordering and its relation to the electronic magnetic properties of p2 nacoo2 thermoelectrics'), (2007, 'first principles studies of thermoelectric figure of merit of si and sige nanowires'), (2008, 'atomistic modeling and optimization of thermoelectric properties of sige nanowires'), (2009, 'earth abundant materials for high efficiency heterojunction thin film solar cells'), (2010, 'cluster expansion and optimization of thermal conductivity in sige nanowires'), (2010, 'efficient band gap estimation for solids from dft'), (2010, 'efficient band gap prediction for solids'), (2010, 'hybrid density functional calculations of redox potentials and formation energies of transition metal compounds'), (2011, 'structure of lithium peroxide'))
+keywords : frozenset({'condensed matter physics', 'nanotechnology', 'engineering physics', 'molecular physics', 'atomic physics', 'physical chemistry', 'crystallography', 'quantum mechanics', 'chemical physics', 'optoelectronics'})
+
+firstname : maria
+lastname : chan
+middlename : kai yee
+year : 2009
+year_papertitle : ((2009, 'atomistic and ab initio prediction and optimization of thermoelectric and photovoltaic properties'),)
+keywords : frozenset({'condensed matter physics', 'materials science'})
+
+2/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : zhengjiang
+lastname : zhu
+middlename : None
+year : 2007
+year_papertitle : ((2007, 'one step immobilization of glucose oxidase in a silica matrix on a pt electrode by an electrochemically induced sol gel process'), (2008, 'multiplexed screening of cellular uptake of gold nanoparticles using laser desorption ionization mass spectrometry'), (2009, 'engineered nanoparticle surfaces for improved mass spectrometric analyses'), (2009, 'entrapment of hydrophobic drugs in nanoparticle monolayers with efficient release into cancer cells'), (2010, 'intracellular delivery of a membrane impermeable enzyme in active form using functionalized gold nanoparticles'), (2010, 'laser desorption ionization mass spectrometry analysis of monolayer protected gold nanoparticles'), (2010, 'recognition mediated activation of therapeutic gold nanoparticles inside living cells'), (2010, 'surface properties dictate uptake distribution excretion and toxicity of nanoparticles in fish'), (2010, 'the role of surface functionality on acute cytotoxicity ros generation and dna damage by cationic gold nanoparticles'), (2011, 'drug delivery using nanoparticle stabilized nanocapsules'))
+keywords : frozenset({'combinatorial chemistry', 'nanotechnology', 'biochemistry', 'photochemistry', 'chemical engineering', 'analytical chemistry', 'organic chemistry'})
+
+firstname : zhengjiang
+lastname : zhu
+middlename : None
+year : 2012
+year_papertitle : ((2012, 'mass spectrometric analysis of monolayer protected nanoparticles'),)
+keywords : frozenset({'inorganic chemistry', 'nanoscience', 'materials science', 'analytical chemistry', 'organic chemistry'})
+
+3/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : dingxin
+lastname : wang
+middlename : None
+year : 2013
+year_papertitle : ((2013, 'cardiac imaging at 7 tesla single and two spoke radiofrequency pulse design with 16 channel parallel excitation'), (2013, 'improved excitation fidelity in cardiac imaging with 2 spoke parallel excitation at 7 tesla'), (2013, 'pushing spatial and temporal resolution for functional and diffusion mri in the human connectome project'), (2015, 'comparison of rf body coils for mri at 3 t a simulation study using parallel transmission on various anatomical targets'), (2015, 'theoretical and experimental evaluation of multi band epi for high resolution whole brain pcasl imaging'))
+keywords : frozenset({'nuclear magnetic resonance', 'artificial intelligence', 'nuclear medicine', 'computer vision', 'medical physics', 'acoustics', 'biomedical engineering'})
+
+firstname : ding
+lastname : wang
+middlename : None
+year : 2007
+year_papertitle : ((2007, 'autonomous underwater vehicle auv path planning and adaptive on board routing for adaptive rapid environmental assessment'),)
+keywords : frozenset({'mechanical engineering', 'acoustics', 'operations research'})
+
+4/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : qi
+lastname : fang
+middlename : None
+year : 1995
+year_papertitle : ((1995, '4 5 bis 2 4 dinitrophenylthio 1 3 dithiol 2 one nitromethane solvate bnpt dto ch3no2'), (1999, 'synthesis structure and properties of a new nonlinear optical material zinc cadmium tetrathiocyanate'), (1999, 'zinc cadmium thiocyanate zctc'), (2000, 'spectral properties and effective upconverted lasing of new organic molecules'), (2000, 'synthesis structures and two photon pumpedup conversion lasing properties of two new organic salts'), (2000, 'two photon pumped lasing stilbene typechromophores containing various terminal donor groups relationship betweenlasing efficiency and intramolecular charge transfer'), (2001, 'growth of zinc cadmium thiocyanate single crystal for laser diode frequency doubling'), (2001, 'symmetric and asymmetric charge transfer process of two photon absorbing chromophores bis donor substituted stilbenes and substituted styrylquinolinium and styrylpyridinium derivatives'), (2001, 'temporal and spectral behaviors of two photon induced emission laser dyes'), (2001, 'the synthesis and magnetoresistance behavior of direct current magnetron sputtering thin film of la0 7pb0 3mno3 δ'))
+keywords : frozenset({'mineralogy', 'inorganic chemistry', 'photochemistry', 'stereochemistry', 'crystallography', 'analytical chemistry', 'optoelectronics', 'optics'})
+
+firstname : qiyin
+lastname : fang
+middlename : None
+year : 2002
+year_papertitle : ((2002, 'mechanism study of skin tissue ablation by nanosecond laser pulses'),)
+keywords : frozenset({'biophysics', 'biomedical engineering', 'optics'})
+
+4/10 positive, 3/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : manchu
+lastname : yeung
+middlename : ronald
+year : 2014
+year_papertitle : ((2014, 'a fractal and numerical simulation coupled study of fracture network during coal mining excavation'), (2019, 'modeling large displacement of rock block and a work face excavation of a coal mine based on discontinuous deformation analysis and finite deformation theory'))
+keywords : frozenset({'geotechnical engineering', 'geometry'})
+
+firstname : man
+lastname : yeung
+middlename : kit stephen
+year : 1999
+year_papertitle : ((1999, 'time delay in the kuramoto model of coupled phase oscillators'),)
+keywords : frozenset({'acoustics', 'mathematics', 'electrical engineering'})
+
+4/10 positive, 4/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : catherine
+lastname : jones
+middlename : e
+year : 2003
+year_papertitle : ((2003, 'measuring dimensions of emmetropic and myopic eyes with magnetic resonance imaging'), (2004, 'eye shape in emmetropia and myopia'), (2004, 'measuring optical properties of an eye lens using magnetic resonance imaging'), (2004, 'studies of the crystalline lens using magnetic resonance imaging'), (2005, 'refractive index distribution and optical properties of the isolated human lens measured using magnetic resonance imaging mri'), (2005, 'shape of the retinal surface in emmetropia and myopia'), (2006, 'experimental and computational analyses of the effects of slice distortion from a metallic sphere in an mri phantom'), (2006, 'structural mri of carotid artery atherosclerotic lesion burden and characterization of hemispheric cerebral blood flow before and after carotid endarterectomy'), (2007, 'changes in lens dimensions and refractive index with age and accommodation'), (2008, 'to the editor changes in lens dimensions and refractive index with age and accommodation authors reply'))
+keywords : frozenset({'nuclear magnetic resonance', 'geometry', 'cardiology', 'internal medicine', 'ophthalmology', 'optometry', 'optics'})
+
+firstname : catherine
+lastname : hines
+middlename : d g
+year : 2010
+year_papertitle : ((2010, 'noninvasive quantitative biomarkers of fatty liver disease with mri'),)
+keywords : frozenset({'pathology', 'biomedical engineering'})
+
+4/10 positive, 5/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : mohammad
+lastname : hossain
+middlename : mosharraf
+year : 2012
+year_papertitle : ((2012, 'a convenient synthesis of substituted spiro 5 5 undecanes using lewis acid catalysts'), (2016, 'a search for blues brothers x ray crystallographic spectroscopic characterization of the tetraarylbenzidine cation radical as a product of aging of solid magic blue'), (2016, 'quantitative generation of cation radicals and dications using aromatic oxidants effect of added electrolyte on the redox potentials of aromatic electron donors'), (2017, 'dihedral angle controlled crossover from static hole delocalization to dynamic hopping in biaryl cation radicals'), (2018, 'fhbc a hexa peri hexabenzocoronene fluorene hybrid a platform for highly soluble easily functionalizable hbcs with an expanded graphitic core'), (2018, 'spreading electron density thin increasing the chromophore size in polyaromatic wires decreases interchromophoric electronic coupling'))
+keywords : frozenset({'nanotechnology', 'molecular physics', 'inorganic chemistry', 'crystallography', 'organic chemistry', 'chemical physics'})
+
+firstname : mohammad
+lastname : hossain
+middlename : imran
+year : 2013
+year_papertitle : ((2013, 'modeling moisture induced damage in asphalt concrete'),)
+keywords : frozenset({'civil engineering', 'materials science'})
+
+4/10 positive, 6/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jia
+lastname : liu
+middlename : None
+year : 2009
+year_papertitle : ((2009, 'instability and failure analysis of film substrate structure under electrical loading'), (2011, 'buckling modes of polymer membranes restricted by metal wires'), (2012, 'spontaneous and deterministic three dimensional curling of pre strained elastomeric bi strips'), (2012, 'spontaneous and deterministic three dimensional curling of pre strained elastomeric strips from hemi helix to helix'), (2012, 'undulatory buckling of a rod constrained by an elastic matrix'), (2013, 'buckling of an elastic wire inside an elastic matrix'), (2013, 'flexible stretchable tactile arrays from mems barometers'), (2013, 'materials with tailored thermal expansion coefficient'), (2013, 'three dimensional curling of pre strained elastomeric strips from hemi helix to helix'), (2014, 'structural transition from helices to hemihelices'))
+keywords : frozenset({'nanotechnology', 'geometry', 'composite material', 'bioinformatics', 'electronic engineering', 'classical mechanics', 'electrical engineering'})
+
+firstname : jia
+lastname : li
+middlename : None
+year : 2015
+year_papertitle : ((2015, 'ultrasonic characterization of polycrystals with texture and microtexture theory and experiment'),)
+keywords : frozenset({'acoustics', 'materials science'})
+
+4/10 positive, 7/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : agampodi
+lastname : indrasekara
+middlename : s de silva
+year : 2016
+year_papertitle : ((2016, 'spectroelectrochemistry of halide anion adsorption and dissolution of single gold nanorods'), (2017, 'correction to spectral response of plasmonic gold nanoparticles to capacitive charging morphology effects'), (2017, 'spectral response of plasmonic gold nanoparticles to capacitive charging morphology effects'))
+keywords : frozenset({'inorganic chemistry', 'optoelectronics', 'analytical chemistry', 'nanotechnology'})
+
+firstname : agampodi
+lastname : indrasekara
+middlename : swarnapali de silva
+year : 2014
+year_papertitle : ((2014, 'fabrication of surface enhanced raman scattering substrates by controlled assembly and morphology tuning of gold nanoparticles'),)
+keywords : frozenset({'nanotechnology', 'materials science'})
+
+4/10 positive, 8/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ujwal
+lastname : chaudhary
+middlename : None
+year : 2009
+year_papertitle : ((2009, 'brain connectivity studies of joint attention using frequency domain diffuse optical imaging'), (2010, 'brain connectivity study in verbal fluency task using near infrared spectroscopy'), (2010, 'brain connectivity study of joint attention using frequency domain optical imaging technique'), (2011, 'frontal activation and connectivity using near infrared spectroscopy verbal fluency language study'), (2011, 'frontal cortical connectivity and lateralisation of joint attention experience using near infrared spectroscopy'), (2011, 'joint attention studies in normal and autistic children using nirs'), (2011, 'temporal mapping and connectivity using nirs for language related tasks'), (2012, 'cognitive response to motor tasks using nirs pilot studies of adults with and without spastic cerebral palsy'), (2012, 'non invasive optical imaging technology breast cancer imaging and functional brain mapping'))
+keywords : frozenset({'radiology', 'cognitive psychology', 'artificial intelligence', 'physical medicine and rehabilitation', 'computer vision', 'pattern recognition', 'neuroscience', 'audiology'})
+
+firstname : ujwal
+lastname : chaudhary
+middlename : None
+year : 2013
+year_papertitle : ((2013, 'functional near infrared spectroscopy study of language joint attention and motor skills'),)
+keywords : frozenset({'biomedical engineering'})
+
+4/10 positive, 8/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : myong
+lastname : lim
+middlename : hoon
+year : 1994
+year_papertitle : ((1994, 'efficient prediction of isotropic hyperfine coupling in radicals containing phosphorus a systematic comparison of uhf puhf and ump2 spin densities'), (1997, 'synthesis and characterization of a reactive vinyl functionalized mcm 41 probing the internal pore structure by a bromination reaction'), (1998, 'ab initio calculations on p c bond cleavage in phosphoranyl radicals implications for the biodegradation of organophosphonate derivatives'), (1998, 'characterization and reactivity of hybrid organosilicate mesoporous sieves'), (1998, 'synthesis of ordered microporous silicates with organosulfur surface groups and their applications as solid acid catalysts'), (2001, 'free standing thin films containing hexagonally organized silver nanocrystals in a polymer matrix'))
+keywords : frozenset({'nuclear magnetic resonance', 'nanotechnology', 'inorganic chemistry', 'atomic physics', 'chemical engineering', 'organic chemistry', 'computational chemistry'})
+
+firstname : myong
+lastname : lim
+middlename : hoon
+year : 1999
+year_papertitle : ((1999, 'computational study of organophosphorus compounds and synthesis and characterization of inorganic organic hybrid mesoporous materials'),)
+keywords : frozenset({'chemistry', 'materials science'})
+
+4/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : murthy
+lastname : kowsika
+middlename : v s l n
+year : 1995
+year_papertitle : ((1995, 'ultrasonic and vibration methods for the characterization of pultruded composites'), (1999, 'static and low velocity impact response characteristics of pultruded hybrid glass graphite epoxy composite beams'), (2002, 'energy absorption and dissipation characteristics of pultruded glass graphite epoxy hybrid composite beams'))
+keywords : frozenset({'structural engineering', 'composite material'})
+
+firstname : murthy
+lastname : kowsika
+middlename : v s l n
+year : 1997
+year_papertitle : ((1997, 'impact performance characteristics and modeling failure mechanisms of pultruded glass graphite epoxy hybrid composite beams'),)
+keywords : frozenset({'mechanical engineering', 'materials science', 'automotive materials'})
+
+4/10 positive, 10/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : douglas
+lastname : crawford
+middlename : c
+year : 2006
+year_papertitle : ((2006, 'an approach to fuel development and qualification'), (2006, 'an approach to fuel safety testing'), (2006, 'fuels for sodium cooled fast reactors'), (2007, 'fuels for sodium cooled fast reactors us perspective'), (2008, 'materials challenges for generation iv nuclear energy systems'))
+keywords : frozenset({'nuclear chemistry', 'nuclear engineering', 'radiochemistry', 'manufacturing engineering', 'reliability engineering'})
+
+firstname : douglas
+lastname : crawford
+middlename : charles
+year : 1991
+year_papertitle : ((1991, 'the effect of grain boundary misorientation on the intergranular cracking behavior of nickel 16chromium 9iron in 360 degrees c argon and high purity water'),)
+keywords : frozenset({'materials science', 'nuclear engineering'})
+
+5/10 positive, 10/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : joseph
+lastname : licavoli
+middlename : j
+year : 2014
+year_papertitle : ((2014, 'processing and pore growth mechanisms in aluminum gasarites produced by thermal decomposition'), (2015, 'high ramp rate thermogravimetric analysis of zirconium ii hydride and titanium ii hydride'), (2015, 'manufacturing of high entropy alloys'), (2015, 'microstructure and mechanical behavior of high entropy alloys'), (2018, 'foreword materials for high temperature applications next generation superalloys and beyond'), (2020, 'improved strengthening in supersaturated al sc zr alloy via melt spinning and extrusion'), (2021, 'coarsening behavior of precipitate al 3 sc zr in supersaturated al sc zr alloy via melt spinning and extrusion'), (2021, 'effect of cobalt additions on the microstructure and mechanical properties of as cast thin wall ductile iron'), (2021, 'influence of cobalt in the tensile properties of inch ductile iron y blocks'))
+keywords : frozenset({'inorganic chemistry', 'metallurgy', 'chemical engineering', 'composite material'})
+
+firstname : joseph
+lastname : licavoli
+middlename : j
+year : 2013
+year_papertitle : ((2013, 'the processing of aluminum gasarites via thermal decomposition of interstitial hydrides'),)
+keywords : frozenset({'materials science'})
+
+5/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : laura
+lastname : chavez
+middlename : h arias
+year : 2013
+year_papertitle : ((2013, 'desalination and reuse of high salinity shale gas produced water drivers technologies and future directions'), (2015, 'antimicrobial electrospun biopolymer nanofiber mats functionalized with graphene oxide silver nanocomposites'), (2015, 'influence of active layer and support layer surface structures on organic fouling propensity of thin film composite forward osmosis membranes'))
+keywords : frozenset({'chromatography', 'chemical engineering', 'waste management', 'polymer chemistry', 'environmental engineering'})
+
+firstname : laura
+lastname : chavez
+middlename : h arias
+year : 2014
+year_papertitle : ((2014, 're designing membranes electrospun nanofibers for control of structure and material properties'),)
+keywords : frozenset({'chemical engineering', 'materials science', 'environmental education'})
+
+6/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : shunchi
+lastname : chang
+middlename : None
+year : 1998
+year_papertitle : ((1998, 'dual color polymer light emitting pixels processed by hybrid inkjet printing'), (1999, 'multicolor organic light emitting diodes processed by hybrid inkjet printing'), (2000, 'highly efficient electrophosphorescent polymer light emitting devices'), (2000, 'organic polymeric electroluminescent devices processed by hybrid ink jet printing'), (2001, 'high performance polymer light emitting diodes fabricated by a low temperature lamination process'), (2002, 'erratum highly efficient polymer light emitting devices using a phosphorescent sensitizer appl phys lett 81 1509 2002'), (2003, 'energy transfer and triplet exciton confinement in polymeric electrophosphorescent devices'))
+keywords : frozenset({'nanotechnology', 'polymer science', 'photochemistry', 'chemical physics', 'optoelectronics'})
+
+firstname : shunchi
+lastname : chang
+middlename : None
+year : 2001
+year_papertitle : ((2001, 'novel polymer light emitting devices'),)
+keywords : frozenset({'polymers', 'materials science'})
+
+6/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : laura
+lastname : chavez
+middlename : h arias
+year : 2013
+year_papertitle : ((2013, 'desalination and reuse of high salinity shale gas produced water drivers technologies and future directions'), (2015, 'antimicrobial electrospun biopolymer nanofiber mats functionalized with graphene oxide silver nanocomposites'), (2015, 'influence of active layer and support layer surface structures on organic fouling propensity of thin film composite forward osmosis membranes'))
+keywords : frozenset({'chromatography', 'chemical engineering', 'waste management', 'polymer chemistry', 'environmental engineering'})
+
+firstname : laura
+lastname : chavez
+middlename : h arias
+year : 2014
+year_papertitle : ((2014, 're designing membranes electrospun nanofibers for control of structure and material properties'),)
+keywords : frozenset({'chemical engineering', 'materials science', 'environmental education'})
+
+6/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished
+firstname : shunchi
+lastname : chang
+middlename : None
+year : 1998
+year_papertitle : ((1998, 'dual color polymer light emitting pixels processed by hybrid inkjet printing'), (1999, 'multicolor organic light emitting diodes processed by hybrid inkjet printing'), (2000, 'highly efficient electrophosphorescent polymer light emitting devices'), (2000, 'organic polymeric electroluminescent devices processed by hybrid ink jet printing'), (2001, 'high performance polymer light emitting diodes fabricated by a low temperature lamination process'), (2002, 'erratum highly efficient polymer light emitting devices using a phosphorescent sensitizer appl phys lett 81 1509 2002'), (2003, 'energy transfer and triplet exciton confinement in polymeric electrophosphorescent devices'))
+keywords : frozenset({'nanotechnology', 'polymer science', 'photochemistry', 'chemical physics', 'optoelectronics'})
+
+firstname : shunchi
+lastname : chang
+middlename : None
+year : 2001
+year_papertitle : ((2001, 'novel polymer light emitting devices'),)
+keywords : frozenset({'polymers', 'materials science'})
+
+6/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : craig
+lastname : dixon
+middlename : r
+year : 2011
+year_papertitle : ((2011, 'influence of edge restraint on clip fastener loads of standing seam metal roof panels'), (2014, 'the influence of unsealing on the wind resistance of asphalt shingles'), (2014, 'wind uplift resistance of artificially and naturally aged asphalt shingles'))
+keywords : frozenset({'forensic engineering', 'geotechnical engineering', 'structural engineering'})
+
+firstname : craig
+lastname : dixon
+middlename : robert
+year : 2013
+year_papertitle : ((2013, 'the wind resistance of asphalt roofing shingles'),)
+keywords : frozenset({'civil engineering', 'materials science', 'physics'})
+
+7/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : john
+lastname : martirez
+middlename : mark p
+year : 2010
+year_papertitle : ((2010, 'theoretical study on the diffusion of hydroxyl radical on bao terminated batio _3 001 surface'), (2011, 'hydration phase diagram for bao terminated batio _3'), (2012, 'atomic and electronic structure of the batio 3 001 5 5 r 26 6 surface reconstruction'), (2012, 'polarization dependent reconstructions of ferroelectric surfaces'), (2014, 'coexisting surface phases and coherent one dimensional interfaces on batio3 001'), (2014, 'strong reciprocal interaction between polarization and surface stoichiometry in oxide ferroelectrics'), (2014, 'theoretical model of oxidative adsorption of water on a highly reduced reconstructed oxide surface'), (2015, 'erratum ferroelectrically driven spatial carrier density modulation in graphene'), (2015, 'ferroelectrically driven spatial carrier density modulation in graphene'), (2015, 'synergistic oxygen evolving activity of a tio2 rich reconstructed srtio3 001 surface'))
+keywords : frozenset({'condensed matter physics', 'nanotechnology', 'inorganic chemistry', 'photochemistry', 'crystallography', 'chemical physics', 'thermodynamics', 'optoelectronics'})
+
+firstname : john
+lastname : martirez
+middlename : mark p
+year : 2015
+year_papertitle : ((2015, 'surface reconstructions of perovskite type oxides their exotic structures and modified chemistry'),)
+keywords : frozenset({'inorganic chemistry', 'materials science'})
+
+8/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : morgana
+lastname : ribas
+middlename : de avila
+year : 2005
+year_papertitle : ((2005, 'exploring the possibilities of using brazilian subbituminous coals for blast furnace pulverized fuel injection'), (2005, 'mathematical model of over micron and nano scale powders accumulation in a coke fixed bed filter'), (2009, 'h spillover through the catalyst saturation an ab initio thermodynamics study'), (2009, 'nanotube nucleation versus carbon catalyst adhesion probed by molecular dynamics simulations'), (2010, 'chemi and physisorption of hydrogen on graphitic substrates'), (2010, 'the ultimate diamond slab graphane versus graphene'), (2011, 'carbon nanotube nucleation driven by catalyst morphology dynamics'), (2011, 'carbon nanotube nucleation driven by catalyst morphology dynamics nist'), (2011, 'patterning nanoroads and quantum dots on fluorinated graphene'))
+keywords : frozenset({'mineralogy', 'condensed matter physics', 'nanotechnology', 'metallurgy', 'chemical engineering', 'chemical physics', 'physical chemistry', 'computational chemistry'})
+
+firstname : morgana
+lastname : ribas
+middlename : de avila
+year : 2011
+year_papertitle : ((2011, 'catalytic processes simulated at nano scale growth of graphitic structures and functionalized graphene explained'),)
+keywords : frozenset({'condensed matter physics', 'nanotechnology', 'materials science'})
+
+8/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jeffrey
+lastname : brownson
+middlename : r s
+year : 2005
+year_papertitle : ((2005, 'photoreactive anatase consolidation characterized by ftir spectroscopy'), (2005, 'surface re esterification and photo sintering of titania xerogel thin films'), (2006, 'erratum photoreactive anatase consolidation characterized by ftir spectroscopy chemistry of materials 2005 17 25 6304'), (2006, 'ftir spectroscopy of alcohol and formate interactions with mesoporous tio2 surfaces'), (2006, 'synthesis of a δ sns polymorph by electrodeposition'), (2007, '2006 volume 18 synthesis of a δ sns polymorph by electrodeposition'), (2008, 'chemistry of tin monosulfide δ sns electrodeposition effects of ph and temperature with tartaric acid'), (2008, 'electrodeposition of α and β cobalt hydroxide thin films via dilute nitrate solution reduction'), (2009, 'efficiency economic and environmental assessment of ground source heat pumps in central pennsylvania'), (2009, 'solvothermal fabrication of zno nanorods using ethanolic quantum dot precursors'))
+keywords : frozenset({'nuclear chemistry', 'nanotechnology', 'operations management', 'inorganic chemistry', 'chemical engineering', 'analytical chemistry', 'environmental engineering', 'optics'})
+
+firstname : jeffrey
+lastname : brownson
+middlename : r s
+year : 2005
+year_papertitle : ((2005, 'photoreactive anatase consolidation uv hardening and surface chemistry of alcohol modified titanium dioxide films'),)
+keywords : frozenset({'materials science'})
+
+8/10 positive, 14/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : george
+lastname : teodorescu
+middlename : None
+year : 2004
+year_papertitle : ((2004, 'spectral directional emittance of cuo at high temperatures'), (2006, 'high temperature spectral directional emittance of high purity nickel oxidized in air'), (2006, 'spectral directional emittance of 99 99 aluminum thermally oxidized below its melting point'), (2008, 'measurements of heat capacity of pure titanium and zirconium by electromagnetic levitation'), (2008, 'normal emissivity of high purity nickel at temperatures between 1440 and 1605 k'), (2008, 'spectral and directional emittance of alumina at 823 k'))
+keywords : frozenset({'optics', 'analytical chemistry', 'composite material'})
+
+firstname : george
+lastname : teodorescu
+middlename : None
+year : 2007
+year_papertitle : ((2007, 'radiative emissivity of metals and oxidized metals at high temperature'),)
+keywords : frozenset({'materials science'})
+
+9/10 positive, 14/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : moon
+lastname : kang
+middlename : sung
+year : 2008
+year_papertitle : ((2008, 'runoff generation mechanisms in pastures of the sand mountain region of alabama a field investigation'), (2009, 'high carrier densities achieved at low voltages in ambipolar pbse nanocrystal thin film transistors'), (2009, 'solar cells based on junctions between colloidal pbse nanocrystals and thin zno films'), (2010, 'influence of atmospheric gases on the electrical properties of pbse quantum dot films'), (2010, 'runoff losses of suspended sediment nitrogen and phosphorus from a small watershed in korea'), (2010, 'size dependent electrical transport in cdse nanocrystal thin films'), (2010, 'the use of thermally decomposable ligands for conductive films of semiconductor nanocrystals'), (2010, 'thermally degradable ligands for nanocrystals'), (2011, 'facile synthesis of silver chalcogenide ag2e e se s te semiconductor nanocrystals'), (2011, 'low voltage solution processed graphene transistors based on chemically and solvothermally reduced graphene oxide'))
+keywords : frozenset({'condensed matter physics', 'nanotechnology', 'hydrology', 'physical chemistry', 'chemical engineering', 'analytical chemistry', 'optoelectronics'})
+
+firstname : moon
+lastname : kang
+middlename : sung
+year : 2011
+year_papertitle : ((2011, 'electrical transport in semiconductor nanocrystal assemblies'),)
+keywords : frozenset({'chemical engineering', 'nanotechnology', 'materials science'})
+
+9/10 positive, 15/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : whitney
+lastname : shepherd
+middlename : e b
+year : 2010
+year_papertitle : ((2010, 'aggregate formation and its effect on opto electronic properties of guest host organic semiconductors'), (2010, 'influence of metal organic interfaces on charge carrier dynamics'), (2010, 'ph ion nanosensors with optical tweezers in a lab on a chip'), (2010, 'single molecule studies of anthradithiophene derivatives'), (2011, 'effect of intermolecular interactions on charge and exciplex formation in high performance organic semiconductors'), (2011, 'energy transfer and exciplex formation and their impact on exciton and charge carrier dynamics in organic films'), (2015, 'photophysics of organic semiconductors from ensemble to the single molecule level'), (2015, 'single molecule imaging of organic semiconductors toward nanoscale insights into photophysics and molecular packing'))
+keywords : frozenset({'combinatorial chemistry', 'nanotechnology', 'photochemistry', 'chemical physics', 'optoelectronics'})
+
+firstname : whitney
+lastname : shepherd
+middlename : e b
+year : 2013
+year_papertitle : ((2013, 'optoelectronic properties of organic semiconductors from bulk to single molecule'),)
+keywords : frozenset({'materials science', 'molecular physics', 'optics'})
+
+9/10 positive, 15/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : gregory
+lastname : eyck
+middlename : a ten
+year : 2005
+year_papertitle : ((2005, 'atomic layer deposition of pd on tan for cu electroless plating'), (2006, 'choices for future interconnect materials and processing'), (2006, 'electroless copper on refractory and noble metal substrates with an ultra thin plasma assisted atomic layer deposited palladium layer'), (2006, 'low temperature melting of copper nanorod arrays'), (2006, 'surface characterization of copper electroless deposition on atomic layer deposited palladium on iridium and tungsten'), (2007, 'direct plating of cu on pd plasma enhanced atomic layer deposition coated tan barrier'), (2007, 'onset of thermal degradation in poly p phenylene vinylene films deposited by chemical vapor deposition'))
+keywords : frozenset({'nanotechnology', 'composite material', 'inorganic chemistry', 'crystallography', 'metallurgy', 'chemical engineering', 'analytical chemistry'})
+
+firstname : gregory
+lastname : eyck
+middlename : a ten
+year : 2007
+year_papertitle : ((2007, 'atomic layer deposition of metals on dielectric substrates'),)
+keywords : frozenset({'materials science', 'electrical engineering'})
+
+9/10 positive, 16/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : konstantinos
+lastname : giapis
+middlename : p
+year : 1988
+year_papertitle : ((1988, 'effects of the selenium precursor on the growth of znse by metalorganic chemical vapor deposition'), (1990, 'a new reactor system for mocvd of zase modelling and experimental results for growth from dimethylzinc and diethylselenide'), (1990, 'effect of operating conditions and precursors on optoelectronic properties of omvpe grown znse'), (1990, 'investigation of carbon incorporation in znse effects on morphology electrical and photoluminescence properties'), (1990, 'temperature variations in electrical and photoluminescence properties of znse grown by mocvd'))
+keywords : frozenset({'chemical engineering', 'inorganic chemistry', 'mineralogy', 'analytical chemistry'})
+
+firstname : konstantinos
+lastname : giapis
+middlename : petros
+year : 1989
+year_papertitle : ((1989, 'experimental studies of the metalorganic chemical vapor deposition and doping of zinc selenide'),)
+keywords : frozenset({'chemical engineering', 'materials science'})
+
+10/10 positive, 16/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : michael
+lastname : steffen
+middlename : None
+year : 2008
+year_papertitle : ((2008, 'analysis and reduction of quadrature errors in the material point method mpm'), (2008, 'examination and analysis of implementation choices within the material point method mpm'), (2008, 'investigation of smoothness increasing accuracy conserving filters for improving streamline integration through discontinuous fields'), (2010, 'decoupling and balancing of space and time errors in the material point method mpm'), (2010, 'enhanced understanding of particle simulations through deformation based visualization'), (2011, 'a toolkit for forward inverse problems in electrocardiography within the scirun problem solving environment'), (2011, 'an open source extensible software toolkit for forward and inverse problems in electrocardiography'))
+keywords : frozenset({'algorithm', 'calculus', 'applied mathematics', 'theoretical computer science', 'programming language', 'software engineering', 'mathematical optimization', 'mechanics'})
+
+firstname : michael
+lastname : steffen
+middlename : dietel
+year : 2009
+year_papertitle : ((2009, 'analysis guided improvements of the material point method'),)
+keywords : frozenset({'mechanics', 'mechanical engineering'})
+
+11/10 positive, 16/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ye
+lastname : spector
+middlename : zhou
+year : 2016
+year_papertitle : ((2016, 'does axonal f actin contribute to retinal nerve fiber layer reflectance'), (2017, 'effects of optic nerve crush and ocular hypertension on the reflectance spectrum and cytostructure of the retinal nerve fiber layer of rats'), (2018, 'effects of the location of optic nerve transection on the retinal nerve fiber layer reflectance'), (2019, 'reduced temporal change of retinal nerve fiber layer reflectance speckle in retinas with ocular hypertensive damage'), (2019, 'temporal change of retinal nerve fiber layer reflectance speckle in normal and hypertensive retinas'))
+keywords : frozenset({'ophthalmology', 'biophysics', 'biomedical engineering'})
+
+firstname : ye
+lastname : spector
+middlename : None
+year : 2013
+year_papertitle : ((2013, 'reflectance and ultrastructure of the retinal nerve fiber layer in normal and glaucomatous retinas'),)
+keywords : frozenset({'ophthalmology', 'health sciences', 'biomedical engineering'})
+
+12/10 positive, 16/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : venkata
+lastname : boppana
+middlename : bharat ram
+year : 2010
+year_papertitle : ((2010, 'a spinel oxynitride with visible light photocatalytic activity'), (2010, 'analysis of ga coordination environment in novel spinel zinc gallium oxy nitride photocatalysts'), (2011, 'nanostructured mno2 an efficient and robust water oxidation catalyst'), (2011, 'photocatalytic degradation of organic molecules on mesoporous visible light active sn ii doped titania'), (2011, 'snox znga2o4 photocatalysts with enhanced visible light activity'), (2011, 'structure analysis and photocatalytic properties of spinel zinc gallium oxonitrides'), (2011, 'synthesis characterization and photocatalytic properties of novel zinc germanate nano materials'), (2013, 'analysis of visible light active sn ii tio2 photocatalysts'), (2013, 'nanostructured alkaline cation containing δ mno2 for photocatalytic water oxidation'))
+keywords : frozenset({'nuclear chemistry', 'inorganic chemistry', 'photochemistry', 'crystallography', 'chemical engineering', 'analytical chemistry'})
+
+firstname : venkata
+lastname : boppana
+middlename : bharat ram
+year : 2011
+year_papertitle : ((2011, 'design and analysis of novel photocatalytic materials'),)
+keywords : frozenset({'inorganic chemistry', 'chemical engineering', 'materials science'})
+
+13/10 positive, 16/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : david
+lastname : john
+middlename : b saint
+year : 2010
+year_papertitle : ((2010, 'microstructural evolution in si 1 x ge x h thin films for photovoltaic applications'), (2012, 'infrared dielectric functions of hydrogenated amorphous silicon thin films determined by spectroscopic ellipsometry'), (2012, 'low temperature crystallization of metastable nickel manganite spinel thin films'), (2012, 'optical characterization of structurally graded si 1 x ge x h thin films'), (2013, 'electrical properties of plasma enhanced chemical vapor deposition a si h and a si1 xcx h for microbolometer applications'), (2014, 'evaluation of 1 f noise in prospective ir imaging thin films'), (2014, 'nickel oxide and molybdenum oxide thin films for infrared imaging prepared by biased target ion beam deposition'), (2014, 'ph controlled selective etching of al2o3 over zno'), (2014, 'toward metamodels for composable and reusable additive manufacturing process models'), (2015, 'high temperature coefficient of resistance molybdenum oxide and nickel oxide thin films for microbolometer applications'))
+keywords : frozenset({'inorganic chemistry', 'crystallography', 'metallurgy', 'chemical engineering', 'analytical chemistry', 'manufacturing engineering', 'systems engineering', 'optoelectronics', 'optics'})
+
+firstname : david
+lastname : john
+middlename : b saint
+year : 2012
+year_papertitle : ((2012, 'optical and electrical characterization of high resistivity semiconductors for constant bias microbolometer devices'),)
+keywords : frozenset({'condensed matter physics', 'materials science', 'optics'})
+
+14/10 positive, 16/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : sankara
+lastname : tatiparti
+middlename : sarma v
+year : 2008
+year_papertitle : ((2008, 'electrodeposition of al mg alloy powders'), (2010, 'an understanding of the electrodeposition process of al mg alloys using an organometallic based electrolyte'), (2010, 'the formation of morphologies and microstructures in electrodeposited nanocrystalline al mg alloy powders'), (2011, 'banded structure of the electrodeposited nanocrystalline al mg alloy dendrites'), (2011, 'extended solubility in the electrodeposited nanocrystalline al mg alloy dendrites'), (2011, 'preferred orientation and shape of electrodeposited nanocrystalline al mg alloy dendrites'), (2011, 'substrate effect on electrodeposited nanocrystalline al mg alloy powders'), (2012, 'potentiostatic versus galvanostatic electrodeposition of nanocrystalline al mg alloy powders'), (2013, 'annealing response of aa5182 deformed in plane strain and equibiaxial strain paths'), (2013, 'tension compression asymmetry in an extruded mg alloy am30 temperature and strain rate effects'))
+keywords : frozenset({'composite material', 'inorganic chemistry', 'crystallography', 'metallurgy', 'chemical engineering', 'analytical chemistry'})
+
+firstname : sankara
+lastname : tatiparti
+middlename : sarma v
+year : 2008
+year_papertitle : ((2008, 'fabrication of nanocrystalline aluminum magnesium alloy powders by electrodeposition and their characterization'),)
+keywords : frozenset({'materials science'})
+
+14/10 positive, 17/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : donald
+lastname : griffin
+middlename : r
+year : 2010
+year_papertitle : ((2010, 'photodegradable hydrogels to generate positive and negative features over multiple length scales'), (2010, 'photodegradation as a mechanism for controlled drug delivery'), (2012, 'photo selective delivery of model therapeutics from hydrogels'), (2012, 'photodegradable macromers and hydrogels for live cell encapsulation and release'), (2013, 'steric effects in peptide and protein exchange with activated disulfides'), (2013, 'synthesis of photodegradable macromers for conjugation and release of bioactive molecules'), (2014, 'corrigendum hybrid photopatterned enzymatic reaction hyper for in situ cell manipulation'), (2014, 'hybrid photopatterned enzymatic reaction hyper for in situ cell manipulation'), (2015, 'accelerated wound healing by injectable microporous gel scaffolds assembled from annealed building blocks'), (2016, 'particle hydrogels based on hyaluronic acid building blocks'))
+keywords : frozenset({'combinatorial chemistry', 'nanotechnology', 'biochemistry', 'biophysics', 'chemical engineering', 'organic chemistry', 'polymer chemistry', 'biomedical engineering'})
+
+firstname : donald
+lastname : griffin
+middlename : richieri
+year : 2011
+year_papertitle : ((2011, 'synthesis and characterization of a series of photodegradable linkers used to release therapeutics from hydrogel depots'),)
+keywords : frozenset({'biomedical engineering'})
+
+15/10 positive, 17/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : mohammad
+lastname : shuvo
+middlename : arif ishtiaque
+year : 2012
+year_papertitle : ((2012, 'development of lead free nanowire composites for energy storage applications'), (2013, 'investigation of modified graphene for energy storage applications'), (2013, 'nanowire graphene hybrids for lithium ion battery'), (2013, 'nanowire modified carbon fibers for enhanced electrical energy storage'), (2014, 'multifunctional composites for energy storage'), (2015, 'concept and model of a metamaterial based passive wireless temperature sensor for harsh environment applications'), (2015, 'high performance porous carbon ceo2 nanoparticles hybrid super capacitors for energy storage'), (2015, 'microwave exfoliated graphene oxide tio2 nanowire hybrid for high performance lithium ion battery'), (2015, 'porous carbon ceo2 composites for li ion battery application'), (2015, 'temperature influence on dielectric energy storage of nanocomposites'))
+keywords : frozenset({'nanotechnology', 'composite material', 'inorganic chemistry', 'chemical engineering', 'analytical chemistry', 'electronic engineering', 'electrical engineering'})
+
+firstname : mohammad
+lastname : shuvo
+middlename : arif ishtiaque
+year : 2015
+year_papertitle : ((2015, 'hybrid nano structure for enhanced energy storage devices'),)
+keywords : frozenset({'materials science'})
+
+16/10 positive, 17/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : victor
+lastname : guerrero
+middlename : varela
+year : 2009
+year_papertitle : ((2009, 'amine functionalized ordered mesoporous silica transesterification catalysts'), (2010, 'catalytic properties of dendron oms hybrids'), (2010, 'hkust 1 membranes on porous supports using secondary growth'))
+keywords : frozenset({'chromatography', 'chemical engineering', 'organic chemistry'})
+
+firstname : victor
+lastname : guerrero
+middlename : varela
+year : 2011
+year_papertitle : ((2011, 'nanoporous materials for carbon dioxide separation and storage'),)
+keywords : frozenset({'chemical engineering', 'materials science'})
+
+17/10 positive, 17/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ramez
+lastname : shehada
+middlename : emile necola
+year : 1989
+year_papertitle : ((1989, 'ultrasound textural parameters for hepatic masses evaluation'), (1993, 'three dimensional display of calculated velocity profiles for physiological flow waveforms'), (1994, 'aggregation effects in whole blood influence of time and shear rate measured using ultrasound'), (1994, 'ultrasound methods for investigating the non newtonian characteristics of whole blood'))
+keywords : frozenset({'mineralogy', 'nuclear magnetic resonance', 'radiology', 'mechanics', 'biomedical engineering'})
+
+firstname : ramez
+lastname : shehada
+middlename : emile necola
+year : 1997
+year_papertitle : ((1997, 'laser induced fluorescence attenuation spectroscopy technique and applications'),)
+keywords : frozenset({'biophysics', 'chemical engineering', 'biomedical engineering'})
+
+17/10 positive, 18/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : hamed
+lastname : amini
+middlename : None
+year : 2010
+year_papertitle : ((2010, 'dynamic self assembly and control of microfluidic particle crystals'), (2010, 'inertially stabilized microfluidic crystals self assembly and spatial frequency tuning'), (2010, 'label free cell separation and sorting in microfluidic systems'), (2010, 'modification of inertial focusing position by the restriction effect'), (2010, 'spinning convection particle induced secondary flow in straight microchannels'), (2011, 'programming fluid flow with microstructures'), (2012, 'continuous inertial focusing and separation of particles by shape'), (2012, 'intrinsic particle induced lateral transport in microchannels'), (2012, 'single stream inertial focusing of microparticles across laminar streamlines through geometry induced secondary flows'), (2012, 'the use of sequences of pillars to engineer fluid cross sectional shape textit via inertial flow deformations'))
+keywords : frozenset({'nanotechnology', 'biochemical engineering', 'geometry', 'optoelectronics', 'simulation', 'classical mechanics', 'mechanics'})
+
+firstname : hamed
+lastname : amini
+middlename : None
+year : 2012
+year_papertitle : ((2012, 'fluid particle and fluid structure interactions in inertial microfluidics'),)
+keywords : frozenset({'mechanical engineering', 'biomedical engineering'})
+
+17/10 positive, 19/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : xiaodan
+lastname : wu
+middlename : None
+year : 1987
+year_papertitle : ((1987, 'analysis of the highest transverse energy events seen in the ua 1 detector at the sp bar ps collider'), (1987, 'beauty production at the cern proton antiproton collider'), (1987, 'events with large missing transverse energy at the cern collider i w τν decay and test of τμe universality at q2 mw2'), (1987, 'events with large missing transverse energy at the cern collider ii search for the decays of w into heavy leptons and of z0 into non interacting particles'), (1987, 'events with large missing transverse energy at the cern collider iii mass limits on supersymmetric particles'), (1987, 'intermediate vector boson cross sections at the cern super proton synchrotron collider and the number of neutrino types'), (1987, 'production of w s with large transverse momentum at the cern proton antiproton collider'), (1987, 'search for b0 b 0 oscillations at the cern proton antiproton collider'), (1988, 'high transverse momentum j ψ production at the cern proton antiproton collider'), (1988, 'two jet mass distributions at the cern proton antiproton collider'))
+keywords : frozenset({'particle physics', 'nuclear physics'})
+
+firstname : xiaodan
+lastname : wu
+middlename : None
+year : 2014
+year_papertitle : ((2014, 'high temperature corrosion behavior of alloys in gaseous environments with low oxygen and high sulfur potentials'),)
+keywords : frozenset({'materials science', 'engineering', 'high temperature physics'})
+
+17/10 positive, 20/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+Finished labeling
+Done in 10015.217436524232 minutes.

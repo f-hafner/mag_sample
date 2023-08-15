@@ -1,8 +1,8 @@
 #!/bin/bash
 
-output_path="../../output/"
+output_path="../../output"
 script_path="main"
-logfile_path="temp/"
+logfile_path="temp"
 
 # ## Read in database
 python3 $script_path/load_mag/create_database.py &> $logfile_path/create_database.log
@@ -126,11 +126,14 @@ Rscript -e "rmarkdown::render('$script_path/reports/quality_linking.Rmd', output
 # ## 2. Link thesis advisors to MAG
 bash $script_path/link/advisors.sh &> $logfile_path/link_advisors.log
 
+Rscript -e "rmarkdown::render('$script_path/link/combine_links.Rmd', output_dir = '$output_path')" \
+    &> $logfile_path/combine_links.log
+
 # Manual split of biology! TODO: can we delete this?
 # bash $script_path/link/write_links_biology
 # python -m $script_path.link.merge_biology_csv
 
-python -m $script_path.link.write_csv_links --linking_type "advisors" --train_name "christoph_degree0" \
+python -m $script_path.link.write_csv_links --linking_type "advisors" --train_name "combined" \
     &> $logfile_path/write_csv_links_advisors.log
     
 Rscript -e "rmarkdown::render('$script_path/reports/quality_linking_advisors.Rmd', output_dir = '$output_path')" \
@@ -139,6 +142,14 @@ Rscript -e "rmarkdown::render('$script_path/reports/quality_linking_advisors.Rmd
 
 # ## 3. Link NSF grants to MAG advisors
 bash $script_path/link/grants.sh $logfile_path
+
+# XXX adapt for grants - use mona train
+#python -m $script_path.link.write_csv_links --linking_type "advisors" --train_name "christoph_degree0" \
+#    &> $logfile_path/write_csv_links_advisors.log
+    
+Rscript -e "rmarkdown::render('$script_path/reports/quality_linking_grants.Rmd', output_dir = '$output_path')" \
+    &> $logfile_path/quality_linking_grants.log
+
 
 
 # # Generate panel data set etc. for the linked entities

@@ -1,0 +1,855 @@
+Namespace(testing=False, verbose=1, field=['geology'], train_name='mona_degree0', startyear=1985, endyear=2015, loadstartyear=1985, loadendyear=2015, mergemode='1:1', recall=0.9, institution='False', fieldofstudy_cat='False', fieldofstudy_str='False', keywords='True', retrain='True', linking_type='graduates', samplesize=50000, write_to='database')
+Have max 12 cores available
+Testing is False 
+
+I set the write connection to the main database.
+id_field is [127313418] and will be passed to sql queries.
+finished setup ... 
+Time elapsed: 0.0014367938041687013 minutes 
+
+
+    SELECT goid
+            , year
+            , firstname 
+            , lastname
+            , CASE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                WHEN 
+                    "" THEN NULL 
+                    ELSE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                END AS middlename
+            , fieldofstudy
+            , keywords
+            , institution
+            , coauthors
+            , year_papertitle
+    FROM (
+        SELECT goid
+            , degree_year AS year 
+            , fullname 
+            , SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) AS firstname
+            , REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "") AS lastname 
+            , TRIM(SUBSTR(fullname, length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1)) + 1)) AS middle_lastname 
+            , length(fullname) AS l_fullname 
+            , length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) ) AS l_firstname
+            , length(REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "")) AS l_lastname
+            , fieldname AS fieldofstudy
+            , university_id
+            , degree_year || "//" || thesistitle as year_papertitle 
+        FROM pq_authors 
+        INNER JOIN (
+            SELECT goid, fieldname 
+            FROM pq_fields_mag
+            WHERE mag_field0 IN (?)
+        ) USING (goid)
+    )
+    -- ## NOTE: use left join here as not all graduates have advisor (particularly pre-1980) and possibly also keywords
+    LEFT JOIN (
+        SELECT goid
+            , fields as keywords
+            , advisors as coauthors
+        FROm pq_info_linking
+    ) USING(goid)
+    INNER JOIN (
+        SELECT university_id, normalizedname as institution
+        FROM pq_unis
+        WHERE location like "%United States%"
+    ) USING(university_id)
+    WHERE year >= 1985 and year <= 2015 AND length(firstname) > 1
+     
+
+
+    SELECT f.AuthorId
+        , f.year
+        , f.firstname
+        , f.lastname
+        , CASE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            WHEN 
+                "" THEN NULL 
+                ELSE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            END as middlename 
+            -- ## NOTE this gives "" for middlename when it is missing 
+        , f.fieldofstudy
+        , g.keywords
+        , g.coauthors
+        , g.institution
+        , g.year_papertitle
+    FROM (
+        SELECT a.AuthorId
+            , a.YearFirstPub AS year
+            , a.FirstName AS firstname
+            , REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "") AS lastname 
+                    -- https://stackoverflow.com/questions/21388820/how-to-get-the-last-index-of-a-substring-in-sqlite
+            , TRIM(SUBSTR(b.NormalizedName, length(a.FirstName) + 1)) AS middle_lastname 
+                    -- this gives all except the first name 
+            , length(b.NormalizedName) as l_fullname 
+            , length(a.FirstName) as l_firstname
+            , length(REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "")) as l_lastname
+            , e.NormalizedName AS fieldofstudy
+        FROM author_sample AS a
+        INNER JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM Authors
+        ) AS b USING(AuthorId)
+        INNER JOIN (
+            SELECT AuthorId
+            FROM author_field0
+            WHERE FieldOfStudyId_lvl0 IN (?)
+                AND Degree <= 0
+        ) USING(AuthorId)
+        LEFT JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM author_fields c
+            INNER JOIN (
+                SELECT FieldOfStudyId, NormalizedName
+                FROM FieldsOfStudy
+            ) AS d USING(FieldOfStudyId)
+            -- ## Condition on fieldofstudy being in the level 0 id_field
+            INNER JOIN (
+                SELECT ParentFieldOfStudyId, ChildFieldOfStudyId
+                FROM crosswalk_fields
+                WHERE ParentLevel = 0
+                    AND ParentFieldOfStudyId IN (?)
+            ) AS e ON (e.ChildFieldOfStudyId = c.FieldOfStudyId)
+            WHERE FieldClass = 'first'
+        ) AS e USING(AuthorId)
+    ) f
+    LEFT JOIN (
+        SELECT AuthorId
+                , institutions as institution
+                , main_us_institutions_career
+                , coauthors
+                , keywords
+                , year_papertitle
+        FROM author_info_linking
+    ) AS g USING(AuthorId)
+    WHERE length(firstname) > 1 AND year >= 1985 - 5 AND year <= 2015 + 5 
+        -- ## use this to condition on people that have at least at some point their main affiliation in the US
+        AND g.main_us_institutions_career IS NOT NULL
+        AND g.institution != "chinese academy of sciences"
+     
+
+INFO:dedupe.canopy_index:Removing stop word er
+INFO:dedupe.canopy_index:Removing stop word ar
+INFO:dedupe.canopy_index:Removing stop word an
+INFO:dedupe.canopy_index:Removing stop word an
+/home/mona/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/sklearn/feature_extraction/text.py:544: UserWarning: The parameter 'ngram_range' will not be used since 'analyzer' is callable'
+  warnings.warn(
+/home/mona/anaconda3/envs/science-career-tempenv/lib/python3.9/site-packages/sklearn/feature_extraction/text.py:550: UserWarning: The parameter 'stop_words' will not be used since 'analyzer' != 'word'
+  warnings.warn(
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (commonSixGram, lastname)
+Time elapsed: 95.91917973359426 minutes 
+
+Starting active labeling...
+firstname : jacqueline
+lastname : dixon
+middlename : eaby
+year : 1986
+year_papertitle : ((1986, 'gabbroic xenoliths and host ferrobasalt from the southern juan de fuca ridge'), (1988, 'infrared spectroscopic measurements of co2 and h2o in juan de fuca ridge basaltic glasses'), (1989, 'vesicles amygdales and similar structures in fault generated pseudotachylites comment'), (1991, 'degassing history of water sulfur and carbon in submarine lavas from kilauea volcano hawaii'), (1991, 'picritic glasses from hawaii'), (1992, 'water and carbon dioxide in basaltic magmas'))
+keywords : frozenset({'petrology', 'mineralogy', 'geochemistry'})
+
+firstname : jacqueline
+lastname : dixon
+middlename : eaby
+year : 1992
+year_papertitle : ((1992, 'water and carbon dioxide in basaltic magmas'),)
+keywords : frozenset({'geochemistry'})
+
+0/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished
+firstname : tracy
+lastname : gregg
+middlename : k p
+year : 1995
+year_papertitle : ((1995, 'quantification of submarine lava flow morphology through analog experiments'), (1996, 'explosive mafic volcanoes on mars and earth deep magma sources and rapid rise rate'), (1996, 'rapid emplacement of a mid ocean ridge lava flow on the east pacific rise at 9 46 51 n'), (1996, 'submarine lava flow inflation a model for the formation of lava pillars'), (1998, 'formation of multiple fold generations on lava flow surfaces influence of strain rate cooling rate and lava composition'), (1998, 'time series temperature measurements at high temperature hydrothermal vents east pacific rise 9 49 51 n evidence for monitoring a crustal cracking event'), (2000, 'a laboratory investigation into the effects of slope on lava flow morphology'))
+keywords : frozenset({'paleontology', 'geochemistry', 'petrology', 'geophysics', 'seismology', 'geotechnical engineering', 'mineralogy'})
+
+firstname : tracy
+lastname : gregg
+middlename : k p
+year : 1995
+year_papertitle : ((1995, 'quantification of lava flow morphologies through analog experiments'),)
+keywords : frozenset({'geophysics', 'geology'})
+
+1/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (commonSixGram, lastname)
+INFO:dedupe.training:SimplePredicate: (twoGramFingerprint, middlename)
+firstname : edwin
+lastname : apel
+middlename : v
+year : 2005
+year_papertitle : ((2005, 'interseismic coupling and asperity distribution along the kamchatka subduction zone'), (2006, 'independent active microplate tectonics of northeast asia from gps velocities and block modeling'), (2008, 'intraplate deformation of the indian subcontinent'), (2011, 'india plate motion deformation and plate boundary interactions'))
+keywords : frozenset({'seismology', 'geophysics', 'geodesy'})
+
+firstname : edwin
+lastname : apel
+middlename : victor
+year : 2011
+year_papertitle : ((2011, 'shells on a sphere tectonic plate motion and plate boundary deformation'),)
+keywords : frozenset({'geographic information science', 'plate tectonics', 'geophysics', 'geology'})
+
+2/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : joseph
+lastname : olson
+middlename : b
+year : 2003
+year_papertitle : ((2003, 'multiseason verification of the mm5 part i comparison with the eta model over the central and eastern united states and impact of mm5 resolution'), (2003, 'multiseason verification of the mm5 part ii evaluation of high resolution precipitation forecasts over the northeastern united states'), (2006, 'using sar remote sensing field observations and models to better understand coastal flows in the gulf of alaska'), (2007, 'a comparison of two coastal barrier jet events along the southeast alaskan coast during the sarjet field experiment'), (2007, 'a modified approach to initialize an idealized extratropical cyclone within a mesoscale model'), (2009, 'three dimensional idealized simulations of barrier jets along the southeast coast of alaska'))
+keywords : frozenset({'remote sensing', 'meteorology', 'atmospheric sciences', 'climatology', 'oceanography'})
+
+firstname : joseph
+lastname : olson
+middlename : benjamin
+year : 2008
+year_papertitle : ((2008, 'the structure and dynamics of barrier jets along the southeast alaskan coast'),)
+keywords : frozenset({'physical geography', 'atmospheric sciences'})
+
+2/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : adriana
+lastname : potra
+middlename : None
+year : 2014
+year_papertitle : ((2014, 'lead isotope studies of the guerrero composite terrane west central mexico implications for ore genesis'), (2014, 'pb sr and nd isotopic characteristics of a variety of lithologies from the guerrero composite terrane west central mexico constraints on their origin'), (2016, 'comparison of the elemental geochemistry of the arkansas novaculite and the boone chert in their type regions arkansas'), (2016, 'lower mississippian chert development southern midcontinent region'), (2017, 'constraints on the sources of ore metals in mississippi valley type deposits in central and east tennessee usa using pb isotopes'), (2017, 'distribution of trace elements and pb isotopes in stream sediments of the tri state mining district oklahoma kansas and missouri usa'), (2017, 'hydrothermally emplaced lower mississippian tripolitic chert and its possible relationship to the tri state lead zinc mining district'), (2017, 'lithologic stratigraphic position sequence and diagenetic history lower mississippian tripolitic chert northern arkansas and southern missouri'), (2018, 'lead isotope trends and metal sources in the mississippi valley type districts from the mid continent united states'), (2019, 'geochemical investigations of the woodford chattanooga and fayetteville shales implications for genesis of the mississippi valley type zinc lead ores in the southern ozark region and hydrocarbon exploration'))
+keywords : frozenset({'earth science', 'paleontology', 'hydrology', 'geochemistry'})
+
+firstname : adriana
+lastname : potra
+middlename : None
+year : 2011
+year_papertitle : ((2011, 'isotopic studies of the guerrero composite terrane west central mexico implications for provenance of crustal rocks and genesis of ore metals'),)
+keywords : frozenset({'geochemistry', 'geology'})
+
+3/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (suffixArray, lastname)
+firstname : leeann
+lastname : munk
+middlename : None
+year : 2002
+year_papertitle : ((2002, 'sorption of trace metals to an aluminum precipitate in a stream receiving acid rock drainage snake river summit county colorado'), (2004, 'effects of ph fluctuations on potentially toxic metals in the water and sediment of the dillon reservoir summit county colorado'), (2006, 'bucking the trend three new geoscience programs'), (2006, 'geochemical evolution of solutions derived from experimental weathering of sulfide bearing rocks'), (2008, 'relationships between microbial communities and environmental parameters at sites impacted by mining of volcanogenic massive sulfide deposits prince william sound alaska'), (2008, 'sulfide oxidation and distribution of metals near abandoned copper mines in coastal environments prince william sound alaska usa'), (2008, 'temporal variation and the effect of rainfall on metals flux from the historic beatson mine prince william sound alaska usa'))
+keywords : frozenset({'earth science', 'environmental chemistry', 'geochemistry', 'ecology', 'hydrology', 'mathematics education', 'mineralogy'})
+
+firstname : leeann
+lastname : munk
+middlename : None
+year : 2001
+year_papertitle : ((2001, 'geochemical balance of the dillon reservoir and investigation of the effects of acid rock drainage in summit county colorado'),)
+keywords : frozenset({'geochemistry'})
+
+4/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : shuhuei
+lastname : hung
+middlename : None
+year : 1995
+year_papertitle : ((1995, 'a 3 d dynamic model for the anomalous topography and geoid over the south east indian ridge'), (1995, 'comment on more evidence indicates link between el ninos and seismicity link between el ninos and seismicity is still missing'), (1996, 'non double couple focal mechanisms in an oceanic intraplate earthquake swarm application of an improved method for comparative event moment tensor determination'), (1998, 'modelling anisotropic wave propagation in oceanic inhomogeneous structures using the parallel multidomain pseudo spectral method'), (1999, 'anisotropy in the oceanic lithosphere from the study of local intraplate earthquakes on the west flank of the southern east pacific rise shear wave splitting and waveform modeling'), (2000, 'anomalous seafloor spreading of the southeast indian ridge near the amsterdam st paul plateau'), (2000, 'can a narrow melt rich low velocity zone of mantle upwelling be hidden beneath the east pacific rise limits from waveform modeling and the melt experiment'), (2000, 'frechet kernels for finite frequency traveltimes i theory'), (2000, 'frechet kernels for finite frequency traveltimes ii examples'), (2001, 'wavefront healing a banana doughnut perspective'))
+keywords : frozenset({'geometry', 'geodesy', 'optics', 'geophysics', 'seismology', 'mathematical analysis'})
+
+firstname : shuhuei
+lastname : hung
+middlename : None
+year : 1998
+year_papertitle : ((1998, 'seismic wave propagation in the melt experiment area probing the nature of intraplate earthquakes lithospheric anisotropy and mantle upwelling in the vicinity of the southern east pacific rise'),)
+keywords : frozenset({'geophysics'})
+
+5/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:TfidfTextSearchPredicate: (0.4, lastname)
+firstname : maria
+lastname : economoueliopoulos
+middlename : None
+year : 1989
+year_papertitle : ((1989, 'platinum group elements and gold in komatiitic rocks from the agrilia formation othrys ophiolite complex greece'), (1991, 'distribution of platinum group elements and gold within the vourinos chromitite ores greece'), (1991, 'platinum group element and gold contents in the skouries porphyry copper deposit chalkidiki peninsula northern greece'), (1992, 'platinum group minerals and tetraauricupride in ophiolitic rocks of skyros island greece'), (1995, 'geochemistry of chromitites and host rocks from the pindos ophiolite complex northwestern greece'), (1996, 'platinum group element distribution in chromite ores from ophiolite complexes implications for their exploration'))
+keywords : frozenset({'analytical chemistry', 'mineralogy', 'geochemistry'})
+
+firstname : maria
+lastname : chrysochoou
+middlename : None
+year : 2006
+year_papertitle : ((2006, 'investigation of the environmental and geotechnical implications associated with deposition of chromite ore processing residue copr'),)
+keywords : frozenset({'environmental science', 'mineralogy', 'environmental engineering'})
+
+6/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : anthony
+lastname : dosseto
+middlename : None
+year : 2003
+year_papertitle : ((2003, 'dehydration and partial melting in subduction zones constraints from u series disequilibria'), (2003, 'u th pa ra study of the kamchatka arc new constraints on the genesis of arc lavas'), (2005, 'rapid response of erosion to recent climatic changes new insights from uranium series'), (2006, 'amphibole fractionation a constraint on the depth of arc magma evolution'), (2006, 'the role of the beni floodplain on the chemical weathering fluxes in the upper madeira basin bolivia'), (2006, 'the timescale of soil and saprolite production inferred from uranium series isotopes case study in temperate australia'), (2006, 'time scale and conditions of weathering under tropical climate study of the amazon basin with u series'), (2006, 'timescales of petrogenesis in an active caldera rabaul papua new guinea'), (2006, 'uranium series isotopes in colloids and suspended sediments timescale for sediment production and transport in the murray darling river system'), (2006, 'weathering and transport of sediments in the bolivian andes time constraints from uranium series isotopes'))
+keywords : frozenset({'earth science', 'environmental chemistry', 'geomorphology', 'geochemistry', 'petrology', 'hydrology', 'seismology', 'mineralogy'})
+
+firstname : anthony
+lastname : poggioli
+middlename : None
+year : 2015
+year_papertitle : ((2015, 'hydrodynamics and sediment transport at the river ocean interface analytical and laboratory investigations'),)
+keywords : frozenset({'geomorphology', 'civil engineering', 'physical oceanography'})
+
+6/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : li
+lastname : lin
+middlename : None
+year : 2009
+year_papertitle : ((2009, 'periodic fluctuation features of air temperature precipitation and aboveground net primary production of alpine meadow ecosystem on qinghai tibetan plateau'), (2012, 'menispermaceae and the diversification of tropical rainforests near the cretaceous paleogene boundary'), (2013, 'diversification of the phaseoloid legumes effects of climate change range expansion and habit shift'), (2013, 'integrated fossil and molecular data reveal the biogeographic diversification of the eastern asian eastern north american disjunct hickory genus carya nutt'), (2014, 'large scale patterns of stomatal traits in tibetan and mongolian grassland species'), (2014, 'large scale phylogenetic analyses reveal fagalean diversification promoted by the interplay of diaspores and environments in the paleogene'), (2015, 'aerobic methane emission from plant comparative study of different communities and plant species of alpine meadow'), (2015, 'effects of landuse change on ch4 soil atmospheric exchange in alpine meadow on the tibetan plateau'), (2015, 'range expansion and habitat shift triggered elevated diversification of the rice genus oryza poaceae during the pleistocene'), (2015, 'response of the plant community and soil water status to alpine kobresia meadow degradation gradients on the qinghai tibetan plateau china'))
+keywords : frozenset({'soil science', 'ecology', 'evolutionary biology', 'agronomy', 'atmospheric sciences'})
+
+firstname : li
+lastname : li
+middlename : None
+year : 2007
+year_papertitle : ((2007, 'mapping p wave crustal structure using deformable layer tomography in southern california'),)
+keywords : frozenset({'geophysics', 'geology'})
+
+6/10 positive, 3/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : wei
+lastname : liu
+middlename : None
+year : 2014
+year_papertitle : ((2014, 'results following completion of phase i clinical trial using ex vivo expanded cd4 cd127lo cd25 polyclonal tregs for the treatment of recent onset type 1 diabetes'), (2016, 'defocused low energy shock wave activates adipose tissue derived stem cells in vitro via multiple signaling pathways'))
+keywords : frozenset({'cell biology', 'immunology', 'oncology', 'internal medicine'})
+
+firstname : wei
+lastname : li
+middlename : None
+year : 2010
+year_papertitle : ((2010, 'multinuclear solid state nmr studies of phosphate uptake by aluminum hydr oxides'),)
+keywords : frozenset({'environmental science', 'physical chemistry', 'geochemistry'})
+
+6/10 positive, 4/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : abdellah
+lastname : cherkaoui
+middlename : s m
+year : 1997
+year_papertitle : ((1997, 'thermal fluxes associated with the 1993 diking event on the coaxial segment juan de fuca ridge a model for the convective cooling of a dike'), (1999, 'characteristics of high rayleigh number two dimensional convection in an open top porous layer heated from below'), (2001, 'laboratory studies of high rayleigh number circulation in an open top hele shaw cell an analog to mid ocean ridge hydrothermal systems'), (2003, 'a numerical model of hydrothermal cooling and crustal accretion at a fast spreading mid ocean ridge'))
+keywords : frozenset({'petrology', 'mechanics', 'geophysics', 'thermodynamics'})
+
+firstname : abdellah
+lastname : cherkaouimanaoui
+middlename : s m
+year : 1999
+year_papertitle : ((1999, 'thermal convection in open top porous media at high rayleigh numbers'),)
+keywords : frozenset({'geography', 'geophysics'})
+
+6/10 positive, 5/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : william
+lastname : barker
+middlename : w
+year : 1994
+year_papertitle : ((1994, 'direct observation of reactant product interfaces formed in natural weathering of exsolved defective amphibole to smectite evidence for episodic isovolumetric reactions involving structural inheritance'), (1994, 'polysomatism polytypism defect microstructures and reaction mechanisms in regularly and randomly interstratified serpentine and chlorite'), (1995, 'complex polytypism relationships between serpentine structural characteristics and deformation'), (1995, 'dozyite a 1 1 regular interstratification of serpentine and chlorite'), (1996, 'biologically versus inorganically mediated weathering reactions relationships between minerals and extracellular microbial polymers in lithobiontic communities'), (1997, 'biogeochemical weathering of silicate minerals'), (1997, 'chapter 12 biogeochemical weathering of silicate minerals'), (1998, 'experimental observations of the effects of bacteria on aluminosilicate weathering'), (1998, 'low temperature alteration in tuffs from yucca mountain nevada'), (1998, 'zones of chemical and physical interaction at interfaces between microbial communities and minerals a model'))
+keywords : frozenset({'chemical engineering', 'crystallography', 'geochemistry', 'composite material', 'mineralogy'})
+
+firstname : william
+lastname : barker
+middlename : wayne
+year : 1988
+year_papertitle : ((1988, 'an electron microscopic study of extralamellar organoclay complexes'),)
+keywords : frozenset({'microbiology', 'paleontology', 'geology'})
+
+7/10 positive, 5/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (sameSevenCharStartPredicate, lastname)
+firstname : liping
+lastname : zhou
+middlename : None
+year : 1989
+year_papertitle : ((1989, 'late pleistocene and holocene aeolian dust deposition in north china and the northwest pacific ocean'), (1990, 'partly pedogenic origin of magnetic variations in chinese loess'), (1994, 'sensitivity change of thermoluminescence signals after laboratory optical bleaching experiments with loess fine grains'), (1994, 'spatial and temporal reconstructions of changes in the asian palaeomonsoon a new mineral magnetic approach'), (1994, 'the blake geomagnetic polarity episode recorded in chinese loess'), (1995, 'thermoluminescence ages of loess and associated sediments in central nebraska usa'), (1995, 'thermoluminescence dating of the orkutsay loess section in tashkent region uzbekistan central asia'), (1996, 'a late quaternary magnetic record of tunisian loess and its climatic significance'))
+keywords : frozenset({'physical geography', 'soil science', 'geomorphology', 'paleontology', 'geophysics', 'archaeology', 'mineralogy', 'oceanography'})
+
+firstname : weiming
+lastname : zhou
+middlename : None
+year : 2000
+year_papertitle : ((2000, 'correlation of high resolution tem data of mineral assemblages of mid ocean ridge basalts with rock magnetic properties'),)
+keywords : frozenset({'mineralogy', 'geophysics', 'geology'})
+
+7/10 positive, 6/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : sara
+lastname : dougherty
+middlename : l
+year : 2012
+year_papertitle : ((2012, 'seismic structure in central mexico implications for fragmentation of the subducted cocos plate'), (2014, 'seismic structure in southern peru evidence for a smooth contortion between flat and normal subduction of the nazca plate'), (2014, 'seismicity and structure in central mexico evidence for a possible slab tear in the south cocos plate'), (2017, 'source spectral properties of small to moderate earthquakes in southern kansas'), (2018, 'erratum to the 2013 2016 induced earthquakes in harper and sumner counties southern kansas'), (2018, 'induced earthquake families reveal distinctive evolutionary patterns near disposal wells'), (2018, 'rayleigh and s wave tomography constraints on subduction termination and lithospheric foundering in central california'), (2018, 'the 2013 2016 induced earthquakes in harper and sumner counties southern kansas'), (2019, 'delayed dynamic triggering of disposal induced earthquakes observed by a dense array in northern oklahoma'), (2019, 'the large n seismic survey in oklahoma lasso experiment'))
+keywords : frozenset({'seismology'})
+
+firstname : sara
+lastname : dougherty
+middlename : l
+year : 2014
+year_papertitle : ((2014, 'seismic structure along transitions from flat to normal subduction central mexico southern peru and southwest japan'),)
+keywords : frozenset({'geophysics'})
+
+7/10 positive, 7/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : zoran
+lastname : kilibarda
+middlename : None
+year : 2008
+year_papertitle : ((2008, 'late triassic to late jurassic evolution of the adriatic carbonate platform and budva basin southern montenegro'), (2008, 'wind deposition of mud aggregates and their role in development of lamellae in the fair oaks dunes indiana'), (2010, 'assessing the impact of geoscience laboratories on student learning who benefits from introductory labs'), (2011, 'morphology and origin of the fair oaks dunes in nw indiana usa'), (2013, 'dune complexes along the southeastern shore of lake michigan geomorphic history and contemporary processes'), (2014, 'changes in beach gravel lithology caused by anthropogenic activities along the southern coast of lake michigan usa'), (2015, 'a 70 year history of coastal dune migration and beach erosion along the southern shore of lake michigan'))
+keywords : frozenset({'earth science', 'paleontology', 'hydrology', 'mathematics education', 'mineralogy', 'oceanography'})
+
+firstname : zoran
+lastname : kilibarda
+middlename : None
+year : 1994
+year_papertitle : ((1994, 'middle jurassic eolian carbonates bighorn basin wyoming'),)
+keywords : frozenset({'geology'})
+
+8/10 positive, 7/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : charles
+lastname : konrad
+middlename : e
+year : 1996
+year_papertitle : ((1996, 'relationships between precipitation event types and topography in the southern blue ridge mountains of the southeastern usa'), (1996, 'relationships between the intensity of cold air outbreaks and the evolution of synoptic and planetary scale features over north america'), (1997, 'synoptic scale features associated with warm season heavy rainfall over the interior southeastern united states'), (1998, 'a flood climatology of the lower roanoke river basin in north carolina'), (1998, 'an empirical approach for delineating fine scaled spatial patterns of freezing rain in the appalachian region of the usa'), (1998, 'persistent planetary scale circulation patterns and their relationship with cold air outbreak activity over the eastern united states'), (1999, 'numerical prediction of a cold air outbreak a case study with ensemble forecasts'), (2001, 'the most extreme precipitation events over the eastern united states from 1950 to 1996 considerations of scale'))
+keywords : frozenset({'meteorology', 'climatology', 'hydrology'})
+
+firstname : charles
+lastname : konrad
+middlename : edward
+year : 1993
+year_papertitle : ((1993, 'a subsynoptic climatology of heavy rain over the appalachian region based on 850 mb warm air advection patterns'),)
+keywords : frozenset({'physical geography', 'atmospheric sciences'})
+
+8/10 positive, 8/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : patrick
+lastname : schwing
+middlename : None
+year : 2014
+year_papertitle : ((2014, 'a record of anthropogenic effects on sedimentation in the manatee river florida'), (2015, 'a decline in benthic foraminifera following the deepwater horizon event in the northeastern gulf of mexico'), (2015, 'annual to millennial record of sediment delivery to us virgin island coastal environments'), (2015, 'elemental signature of terrigenous sediment runoff as recorded in coastal salt ponds us virgin islands'), (2015, 'hydrocarbons in deep sea sediments following the 2010 deepwater horizon blowout in the northeast gulf of mexico'), (2015, 'sedimentation pulse in the ne gulf of mexico following the 2010 dwh blowout'), (2016, 'changes in sediment redox conditions following the bp dwh blowout event'), (2016, 'sediment core extrusion method at millimeter resolution using a calibrated threaded rod'), (2016, 'tracking the hercules 265 marine gas well blowout in the gulf of mexico'), (2017, 'characterizing the variability of benthic foraminifera in the northeastern gulf of mexico following the deepwater horizon event 2010 2012'))
+keywords : frozenset({'oceanography', 'mineralogy', 'paleontology', 'geochemistry'})
+
+firstname : patrick
+lastname : schwing
+middlename : thomas
+year : 2011
+year_papertitle : ((2011, 'a sedimentary record of regional land use and climate change in the manatee river manatee county florida'),)
+keywords : frozenset({'environmental geology', 'marine geology', 'paleoclimate science'})
+
+9/10 positive, 8/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : john
+lastname : thurmond
+middlename : None
+year : 2000
+year_papertitle : ((2000, 'abstract creating a three dimensional model of clinoforms in the upper san andreas formation last chance canyon new mexico'), (2000, 'use of 3d digital analogues as templates in reservoir modelling'), (2001, 'detailed internal architecture of a fluvial channel sandstone determined from outcrop cores and 3 d ground penetrating radar example from the middle cretaceous ferron sandstone east central utah'), (2005, 'building simple multiscale visualizations of outcrop geology using virtual reality modeling language vrml'), (2006, 'optical radar dem remote sensing data integration for geological mapping in the afar depression ethiopia'), (2006, 'quantitative 3d outcrop interpretation'), (2007, 'illustrative rendering of seismic data'))
+keywords : frozenset({'remote sensing', 'geomorphology', 'petrology', 'seismology', 'computer graphics images', 'simulation'})
+
+firstname : john
+lastname : thurmond
+middlename : b
+year : 2006
+year_papertitle : ((2006, 'applications of three dimensional digital mapping in sedimentology collection visualization and interpretation'),)
+keywords : frozenset({'geology'})
+
+10/10 positive, 8/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : amy
+lastname : frappier
+middlename : benoit
+year : 2002
+year_papertitle : ((2002, 'el nino events recorded by stalagmite carbon isotopes'),)
+keywords : frozenset({'climatology'})
+
+firstname : amy
+lastname : frappier
+middlename : e benoit
+year : 2006
+year_papertitle : ((2006, 'recent extreme events in a tropical stalagmite multi proxy records and analysis of ecosystem delta carbon 13 value sensitivity to weak climate forcing'),)
+keywords : frozenset({'environmental science', 'biogeochemistry', 'geochemistry'})
+
+10/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : gilles
+lastname : guerin
+middlename : None
+year : 1994
+year_papertitle : ((1994, '3 d temperature distribution and heat flow analysis for the eugene island 330 area offshore louisiana abstract'), (1995, 'the internal structure of an active sea floor massive sulphide deposit'), (1996, 'acoustic and elastic properties of calcareous sediments across a siliceous diagenetic front on the eastern u s continental slope'), (1997, 'shear wave logs and velocity porosity relationships in gas hydrates abstracts'), (1997, 'time dependent reservoir characterization of the lf sand in the south eugene island 330 field gulf of mexico'), (1998, '4 d seismic reservoir simulation in a south timbalier 295 turbidite reservoir'), (1998, '4 d seismic reservoir simulation in a south timbalier 295 turbidite reservoir gulf of mexico'), (1998, 'abstract visualization of drainage imaged with 4 d seismic reservoir monitoring'), (1998, 'the deep structure of a sea floor hydrothermal deposit'), (1999, 'characterization of in situ elastic properties of gas hydrate bearing sediments on the blake ridge'))
+keywords : frozenset({'geomorphology', 'geochemistry', 'petrology', 'hydrology', 'seismology', 'mineralogy', 'oceanography'})
+
+firstname : gilles
+lastname : guerin
+middlename : None
+year : 2000
+year_papertitle : ((2000, 'acoustic and thermal characterization of oil migration gas hydrates formation and silica diagenesis'),)
+keywords : frozenset({'geophysics'})
+
+10/10 positive, 10/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : marta
+lastname : breymann
+middlename : t von
+year : 1988
+year_papertitle : ((1988, 'magnesium in the marine sedimentary environment mgnh4 ion exchange'), (1988, 'mgnh4 exchange on humic acid a radiotracer technique for conditional exchange constants in a seawater medium'), (1992, 'water depth and diagenetic constraints on the use of barium as a palaeoproductivity indicator'))
+keywords : frozenset({'analytical chemistry', 'mineralogy', 'inorganic chemistry', 'chromatography'})
+
+firstname : marta
+lastname : breymann
+middlename : t von
+year : 1988
+year_papertitle : ((1988, 'magnesium in hemipelagic environments surface reactions in the sediment pore water system'),)
+keywords : frozenset({'geochemistry'})
+
+10/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : cole
+lastname : edwards
+middlename : t
+year : 2007
+year_papertitle : ((2007, 'physical and chemical evidence of the 1850 ma sudbury impact event in the baraga group michigan'), (2012, 'paleoenvironmental and taphonomic controls on the occurrence of paleoproterozoic microbial communities in the 1 88ga ferriman group labrador trough canada'), (2014, 'calibration of a conodont apatite based ordovician 87sr 86sr curve to biostratigraphy and geochronology implications for stratigraphic resolution'), (2014, 'carbon isotope δ13ccarb stratigraphy of the lower middle ordovician tremadocian darriwilian in the great basin western united states implications for global correlation'))
+keywords : frozenset({'paleontology'})
+
+firstname : cole
+lastname : edwards
+middlename : tyler
+year : 2014
+year_papertitle : ((2014, 'carbon sulfur and strontium isotope stratigraphy of the lower middle ordovician great basin usa implications for oxygenation and causes of global biodiversification'),)
+keywords : frozenset({'geochemistry', 'geology'})
+
+11/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : miguel
+lastname : acosta
+middlename : dominguez
+year : 2009
+year_papertitle : ((2009, 'land use land cover and point sources of the 15 december 2003 dust storm in southwestern north america'), (2011, 'geomorphology of the chihuahuan desert based on potential dust emissions'))
+keywords : frozenset({'geomorphology', 'hydrology'})
+
+firstname : miguel
+lastname : acosta
+middlename : dominguez
+year : 2009
+year_papertitle : ((2009, 'the pluvial lake palomas samalayuca dunes system'),)
+keywords : frozenset({'physical geography', 'geology'})
+
+12/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : martha
+lastname : savage
+middlename : k
+year : 1985
+year_papertitle : ((1985, 'aftershocks of an m 4 2 earthquake in hawaii and comparison with long term studies of the same volume'), (1989, 'comment on apparent stresses stress drops and amplitude ratios of earthquakes preceding and following the 1975 hawaii ms 7 2 main shock by f r zuniga m wyss and m e wilson'), (1989, 'shear wave anisotropy of active tectonic regions via automated s wave polarization analysis'), (1990, 'a search for seismic reflections from the top of the oceanic crust beneath hawaii'), (1990, 'observations of teleseismic shear wave splitting in the basin and range from portable and permanent stations'), (1990, 'shear wave anisotropy and stress direction in and near long valley caldera california 1979 1988'), (1991, 'reply to comment by c h thurber on a search for seismic reflections from the top of the oceanic crust beneath hawaii'))
+keywords : frozenset({'seismology', 'geodesy'})
+
+firstname : martha
+lastname : savage
+middlename : kane
+year : 1987
+year_papertitle : ((1987, 'spectral properties of hawaiian microearthquakes source site and attenuation effects tectonics'),)
+keywords : frozenset({'geophysics'})
+
+12/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : raymond
+lastname : donelick
+middlename : a
+year : 1994
+year_papertitle : ((1994, 'late cenozoic extensional transfer in the walker lane strike slip belt nevada'), (1999, 'variability of apatite fission track annealing kinetics i experimental results'), (1999, 'variability of apatite fission track annealing kinetics ii crystallographic orientation effects'), (1999, 'variability of apatite fission track annealing kinetics iii extrapolation to geological time scales'))
+keywords : frozenset({'crystallography', 'paleontology', 'statistical physics', 'seismology', 'mineralogy', 'thermodynamics'})
+
+firstname : raymond
+lastname : donelick
+middlename : allen
+year : 1988
+year_papertitle : ((1988, 'etchable fission track length reduction in apatite experimental observations theory and geological applications'),)
+keywords : frozenset({'geology'})
+
+13/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : virginie
+lastname : maris
+middlename : None
+year : 2008
+year_papertitle : ((2008, 'lithospheric dismemberment and magmatic processes of the great basin colorado plateau transition utah implied from magnetotellurics'), (2009, 'fluid and deformation regime of an advancing subduction system at marlborough new zealand'), (2010, 'extensional tectonism magmatic hydrothermal connections and geothermal systems of the southwestern united states as revealed through magnetotelluric surveying'), (2010, 'short note parallelizing a 3d finite difference mt inversion algorithm on a multicore pc using openmp'), (2014, 'segmentation of plate coupling fate of subduction fluids and modes of arc magmatism in cascadia inferred from magnetotelluric resistivity'))
+keywords : frozenset({'petrology', 'algorithm', 'geochemistry', 'seismology'})
+
+firstname : virginie
+lastname : maris
+middlename : None
+year : 2011
+year_papertitle : ((2011, 'three dimensional inversion of magnetotelluric data from the coso geothermal field based on a finite difference gauss newton method parallelized on a multicore workstation'),)
+keywords : frozenset({'geophysics'})
+
+13/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : william
+lastname : gardner
+middlename : payton
+year : 2013
+year_papertitle : ((2013, 'high performance simulation of multiple environmental tracers exploring groundwater age and tracer systematics in high resolution heterogeneous domains'), (2015, 'high performance simulation of environmental tracers in heterogeneous domains'))
+keywords : frozenset({'soil science', 'hydrology'})
+
+firstname : william
+lastname : gardner
+middlename : payton
+year : 2009
+year_papertitle : ((2009, 'groundwater dynamics of the norris geyser basin area'),)
+keywords : frozenset({'geophysics', 'geology', 'hydrologic sciences'})
+
+13/10 positive, 14/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : todd
+lastname : dallegge
+middlename : a
+year : 2003
+year_papertitle : ((2003, 'coalbed methane cook inlet south central alaska a potential giant gas resource'), (2006, 'secondary gas emissions during coal desorption marathon grassim oskolkoff 1 well cook inlet basin alaska implications for resource assessment'))
+keywords : frozenset({'mineralogy'})
+
+firstname : todd
+lastname : dallegge
+middlename : a
+year : 2002
+year_papertitle : ((2002, 'application of argon 40 argon 39 chronostratigraphy to geologic problems in yellowstone caldera and cook inlet basin'),)
+keywords : frozenset({'geochemistry', 'geology'})
+
+13/10 positive, 15/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : yan
+lastname : chen
+middlename : None
+year : 2014
+year_papertitle : ((2014, 'late paleozoic to jurassic tectonic evolution of the bogda area northwest china evidence from detrital zircon u pb geochronology'), (2015, 'geochronology and geochemistry of the eastern erenhot ophiolitic complex implications for the tectonic evolution of the inner mongolia daxinganling orogenic belt'), (2015, 'geochronology geochemistry and its geological significance of the damaoqi permian volcanic sequences on the northern margin of the north china block'), (2015, 'mesozoic and cenozoic uplift and exhumation of the bogda mountain nw china evidence from apatite fission track analysis'), (2016, 'detrital zircon u pb ages and hf isotopes of permo carboniferous sandstones in central inner mongolia china implications for provenance and tectonic evolution of the southeastern central asian orogenic belt'), (2016, 'geochemistry and zircon u pb hf isotopes of early paleozoic arc related volcanic rocks in sonid zuoqi inner mongolia implications for the tectonic evolution of the southeastern central asian orogenic belt'), (2017, 'ages and origin of felsic rocks from the eastern erenhot ophiolitic complex southeastern central asian orogenic belt inner mongolia china'), (2017, 'geochronology and geochemistry of permian bimodal volcanic rocks from central inner mongolia china implications for the late palaeozoic tectonic evolution of the south eastern central asian orogenic belt'), (2017, 'provenance of the middle permian zhesi formation in central inner mongolia northern china constraints from petrography geochemistry and detrital zircon u pb geochronology'), (2018, 'zircon u pb hf isotopes and geochemistry analyses of the huyu igneous rocks in northwestern beijing china possible new evidence for the initial destruction of the north china craton'))
+keywords : frozenset({'petrology', 'paleontology', 'geochemistry'})
+
+firstname : yang
+lastname : chen
+middlename : None
+year : 1997
+year_papertitle : ((1997, 'temperature andph dependence of silicate dissolution rate at acid ph'),)
+keywords : frozenset({'geochemistry', 'chemistry'})
+
+13/10 positive, 16/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : sandra
+lastname : steacy
+middlename : j
+year : 1991
+year_papertitle : ((1991, 'an automaton for fractal patterns of fragmentation'), (1992, 'a damage mechanics model for fault zone friction'), (1994, 'the micromechanics of friction in a granular layer'), (1996, 'heterogeneity in a self organized critical earthquake model'), (1998, 'what controls an earthquake s size results from a heterogeneous cellular automaton'))
+keywords : frozenset({'mechanics', 'statistical physics', 'seismology', 'composite material', 'geotechnical engineering'})
+
+firstname : sandra
+lastname : steacy
+middlename : jean
+year : 1992
+year_papertitle : ((1992, 'the mechanics of failure and fragmentation in fault zones'),)
+keywords : frozenset({'geophysics'})
+
+13/10 positive, 17/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : anita
+lastname : grunder
+middlename : l
+year : 1984
+year_papertitle : ((1984, 'the loma seca tuff and the calabozos caldera a major ash flow and caldera complex in the southern andes of central chile'), (1987, 'comment on magmatic conditions of the fish canyon tuff central san juan volcanic field colorado by whitney stormer 1985'), (1987, 'low δ 18 o silicic volcanic rocks at the calabozos caldera complex southern andes'), (1988, 'physical and chemical models of zoned silicic magmas the loma seca tuff and calabozos caldera southern andes'))
+keywords : frozenset({'petrology', 'paleontology', 'geomorphology', 'geochemistry'})
+
+firstname : anita
+lastname : grunder
+middlename : lizzie
+year : 1986
+year_papertitle : ((1986, 'the calabozos caldera complex geology petrology and geochemistry of a major silicic volcanic center and hydrothermal system in the southern andes ash flow tuff zoned tuff chile'),)
+keywords : frozenset({'geology'})
+
+13/10 positive, 17/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : mathew
+lastname : ingraham
+middlename : duffy
+year : 2009
+year_papertitle : ((2009, 'low cycle fatigue of aluminum foam'), (2013, 'response of castlegate sandstone to true triaxial states of stress'), (2013, 'use of acoustic emissions to investigate localization in high porosity sandstone subjected to true triaxial stresses'), (2014, 'characterization of fatigue fractures in closed cell aluminum foam using x ray micro computed tomography'), (2014, 'strain localization and elastic plastic coupling during deformation of porous sandstone'))
+keywords : frozenset({'geotechnical engineering', 'structural engineering', 'geometry', 'composite material'})
+
+firstname : mathew
+lastname : ingraham
+middlename : duffy
+year : 2012
+year_papertitle : ((2012, 'investigation of localization and failure behavior of castlegate sandstone using true triaxial testing'),)
+keywords : frozenset({'geophysics', 'geological'})
+
+14/10 positive, 17/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : randall
+lastname : mackie
+middlename : l
+year : 1988
+year_papertitle : ((1988, 'long period magnetotelluric measurements near the central california coast a land locked view of the conductivity structure under the pacific ocean'), (1991, 'magnetotelluric evidence for crustal suture zones bounding the southern great valley california'), (1993, 'conjugate direction relaxation solutions for 3 d magnetotelluric modeling'), (1993, 'three dimensional magnetotelluric inversion using conjugate gradients'), (1993, 'three dimensional magnetotelluric modeling using difference equations theory and comparisons to integral equation solutions'), (1994, '3 d resistivity forward modeling and inversion using conjugate gradients'), (1994, 'three dimensional electromagnetic modeling using finite difference equations the magnetotelluric example'))
+keywords : frozenset({'physical geography', 'applied mathematics', 'algorithm', 'geomorphology', 'paleontology', 'calculus', 'seismology', 'mathematical analysis'})
+
+firstname : randall
+lastname : mackie
+middlename : lee
+year : 1991
+year_papertitle : ((1991, 'three dimensional magnetotelluric modeling and inversion with applications to the california basin and range province'),)
+keywords : frozenset({'geophysics'})
+
+15/10 positive, 17/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : james
+lastname : harris
+middlename : b
+year : 1989
+year_papertitle : ((1989, 'morphology of a sub pennsylvanian paleochannel using common offset seismic data'), (1991, 'a shallow seismic refraction study of the versailles cryptoexplosion structure central kentucky'), (1991, 'estimating site amplification effects using shallow seismic data'), (1992, 'investigation of structural deformation in unconsolidated sediments using high resolution sh wave seismic methods'), (1993, 'a note on the influence of site conditions on ground motion values observed for the southeastern illinois earthquake of june 10 1987'), (1993, 'the 4 6 mb lg northeastern kentucky earthquake of september 7 1988'), (1995, 'a short note on shear wave velocities and other site conditions at selected strong motion stations in the new madrid seismic zone'), (1996, 'shear wave splitting in quaternary sediments neotectonic implications in the central new madrid seismic zone'))
+keywords : frozenset({'paleontology', 'geomorphology', 'petrology', 'seismology', 'mineralogy'})
+
+firstname : james
+lastname : harris
+middlename : biron
+year : 1992
+year_papertitle : ((1992, 'site amplification of seismic ground motions in the paducah kentucky area'),)
+keywords : frozenset({'geophysics'})
+
+16/10 positive, 17/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : john
+lastname : washington
+middlename : w
+year : 1990
+year_papertitle : ((1990, 'regional and temporal relations of radon in soil gas to soil temperature and moisture'), (1990, 'sampling variability of radon in soil gases'), (1992, 'temporal variability of radon concentration in the interstitial gas of soils in pennsylvania'), (1994, 'gaseous diffusion and permeability in four soil profiles in central pennsylvania'), (1995, 'hydrolysis rates of dissolved volatile organic compounds principles temperature effects and literature review'), (1996, 'gas partitioning of dissolved volatile organic compounds in the vadose zone principles temperature effects and literature review'))
+keywords : frozenset({'soil science', 'environmental chemistry', 'environmental engineering', 'hydrology', 'mineralogy'})
+
+firstname : john
+lastname : washington
+middlename : william
+year : 1991
+year_papertitle : ((1991, 'radon generation and transport in soils'),)
+keywords : frozenset({'environmental science', 'nuclear chemistry', 'geochemistry'})
+
+16/10 positive, 18/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jian
+lastname : zhong
+middlename : None
+year : 2008
+year_papertitle : ((2008, 'progress for ontology of fractures and faults'), (2009, 'ontology of fractures'))
+keywords : frozenset({'data science', 'data mining', 'software engineering'})
+
+firstname : jian
+lastname : zhong
+middlename : None
+year : 2008
+year_papertitle : ((2008, 'ontology and knowledgebase of fractures and faults'),)
+keywords : frozenset({'geology'})
+
+17/10 positive, 18/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : simon
+lastname : szoeke
+middlename : p de
+year : 2005
+year_papertitle : ((2005, 'variability in the southerly flow into the eastern pacific itcz'), (2006, 'effect of shallow cumulus convection on the eastern pacific climate in a coupled model'), (2007, 'a regional ocean atmosphere model for eastern pacific climate toward reducing tropical biases'), (2007, 'stratus ocean reference station 20 degs s 85 degs w mooring recovery and deployment cruise stratus 8 r v ronald h brown cruise 07 09 october 9 2007 november 6 2007'), (2007, 'the central american midsummer drought regional aspects and large scale forcing'), (2007, 'what maintains the sst front north of the eastern pacific equatorial cold tongue'), (2008, 'comparison of marine stratocumulus cloud top heights in the southeastern pacific retrieved from satellites with coincident ship based observations'), (2008, 'the tropical eastern pacific seasonal cycle assessment of errors and mechanisms in ipcc ar4 coupled ocean atmosphere general circulation models'), (2009, 'stratocumulus cloud top height estimates and their climatic implications'), (2009, 'stratus 9 vocals ninth setting of the stratus ocean reference station vocals regional experiment'))
+keywords : frozenset({'meteorology', 'climatology', 'oceanography'})
+
+firstname : simon
+lastname : szoeke
+middlename : p de
+year : 2004
+year_papertitle : ((2004, 'evolution of the cross equatorial atmospheric boundary layer in the east pacific observations and models'),)
+keywords : frozenset({'atmospheric sciences', 'geophysics'})
+
+18/10 positive, 18/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : christian
+lastname : lenhart
+middlename : f
+year : 2003
+year_papertitle : ((2000, 'vegetation and hydrology of impoundments after dam removal in southern wisconsin'), (2003, 'a preliminary review of noaa s community based dam removal and fish passage projects'), (2010, 'riparian corridor channel restoration and management in elm creek minnesota'), (2010, 'spatial and temporal variation in suspended sediment organic matter and turbidity in a minnesota prairie river implications for tmdls'))
+keywords : frozenset({'hydrology', 'agroforestry', 'fishery'})
+
+firstname : christian
+lastname : lenhart
+middlename : francis
+year : 2008
+year_papertitle : ((2008, 'the influence of watershed hydrology and stream geomorphology on turbidity sediment and nutrients in tributaries of the blue earth river minnesota usa'),)
+keywords : frozenset({'physical geography', 'limnology', 'geology', 'hydrologic sciences'})
+
+18/10 positive, 18/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : robert
+lastname : ackert
+middlename : p
+year : 1993
+year_papertitle : ((1993, 'chronology of taylor glacier advances in arena valley antarctica using in situ cosmogenic 3he and 10be'), (1995, 'constraints on age erosion and uplift of neogene glacial deposits in the transantarctic mountains determined from in situ cosmogenic 10be and 26al'), (1995, 'cosmogenic nuclide exposure ages and glacial history of late quaternary ross sea drift in mcmurdo sound antarctica'))
+keywords : frozenset({'physical geography', 'paleontology', 'geomorphology', 'oceanography'})
+
+firstname : robert
+lastname : ackert
+middlename : p
+year : 2000
+year_papertitle : ((2000, 'antarctic glacial chronology new constraints from surface exposure dating'),)
+keywords : frozenset({'geography', 'geochemistry', 'geology'})
+
+18/10 positive, 19/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : wilton
+lastname : arruda
+middlename : zumpichiatti
+year : 2003
+year_papertitle : ((2003, 'the mindanao and halmahera eddies twin eddies induced by nonlinearities'),)
+keywords : frozenset({'mechanics', 'climatology'})
+
+firstname : wilton
+lastname : arruda
+middlename : zumpichiatti
+year : 2002
+year_papertitle : ((2002, 'eddies along western boundaries'),)
+keywords : frozenset({'geophysics', 'oceanography'})
+
+18/10 positive, 20/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+Finished labeling
+INFO:rlr.crossvalidation:using cross validation to find optimum alpha...
+INFO:rlr.crossvalidation:optimum alpha: 0.010000, score 0.34885576070467017
+INFO:dedupe.training:Final predicate set:
+INFO:dedupe.training:SimplePredicate: (suffixArray, lastname)
+Done in 10337.074072372914 minutes.
