@@ -26,11 +26,7 @@ fields=("art"
     "political science"
     "psychology" 
     "sociology")
-fields=("economics"
-    "mathematics"
-    "physics")
-    
-fields=("biology")	
+
 
 for i in "${!fields[@]}"; do     
     field=${fields[$i]} 
