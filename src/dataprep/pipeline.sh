@@ -32,6 +32,8 @@ python3 $script_path/prep_mag/paper_fields.py &> $logfile_path/paper_fields.log
 python3 $script_path/prep_mag/prep_authors.py --years_first_field 5 \
     --years_last_field 5 &> $logfile_path/prep_authors.log
 
+python -m $script_path.prep_mag.authors_fields_detailed &> $logfile_path/authors_fields_detailed.log
+
 python3 -m $script_path.prep_mag.prep_collab --nauthors "all" --chunksize 10000 --ncores 10 \
     &> $logfile_path/prep_collab.log
 python3 -m $script_path.prep_mag.read_collab &> $logfile_path/read_collab.log
@@ -40,15 +42,33 @@ python3 $script_path/prep_mag/prep_affiliations.py &> $logfile_path/prep_affilia
 
 python3 $script_path/prep_mag/prep_citations.py &> $logfile_path/prep_citations.log
 
+python3 -m $script_path.prep_mag.prep_quantiles_papercites \
+    --nfields "all" \
+    --ncores 10 \
+    --write_dir "quantiles_lvl0_temp" \
+    --level 0 \
+    &> $logfile_path/prep_quantiles_papercites_lvl0.log
+
+python3 -m $script_path.prep_mag.prep_quantiles_papercites \
+    --nfields "all" \
+    --ncores 10 \
+    --write_dir "quantiles_lvl1_temp" \
+    --level 1 \
+    &> $logfile_path/prep_quantiles_papercites_lvl1.log
+
+python3 -m $script_path.prep_mag.read_quantiles_papercites \
+    quantiles_lvl1_temp quantiles_lvl0_temp \
+    &> $logfile_path/read_quantiles_papercites.log
+
 python3 $script_path/prep_mag/paper_outcomes.py &> $logfile_path/paper_outcomes.log
 
-python3 $script_path/prep_mag/author_info_linking.py --years_first_field 7 \
-    &> $logfile_path/author_info_linking.log
+# TODO: add here venue_citations
+
 
 python -m $script_path.prep_mag.author_field0 \
     &> $logfile_path/author_field0.log
 
-python3 -m $script_path.prep_mag.affiliation_outcomes --fos_max_level 2 \ 
+python3 -m $script_path.prep_mag.affiliation_outcomes --fos_max_level 0 \
     &> $logfile_path/affiliation_outcomes.log #note: script_path should omit the / at the end
 
 
@@ -64,6 +84,11 @@ python -m $script_path.load_proquest.proquest_to_db &> \
 
 python -m $script_path.load_proquest.correspond_fieldofstudy &> \
     $logfile_path/correspond_fieldofstudy.log
+
+# moved this down because we need the output from `clean_link_institutions` here
+python3 -m $script_path.prep_mag.author_info_linking \
+    --years_first_field 7 \
+    &> $logfile_path/author_info_linking.log
 
 python -m $script_path.load_proquest.pq_author_info_linking &> \
     $logfile_path/pq_author_info_linking.log
@@ -131,5 +156,15 @@ Rscript -e "rmarkdown::render('$script_path/reports/quality_linking_grants.Rmd',
 python -m $script_path.link.prep_linked_data \
     --filter_trainname "christoph_" \
     &> $logfile_path/prep_linked_data.log
-    
-    
+
+# # Calculate topic overlap between linked graduates and 
+    # possible new employers & colleagues
+python -m $script_path.link.topic_similarity \
+    --top_n_authors 200 \
+    --write_dir similarities_temp/ \
+    --window_size 5 \
+    &> $logfile_path/topic_similarity.log
+
+python -m  $script_path.link.read_topic_similarity \
+    --read_dir similarities_temp/ \
+    &> $logfile_path/read_topic_similarity.log

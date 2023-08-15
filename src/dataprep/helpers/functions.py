@@ -1,5 +1,6 @@
 import time 
 import warnings 
+import itertools
 
 def print_elapsed_time(start_time):
     print(f"Time elapsed: {(time.time()-start_time)/60} minutes \n", flush = True)
@@ -118,3 +119,12 @@ def yield_gazetteer(results, iteration_id):
             for canon_id, score in matches:
                 # XXX for graduates the column order of links needs to be adjusted!
                 yield (messy_id, canon_id, score, iteration_id)            
+
+
+def enumerated_arguments(*args, limit=None):
+    """From a generator *args, yield a tuple (i, *args[i]) for i in range(len(args)). 
+    limit: int or None
+        If not None, only return the first `limit` tuples.    
+    """
+    for i, k in enumerate(itertools.islice(*args, limit)):
+        yield ((i,) + tuple([j for j in k]))

@@ -226,17 +226,21 @@ FROM (
     SELECT * 
     FROM (
         SELECT a.AuthorId
-            , a.Year || '//' || d.NormalizedName AS us_institutions_year
+            , a.Year || '//' || d.normalizedname AS us_institutions_year
         FROM AuthorAffiliation a 
         INNER JOIN (
             SELECT AuthorId, YearFirstPub
             FROM author_sample {query_limit} 
         ) AS c USING(AuthorId) 
-        INNER JOIN ( 
-            SELECT AffiliationId, NormalizedName 
-            FROM Affiliations
-            WHERE Iso3166Code = 'US'
-        ) d USING(AffiliationId)
+        INNER JOIN (
+            SELECT from_id, normalizedname
+            FROM links_to_cng
+            INNER JOIN (
+                SELECT unitid, normalizedname 
+                FROM cng_institutions
+            ) USING (unitid)
+            WHERE from_dataset = "mag"
+        ) d ON a.AffiliationId = d.from_id
         ORDER BY Year
     )
 )
@@ -261,10 +265,14 @@ FROM (
         SELECT * 
         FROM PaperAuthorAffiliations
         INNER JOIN (
-            SELECT AffiliationId, NormalizedName as affiliation_name
-            FROM Affiliations
-            WHERE Iso3166Code = "US"
-        ) USING (AffiliationId)
+            SELECT from_id, affiliation_name
+            FROM links_to_cng
+            INNER JOIN (
+                SELECT unitid, normalizedname AS affiliation_name
+                FROM cng_institutions
+            ) USING (unitid)
+            WHERE from_dataset = "mag"
+        ) d ON AffiliationId = d.from_id
         INNER JOIN (
             SELECT PaperId, Year
             FROM Papers 
