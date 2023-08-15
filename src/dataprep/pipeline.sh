@@ -154,7 +154,8 @@ Rscript -e "rmarkdown::render('$script_path/reports/quality_linking_grants.Rmd',
 
 # # Generate panel data set etc. for the linked entities
 python -m $script_path.link.prep_linked_data \
-    --filter_trainname "christoph_" \
+    --filter_trainname_graduates "christoph_" \
+    --filter_trainname_advisors "combined" \
     &> $logfile_path/prep_linked_data.log
 
 # # Calculate topic overlap between linked graduates and 
