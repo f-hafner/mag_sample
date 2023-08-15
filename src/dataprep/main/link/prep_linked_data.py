@@ -33,11 +33,16 @@ import argparse
 
 # ## Arguments
 parser = argparse.ArgumentParser(description = 'Inputs for author_collab')
-parser.add_argument("--filter_trainname", 
+parser.add_argument("--filter_trainname_graduates", 
                     type=str,
-                    dest = "filter_trainname", 
+                    dest = "filter_trainname_graduates", 
                     default=None,
-                    help = "Filter the linking iterations by train name. If not given, use default settings defined in script.") 
+                    help = "Filter the linking iterations of graduates by train name. If not given, use default settings defined in script.") 
+parser.add_argument("--filter_trainname_advisors", 
+                    type=str,
+                    dest = "filter_trainname_advisors", 
+                    default=None,
+                    help = "Filter the linking iterations of advisors by train name. If not given, use default settings defined in script.") 
 args = parser.parse_args()
 
 # ## Variables; connect to db
@@ -60,12 +65,17 @@ for tbl in tables_to_delete:
         con.execute(f"""DROP TABLE IF EXISTS {tbl}""")
 
 
-if args.filter_trainname is not None:
-    where_stmt_iterations = f"""
-    WHERE train_name like '%{args.filter_trainname}%'
+if args.filter_trainname_graduates is not None:
+    where_stmt_iterations_graduates = f"""
+    WHERE train_name like '%{args.filter_trainname_graduates}%'
+    """
+if args.filter_trainname_advisors is not None:
+    where_stmt_iterations_advisors = f"""
+    WHERE train_name like '%{args.filter_trainname_advisors}%'
     """
 
-print(f"where_stmt_iterations is {where_stmt_iterations}", flush=True)
+print(f"{where_stmt_iterations_graduates=}", flush=True)
+print(f"{where_stmt_iterations_advisors=}", flush=True)
 
 # ## (1) Get linked ids for given specs.
     # NOTE: count(distinct authorid) not possible and not necessary: because each authorid is uniquely in one field0, any goid that has multiple links
@@ -83,7 +93,7 @@ FROM (
         FROM (
             SELECT iteration_id, MAX(iteration_id) AS max_id 
             FROM linking_info
-            {where_stmt_iterations}
+            {where_stmt_iterations_graduates}
             GROUP BY field
         )
         WHERE iteration_id = max_id 
@@ -132,7 +142,7 @@ FROM (
         FROM (
             SELECT iteration_id, MAX(iteration_id) AS max_id 
             FROM linking_info_advisors
-            {where_stmt_iterations}
+            {where_stmt_iterations_advisors}
             GROUP BY field
         )
         WHERE iteration_id = max_id 
