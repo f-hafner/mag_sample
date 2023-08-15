@@ -12,12 +12,8 @@ def test_tupelize():
     result = tupelize_links(links, iteration_id)
     first = next(result)
     second = next(result)
-    third = next(result)
     assert first[0] == links[0][0][0]
     assert second[3] == iteration_id 
 
-    with pytest.raises(StopIteration, match="(int, str)"):
-        third
-
-
-links = [(i[0][0], i[0][1], i[1], iteration_id) for i in links]
+    with pytest.raises(StopIteration):
+        third = next(result)
