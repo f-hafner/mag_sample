@@ -15,7 +15,7 @@ grantid INTEGER, fieldrank INTEGER, FieldOfStudyId INTEGER, score NUMERIC
 fieldrank is the counter within a goid for the fields, fieldrank=1 means this is the field that has the highest score
 using this variable one can easily get the top N fields, by where fieldrank<=N 
 
-unique index on grantid and FieldOfStudyId (multiple fields per goid)
+unique index on grantid and FieldOfStudyId (multiple fields per grantid)
 """
 
 import subprocess
@@ -27,6 +27,9 @@ from os.path import isfile, join
 import pandas as pd
 import numpy as np 
 import re 
+import sys
+
+sys.path.append('/home/mona/mag_sample/src/dataprep/')  
 
 from helpers.variables import db_file, datapath, databasepath
 from helpers.functions import analyze_db 
@@ -39,8 +42,7 @@ path_nsffos = datapath+"extract_nsf/output/"
 def load_nsffos(filepath):
     df = pd.read_csv(filepath, 
                         sep="\t",
-                        names=["grantid", "fieldrank", "FieldOfStudyId", "score"],
-                        dtype = {'grantid': int, 'fieldrank': int, 'x3': int, 'x4': float})
+                        names=["grantid", "fieldrank", "FieldOfStudyId", "score"])
     df.drop_duplicates(inplace=True)
     return df
 
