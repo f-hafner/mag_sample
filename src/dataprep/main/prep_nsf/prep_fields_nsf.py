@@ -2,17 +2,14 @@
 # -*- coding: utf-8 -*-
 
 """
-Script prep_fields.py
+Script prep_fields_nsf.py
 
 Generate tables:
-- fieldsauthor: information for linking authors to nsf based on predicted field
-    - AuthorId 
-    - ParentFieldOfStudyId
-    - authorfield_year: year // field 
-- fieldsnsf: nsf fields based on abstracts (still in separate file: prep_fields_nsf.py)
-    - GrantID 
+- fieldsnsf: information for linking authors to nsf based on predicted field
+    - grantid 
     - ParentFieldOfStudyId
     - nsffield_year: year // field
+    
 """
 
 import sqlite3 as sqlite
@@ -36,17 +33,15 @@ if interactive:
     # shorten query limits for faster runs when trying out code. 
     query_limit = "LIMIT 10" # make sure all query have this somewhere!
 
-## Predicted fields by AuthorId:    
-
-con.execute("DROP TABLE IF EXISTS fieldsauthor")
+con.execute("DROP TABLE IF EXISTS fieldsnsf")
 con.execute(f"""                      
-CREATE TABLE fieldsauthor AS
-SELECT AuthorId, ParentFieldOfStudyId
-    , GROUP_CONCAT(year || "//" || fieldname, ";") AS authorfield_year
+CREATE TABLE fieldsnsf AS
+SELECT GrantID, ParentFieldOfStudyId
+    , GROUP_CONCAT(year || "//" || fieldname, ";") AS nsffield_year
 FROM (
     SELECT DISTINCT
-        c.AuthorId,
-        c.Year,
+        c.grantid AS GrantID,
+        d.year,
         a.ParentFieldOfStudyId,
         b.NormalizedName AS fieldname
     FROM
@@ -56,17 +51,19 @@ FROM (
         FROM FieldsOfStudy {query_limit}
     ) AS b ON a.ChildFieldOfStudyId = b.FieldOfStudyId
     INNER JOIN (
-        SELECT AuthorId, FieldOfStudyId, Year
-        FROM author_fields_detailed
+        SELECT grantid, FieldOfStudyId
+        FROM nsffos
     ) AS c ON a.ChildFieldOfStudyId = c.FieldOfStudyId
+    INNER JOIN (
+        SELECT GrantID 
+            , CAST(SUBSTR(Award_AwardEffectiveDate, 7, 4) AS INT) AS year
+        FROM NSF_MAIN
+    ) AS d ON c.grantid = d.GrantID
     WHERE a. ParentLevel = 0
 )
-GROUP BY AuthorId                         
+GROUP BY GrantID                         
 """
 )
-
-## Predicted nsf fields by GrantID:
-## To be added from prep_fields_nsf.py
 
 
 # ## Run ANALYZE, finish
