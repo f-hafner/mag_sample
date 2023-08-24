@@ -320,6 +320,37 @@ GROUP BY AuthorId
 
 con.execute("CREATE UNIQUE INDEX idx_coauth_AuthorId ON coauthors (AuthorId ASC)")
 
+## Create table for predicted fields of authors
+
+con.execute("DROP TABLE IF EXISTS fieldsauthor")
+con.execute(f"""                      
+CREATE TEMP TABLE fieldsauthor AS
+SELECT AuthorId, ParentFieldOfStudyId
+    , GROUP_CONCAT(year || "//" || fieldname, ";") AS authorfield_year
+FROM (
+    SELECT DISTINCT
+        c.AuthorId,
+        c.Year,
+        a.ParentFieldOfStudyId,
+        b.NormalizedName AS fieldname
+    FROM
+        crosswalk_fields a
+    INNER JOIN (
+        SELECT FieldOfStudyId, NormalizedName
+        FROM FieldsOfStudy 
+    ) AS b ON a.ParentFieldOfStudyId = b.FieldOfStudyId
+    INNER JOIN (
+        SELECT AuthorId, FieldOfStudyId, Year
+        FROM author_fields_detailed {query_limit}
+    ) AS c ON a.ChildFieldOfStudyId = c.FieldOfStudyId
+    WHERE a. ParentLevel = 0
+)
+GROUP BY AuthorId                         
+""")
+
+con.execute("CREATE UNIQUE INDEX idx_authfield_AuthorId ON fieldsauthor (AuthorId ASC)")
+
+
 # ## main table 
 print_elapsed_time(start_time)
 print("Creating table author_info_linking", flush=True)
@@ -338,6 +369,7 @@ SELECT a.AuthorId
     , f.main_us_institutions_year
     , g.all_us_institutions_year
     , h.year_papertitle
+    , i.authorfield_year
 FROM author_sample a
 LEFT JOIN keywords b USING(AuthorId)
 LEFT JOIN institutions c USING(AuthorId)
@@ -346,6 +378,7 @@ LEFT JOIN institutions_career e USING(AuthorId)
 LEFT JOIN institutions_year_career f USING(AuthorId)
 LEFT JOIN all_institutions_year_career g USING(AuthorId)
 LEFT JOIN paper_titles_start h USING(AuthorId)
+LEFT JOIN fieldsauthor i USING(AuthorId)
 """)
 
 con.execute("CREATE UNIQUE INDEX idx_ail_AuthorId ON author_info_linking (AuthorId ASC)")
