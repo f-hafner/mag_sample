@@ -23,7 +23,7 @@ from helpers.functions import print_elapsed_time, analyze_db
 from helpers.variables import db_file, insert_questionmark_doctypes_citations, keep_doctypes_citations
 
 
-interactive = False
+interactive = True
 
 # ## Variables; connect to db
 con = sqlite.connect(database = db_file, isolation_level= None)
@@ -48,11 +48,11 @@ FROM (
         crosswalk_fields a
     INNER JOIN (
         SELECT FieldOfStudyId, NormalizedName
-        FROM FieldsOfStudy {query_limit}
-    ) AS b ON a.ChildFieldOfStudyId = b.FieldOfStudyId
+        FROM FieldsOfStudy 
+    ) AS b ON a.ParentFieldOfStudyId = b.FieldOfStudyId
     INNER JOIN (
         SELECT grantid, FieldOfStudyId
-        FROM nsffos
+        FROM nsffos {query_limit}
     ) AS c ON a.ChildFieldOfStudyId = c.FieldOfStudyId
     INNER JOIN (
         SELECT GrantID 
