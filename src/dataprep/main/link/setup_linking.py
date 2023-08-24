@@ -376,6 +376,8 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
         , g.coauthors
         , g.institution
         , g.main_us_institutions_year
+        , g.field0_year
+        , g.field1_year
         {add_more_vars}
     FROM (
         SELECT a.AuthorId
@@ -425,6 +427,8 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
                 , keywords
                 , main_us_institutions_year
                 , all_us_institutions_year
+                , field0_year
+                , field1_year
         FROM author_info_linking
     ) AS g USING(AuthorId)
     {join_current_links}
@@ -532,6 +536,8 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
             , '' AS keywords, '' AS coauthors -- # necessary for current code structure
             , CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) || "//" || b.institution AS main_us_institutions_year
             , CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) || "//" || b.institution AS all_us_institutions_year
+            , d. nsffield0_year
+            , e. nsffield1_year
         FROM NSF_MAIN as a 
         INNER JOIN (
             SELECT GrantID, Name AS institution
@@ -548,6 +554,16 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
             FROM NSF_Investigator
             WHERE RoleCode = 'principal investigator'
         ) c
+        USING (GrantID)
+        INNER JOIN (
+            SELECT GrantID, nsffield0_year
+            FROM fields0_nsf
+        ) d
+        USING (GrantID)
+        INNER JOIN (
+            SELECT GrantID, nsffield1_year
+            FROM fields1_nsf
+        ) e
         USING (GrantID)
         WHERE AWARD_TranType = 'grant' AND AWARD_Agency = 'nsf' 
             AND a.AwardInstrument_Value IN ('standard grant', 'continuing grant')

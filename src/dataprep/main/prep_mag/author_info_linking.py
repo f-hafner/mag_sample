@@ -327,7 +327,7 @@ con.execute("DROP TABLE IF EXISTS fields0author")
 con.execute(f"""                      
 CREATE TEMP TABLE fields0author AS
 SELECT AuthorId, ParentFieldOfStudyId
-    , GROUP_CONCAT(year || "//" || field0, ";") AS authorfield0_year
+    , GROUP_CONCAT(year || "//" || field0, ";") AS field0_year
 FROM (
     SELECT DISTINCT
         c.AuthorId,
@@ -357,7 +357,7 @@ con.execute("DROP TABLE IF EXISTS fields1author")
 con.execute(f"""                      
 CREATE TEMP TABLE fields1author AS
 SELECT AuthorId, ParentFieldOfStudyId
-    , GROUP_CONCAT(year || "//" || field1, ";") AS authorfield1_year
+    , GROUP_CONCAT(year || "//" || field1, ";") AS field1_year
 FROM (
     SELECT DISTINCT
         c.AuthorId,
@@ -369,7 +369,7 @@ FROM (
     INNER JOIN (
         SELECT FieldOfStudyId, NormalizedName
         FROM FieldsOfStudy 
-    ) AS b ON a.ParentFieldOfStudyId = b.FieldOfStudyId
+    ) AS b ON a.ChildFieldOfStudyId = b.FieldOfStudyId
     INNER JOIN (
         SELECT AuthorId, FieldOfStudyId, Year
         FROM author_fields_detailed {query_limit}
@@ -400,8 +400,8 @@ SELECT a.AuthorId
     , f.main_us_institutions_year
     , g.all_us_institutions_year
     , h.year_papertitle
-    , i.authorfield0_year
-    , j.authorfield1_year 
+    , i.field0_year
+    , j.field1_year 
 FROM author_sample a
 LEFT JOIN keywords b USING(AuthorId)
 LEFT JOIN institutions c USING(AuthorId)
