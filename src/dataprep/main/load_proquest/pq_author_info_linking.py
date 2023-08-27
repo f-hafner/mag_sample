@@ -17,54 +17,77 @@ from helpers.functions import analyze_db, print_elapsed_time
 
 start_time = time.time()
 
-
 con = sqlite.connect(database = db_file, isolation_level= None)
+
+interactive = True 
+query_limit = ""
+if interactive:
+    query_limit = "LIMIT 10"
+
 
 with con:
     print("Collapsing fields...", flush=True)
-    con.execute("""
-        CREATE TEMP TABLE pq_fields_collapsed AS 
-        SELECT goid
-                , GROUP_CONCAT(parent_name, ";") AS fields_lvl1
-        FROM (
-            SELECT DISTINCT goid, parent_name 
-            FROM pq_magfos 
-            -- ## Aggregate to the parent field at level 1
+    con.execute(f"""
+    CREATE TEMP TABLE pq_fields_collapsed AS 
+    SELECT goid
+            , GROUP_CONCAT(fieldname, ";") AS fields_lvl1
+    FROM (
+        -- ## (1) fields at level 2 and higher 
+        SELECT DISTINCT goid, parent_name AS fieldname
+        FROM pq_magfos 
+        INNER JOIN (
+            SELECT goid 
+            FROM pq_authors
+            {query_limit}
+        ) USING(goid)
+        -- ## Aggregate to the parent field at level 1
+        INNER JOIN (
+            SELECT ChildFieldOfStudyId, parent_name 
+            FROM crosswalk_fields AS a 
             INNER JOIN (
-                SELECT ChildFieldOfStudyId, parent_name 
-                FROM crosswalk_fields AS a 
-                INNER JOIN (
-                    SELECT FieldOfStudyId, NormalizedName AS parent_name 
-                    FROM FieldsOfStudy
-                ) b
-                ON (a.ParentFieldOfStudyId = b.FieldOfStudyId)
-                WHERE ParentLevel = 1
-            ) 
-            ON (pq_magfos.FieldOfStudyId = ChildFieldOfStudyId)
+                SELECT FieldOfStudyId, NormalizedName AS parent_name 
+                FROM FieldsOfStudy
+            ) b
+            ON (a.ParentFieldOfStudyId = b.FieldOfStudyId)
+            WHERE ParentLevel = 1
         ) 
-        GROUP BY goid 
+        ON (pq_magfos.FieldOfStudyId = ChildFieldOfStudyId)
+        WHERE score > 0.4
+        UNION 
+        -- ## (2) fields at level 1
+        SELECT DISTINCT goid, fieldname 
+        FROM pq_magfos 
+        INNER JOIN ( 
+            SELECT goid 
+            FROM pq_authors
+            {query_limit}
+        ) USING(goid)
+        INNER JOIN (
+            SELECT FieldOfStudyId, NormalizedName AS fieldname
+            FROM FieldsOfStudy 
+            WHERE Level = 1 
+        ) USING(FieldOfStudyId)
+        WHERE score > 0.4 
+    ) 
+    GROUP BY goid 
     """)
 
     con.execute("CREATE INDEX idx_pfc_goid on pq_fields_collapsed (goid ASC)")
 
-    # con.execute("""
-    # CREATE TEMP TABLE pq_fields_collapsed AS 
-    # SELECT goid, GROUP_CONCAT(fieldname, ";") as fields
-    # FROM pq_fields
-    # GROUP BY goid
-    # """)
-
-    # con.execute("CREATE UNIQUE INdEX idx_pfc_goid ON pq_fields_collapsed(goid ASC)")
-
     print_elapsed_time(start_time)
     print("Collapsing advisors...", flush=True)
-    con.execute("""
+    con.execute(f"""
     CREATE TEMP TABLE pq_advisors_collapsed AS 
     SELECT goid, GROUP_CONCAT(fullname, ";") AS advisors
     FROM (
         SELECT goid, firstname || " " || lastname as fullname 
         FROM pq_advisors
     )
+    INNER JOIN (
+        SELECT goid 
+        FROM pq_authors 
+        {query_limit}
+    ) USING(goid)
     GROUP BY goid
     """)
 
