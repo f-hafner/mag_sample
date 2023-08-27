@@ -36,7 +36,6 @@ with con:
                 INNER JOIN (
                     SELECT FieldOfStudyId, NormalizedName AS parent_name 
                     FROM FieldsOfStudy
-                    WHERE Level < 1 -- ## this is implied by parentlevel = 1
                 ) b
                 ON (a.ParentFieldOfStudyId = b.FieldOfStudyId)
                 WHERE ParentLevel = 1
