@@ -23,13 +23,39 @@ con = sqlite.connect(database = db_file, isolation_level= None)
 with con:
     print("Collapsing fields...", flush=True)
     con.execute("""
-    CREATE TEMP TABLE pq_fields_collapsed AS 
-    SELECT goid, GROUP_CONCAT(fieldname, ";") as fields
-    FROM pq_fields
-    GROUP BY goid
+        CREATE TEMP TABLE pq_fields_collapsed AS 
+        SELECT goid
+                , GROUP_CONCAT(parent_name, ";") AS fields_lvl1
+        FROM (
+            SELECT DISTINCT goid, parent_name 
+            FROM pq_magfos 
+            -- ## Aggregate to the parent field at level 1
+            INNER JOIN (
+                SELECT ChildFieldOfStudyId, parent_name 
+                FROM crosswalk_fields AS a 
+                INNER JOIN (
+                    SELECT FieldOfStudyId, NormalizedName AS parent_name 
+                    FROM FieldsOfStudy
+                    WHERE Level < 1 -- ## this is implied by parentlevel = 1
+                ) b
+                ON (a.ParentFieldOfStudyId = b.FieldOfStudyId)
+                WHERE ParentLevel = 1
+            ) 
+            ON (pq_magfos.FieldOfStudyId = ChildFieldOfStudyId)
+        ) 
+        GROUP BY goid 
     """)
 
-    con.execute("CREATE UNIQUE INdEX idx_pfc_goid ON pq_fields_collapsed(goid ASC)")
+    con.execute("CREATE INDEX idx_pfc_goid on pq_fields_collapsed (goid ASC)")
+
+    # con.execute("""
+    # CREATE TEMP TABLE pq_fields_collapsed AS 
+    # SELECT goid, GROUP_CONCAT(fieldname, ";") as fields
+    # FROM pq_fields
+    # GROUP BY goid
+    # """)
+
+    # con.execute("CREATE UNIQUE INdEX idx_pfc_goid ON pq_fields_collapsed(goid ASC)")
 
     print_elapsed_time(start_time)
     print("Collapsing advisors...", flush=True)
@@ -50,7 +76,7 @@ with con:
     con.execute("DROP TABLE IF EXISTS pq_info_linking")
     con.execute("""
     CREATE TABLE pq_info_linking AS 
-    SELECT a.goid, b.fields, c.advisors
+    SELECT a.goid, b.fields_lvl1, c.advisors
     FROM pq_authors AS a
     LEFT JOIN (
         SELECT *
