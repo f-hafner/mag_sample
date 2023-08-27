@@ -61,7 +61,8 @@ if __name__ == "__main__":
     for data in [magdata, otherdata]:
         for key in data.keys():
             if data[key]["keywords"] is not None:
-                data[key]["keywords"] = frozenset(data[key]["keywords"].split(";"))
+                data[key]["keywords"] = frozenset([x for x in data[key]["keywords"].split(";") if x != ""]) 
+                # the list comp above deals with cases "word1;word2;" (the last ; gives an empty last element in the output of split())
 
             features = ["institution", "coauthors", "year_range",
                         "main_us_institutions_year", "all_us_institutions_year",

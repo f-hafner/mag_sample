@@ -267,10 +267,10 @@ if args.linking_type == "graduates":
     -- ## NOTE: use left join here as not all graduates have advisor (particularly pre-1980) and possibly also keywords
     LEFT JOIN (
         SELECT goid
-            , fields_lvl1 || ";" || direct_fields_lvl1 as keywords -- ## FIXME after table pq_info_linking is proper
+            , COALESCE(fields_lvl1, "") || ";" || COALESCE(direct_fields_lvl1, "") as keywords -- ## FIXME after table pq_info_linking is proper
             , advisors as coauthors
         FROM pq_info_linking
-        INNER JOIN pq_fields_lvl1_noparent
+        FULL JOIN pq_fields_lvl1_noparent
         USING (goid)
     ) USING(goid)
     INNER JOIN (
