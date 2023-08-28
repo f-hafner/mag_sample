@@ -65,13 +65,13 @@ if __name__ == "__main__":
 
             features = ["institution", "coauthors", "year_range",
                         "main_us_institutions_year", "all_us_institutions_year",
-                        "year_papertitle"]
+                        "year_papertitle", "field0_year", "field1_year"]
             ft_in_data = list(data[list(data.keys())[0]].keys()) # extract all features of the first record in the dict data
             features = [f for f in features if f in ft_in_data]
             for feature in features:
                 if data[key][feature] is not None:
                     if feature in ["main_us_institutions_year", "all_us_institutions_year",
-                                    "year_papertitle"]:
+                                    "year_papertitle", "field0_year", "field1_year"]:
                         # split, make first entry numeric, convert to tuple
                         ft = [x.split("//") for x in data[key][feature].split(";")]
                         ft = [tuple([int(x[0]), x[1]]) for x in ft] 
@@ -146,6 +146,8 @@ if __name__ == "__main__":
                 {"field": "firstname", "variable name": "firstname", "type": "String", "has missing": False},
                 {"field": "lastname", "variable name": "lastname", "type": "String", "has missing": False},
                 {"field": "middlename", "variable name": "middlename", "type": "String", "has missing": True},
+                {"field": "field0_year", "variable name": "field0_year", "type": "Custom", "has missing": False},
+                {"field": "field1_year", "variable name": "field1_year", "type": "Custom", "has missing": False},
                 {"field": "year_range", "variable name": "year_range", "type": "Custom", "comparator": cf.compare_range_from_tuple_tempfix, "has missing": True},
                 {"field": "year_range", "variable name": "year_range", "type": "Custom", "comparator": cf.compare_startrange_from_tuple, "has missing": True},
                 {"field": "year_range", "variable name": "year_range", "type": "Custom", "comparator": cf.compare_endrange_from_tuple, "has missing": True}
