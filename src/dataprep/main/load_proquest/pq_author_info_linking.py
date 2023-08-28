@@ -32,42 +32,42 @@ with con:
     SELECT goid
             , GROUP_CONCAT(fieldname, ";") AS fields_lvl1
     FROM (
-        -- ## (1) fields at level 2 and higher 
-        SELECT DISTINCT goid, parent_name AS fieldname
-        FROM pq_magfos 
-        INNER JOIN (
-            SELECT goid 
-            FROM pq_authors
-            {query_limit}
-        ) USING(goid)
-        -- ## Aggregate to the parent field at level 1
-        INNER JOIN (
-            SELECT ChildFieldOfStudyId, parent_name 
-            FROM crosswalk_fields AS a 
+        SELECT * 
+        FROM (
+              -- ## (1) fields at level 2 and higher 
+            SELECT DISTINCT goid, parent_name AS fieldname
+            from (select * from pq_magfos where score >0.4 limit 5000000000) as pq_magfos
             INNER JOIN (
-                SELECT FieldOfStudyId, NormalizedName AS parent_name 
-                FROM FieldsOfStudy
-            ) b
-            ON (a.ParentFieldOfStudyId = b.FieldOfStudyId)
-            WHERE ParentLevel = 1
-        ) 
-        ON (pq_magfos.FieldOfStudyId = ChildFieldOfStudyId)
-        WHERE score > 0.4
-        UNION 
-        -- ## (2) fields at level 1
-        SELECT DISTINCT goid, fieldname 
-        FROM pq_magfos 
-        INNER JOIN ( 
-            SELECT goid 
-            FROM pq_authors
-            {query_limit}
-        ) USING(goid)
-        INNER JOIN (
-            SELECT FieldOfStudyId, NormalizedName AS fieldname
-            FROM FieldsOfStudy 
-            WHERE Level = 1 
-        ) USING(FieldOfStudyId)
-        WHERE score > 0.4 
+                SELECT goid 
+                FROM pq_authors
+            ) USING(goid)
+            -- ## Aggregate to the parent field at level 1
+            INNER JOIN (
+                SELECT ChildFieldOfStudyId, parent_name 
+                FROM crosswalk_fields AS a 
+                INNER JOIN (
+                    SELECT FieldOfStudyId, NormalizedName AS parent_name 
+                    FROM FieldsOfStudy
+                ) b
+                ON (a.ParentFieldOfStudyId = b.FieldOfStudyId)
+                WHERE ParentLevel = 1
+            ) 
+            ON (pq_magfos.FieldOfStudyId = ChildFieldOfStudyId)
+            UNION 
+            -- ## (2) fields at level 1
+            SELECT DISTINCT goid, fieldname 
+            from (select * from pq_magfos where score >0.4 limit 5000000000) as pq_magfos
+            INNER JOIN ( 
+                SELECT goid 
+                FROM pq_authors
+            ) USING(goid)
+            INNER JOIN (
+                SELECT FieldOfStudyId, NormalizedName AS fieldname
+                FROM FieldsOfStudy 
+                WHERE Level = 1 
+            ) USING(FieldOfStudyId)
+        )
+        ORDER BY fieldname 
     ) 
     GROUP BY goid 
     """)

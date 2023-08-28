@@ -120,28 +120,85 @@ con.execute("CREATE UNIQUE INDEX idx_pts_AuthorId ON paper_titles_start (AuthorI
 print_elapsed_time(start_time)
 print("Creating temp table for keywords at start", flush=True)
 con.execute("DROP TABLE IF EXISTS keywords")
+con.execute("DROP TABLE IF EXISTS author_field_score")
+
 con.execute("""
-CREATE TEMP TABLE keywords AS 
-SELECT AuthorId, GROUP_CONCAT(fields, ";") AS keywords
+CCREATE TEMP TABLE author_field_score AS 
+SELECT AuthorId, field, sum(Score) AS Score
 FROM (
-    SELECT * 
-    FROM (
-        SELECT DISTINCT a.AuthorId, c.NormalizedName AS fields
-        FROM papers_start a
-        INNER JOIN (
-            SELECT PaperId, FieldOfStudyId
-            FROM PaperFieldsOfStudy
-        ) b USING(PaperId)
-        INNER JOIN (
-            SELECT FieldOfStudyId, NormalizedName
-            FROM FieldsOfStudy 
-            WHERE Level IN (1)
-        ) c USING(FieldOfStudyId)
-    )
-    ORDER BY fields
+    SELECT a.AuthorId, c.NormalizedName AS field, Score
+    FROM papers_start a
+    INNER JOIN (
+        SELECT PaperId, FieldOfStudyId, Score 
+        FROM PaperFieldsOfStudy
+    ) b USING(PaperId)
+    INNER JOIN (
+        SELECT FieldOfStudyId, NormalizedName
+        FROM FieldsOfStudy 
+        WHERE Level IN (1)
+    ) c USING(FieldOfStudyId)
+    UNION ALL
+    SELECT AuthorId, NormalizedName as field, Score
+    FROM papers_start h
+    INNER JOIN (
+        SELECT PaperId, FieldOfStudyId, Score 
+        FROM PaperFieldsOfStudy
+    ) i USING(PaperId)
+    INNER JOIN (
+        SELECT ParentFieldOfStudyId, ChildFieldOfStudyId
+        FROM crosswalk_fields 
+        WHERE ParentLevel = 1
+    ) j ON(i.FieldOfStudyId = j.ChildFieldOfStudyId)
+    INNER JOIN (
+        SELECT FieldOfStudyId, NormalizedName
+        FROM FieldsOfStudy
+    ) k ON(j.ParentFieldOfStudyId = k.FieldOfStudyId)
 )
-GROUP BY AuthorId 
+GROUP BY AuthorId, field
 """)
+            
+#--maybe we need an index here
+
+#-- make the keywords table and continue in author_info_linking
+con.execute("""
+            CREATE TEMP TABLE keywords AS 
+            SELECT AuthorId, GROUP_CONCAT(field, ";") AS keywords
+            FROM (
+                SELECT AuthorId, field
+                    , RANK() OVER (
+                        PARTITION BY AuthorId 
+                        ORDER BY Score DESC
+                    ) score_rank
+                FROM author_field_score
+            )
+´¨
+            GROUP BY AuthorId 
+            ORDER BY field 
+            WHERE score_rank <= 7 
+        """) 
+
+# con.execute("""
+#         CREATE TEMP TABLE keywords AS 
+#         SELECT AuthorId, GROUP_CONCAT(fields, ";") AS keywords
+#         FROM (
+#             SELECT * 
+#             FROM (
+#                 SELECT DISTINCT a.AuthorId, c.NormalizedName AS fields
+#                 FROM papers_start a
+#                 INNER JOIN (
+#                     SELECT PaperId, FieldOfStudyId
+#                     FROM PaperFieldsOfStudy
+#                 ) b USING(PaperId)
+#                 INNER JOIN (
+#                     SELECT FieldOfStudyId, NormalizedName
+#                     FROM FieldsOfStudy 
+#                     WHERE Level IN (1)
+#                 ) c USING(FieldOfStudyId)
+#             )
+#             ORDER BY fields
+#         )
+#         GROUP BY AuthorId 
+# """)
 
 con.execute("CREATE UNIQUE INDEX idx_kw_AuthorId ON keywords (AuthorId ASC)")
 
