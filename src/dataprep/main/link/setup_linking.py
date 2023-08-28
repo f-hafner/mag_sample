@@ -536,8 +536,8 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
             , '' AS keywords, '' AS coauthors -- # necessary for current code structure
             , CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) || "//" || b.institution AS main_us_institutions_year
             , CAST(SUBSTR(a.Award_AwardEffectiveDate, 7, 4) AS INT) || "//" || b.institution AS all_us_institutions_year
-            , d. nsffield0_year
-            , e. nsffield1_year
+            , d. field0_year
+            , e. field1_year
         FROM NSF_MAIN as a 
         INNER JOIN (
             SELECT GrantID, Name AS institution
@@ -556,13 +556,13 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
         ) c
         USING (GrantID)
         INNER JOIN (
-            SELECT GrantID, nsffield0_year
-            FROM fields0_nsf
+            SELECT GrantID, field0_year
+            FROM nsf_fields0_collapsed
         ) d
         USING (GrantID)
         INNER JOIN (
-            SELECT GrantID, nsffield1_year
-            FROM fields1_nsf
+            SELECT GrantID, field1_year
+            FROM nsf_fields1_collapsed
         ) e
         USING (GrantID)
         WHERE AWARD_TranType = 'grant' AND AWARD_Agency = 'nsf' 

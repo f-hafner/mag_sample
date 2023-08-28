@@ -323,16 +323,15 @@ con.execute("CREATE UNIQUE INDEX idx_coauth_AuthorId ON coauthors (AuthorId ASC)
 ## Create table for predicted fields of authors on Parentlevel 0 and 1
 ## Level 0
 
-con.execute("DROP TABLE IF EXISTS fields0author")
+con.execute("DROP TABLE IF EXISTS fields0")
 con.execute(f"""                      
-CREATE TEMP TABLE fields0author AS
-SELECT AuthorId, ParentFieldOfStudyId
+CREATE TEMP TABLE fields0 AS
+SELECT AuthorId
     , GROUP_CONCAT(year || "//" || field0, ";") AS field0_year
 FROM (
     SELECT DISTINCT
         c.AuthorId,
         c.Year,
-        a.ParentFieldOfStudyId,
         b.NormalizedName AS field0
     FROM
         crosswalk_fields a
@@ -342,27 +341,39 @@ FROM (
     ) AS b ON a.ParentFieldOfStudyId = b.FieldOfStudyId
     INNER JOIN (
         SELECT AuthorId, FieldOfStudyId, Year
-        FROM author_fields_detailed {query_limit}
+        FROM author_fields_detailed
+        WHERE Score > 0.4 {query_limit}
     ) AS c ON a.ChildFieldOfStudyId = c.FieldOfStudyId
     WHERE a. ParentLevel = 0
+UNION
+    SELECT DISTINCT
+        b.AuthorId,
+        b.Year,
+        a.NormalizedName AS field0
+    FROM FieldsOfStudy a
+    INNER JOIN (
+        SELECT AuthorId, FieldOfStudyId, Year
+        FROM author_fields_detailed 
+        WHERE Score > 0.4 {query_limit}
+    ) AS b USING(FieldOfStudyId)
+    WHERE a. Level = 0
 )
 GROUP BY AuthorId                         
 """)
 
-con.execute("CREATE UNIQUE INDEX idx_authfield0_AuthorId ON fields0author (AuthorId ASC)")
+con.execute("CREATE UNIQUE INDEX idx_authfield0_AuthorId ON fields0 (AuthorId ASC)")
 
 ## Level 1
 
-con.execute("DROP TABLE IF EXISTS fields1author")
+con.execute("DROP TABLE IF EXISTS fields1")
 con.execute(f"""                      
-CREATE TEMP TABLE fields1author AS
-SELECT AuthorId, ParentFieldOfStudyId
+CREATE TEMP TABLE fields1 AS
+SELECT AuthorId
     , GROUP_CONCAT(year || "//" || field1, ";") AS field1_year
 FROM (
     SELECT DISTINCT
         c.AuthorId,
         c.Year,
-        a.ParentFieldOfStudyId,
         b.NormalizedName AS field1
     FROM
         crosswalk_fields a
@@ -372,14 +383,27 @@ FROM (
     ) AS b ON a.ChildFieldOfStudyId = b.FieldOfStudyId
     INNER JOIN (
         SELECT AuthorId, FieldOfStudyId, Year
-        FROM author_fields_detailed {query_limit}
+        FROM author_fields_detailed 
+        WHERE Score > 0.4 {query_limit}
     ) AS c ON a.ChildFieldOfStudyId = c.FieldOfStudyId
     WHERE a. ParentLevel = 1
+UNION
+    SELECT DISTINCT
+        b.AuthorId,
+        b.Year,
+        a.NormalizedName AS field0
+    FROM FieldsOfStudy a
+    INNER JOIN (
+        SELECT AuthorId, FieldOfStudyId, Year
+        FROM author_fields_detailed
+        WHERE Score > 0.4 {query_limit}
+    ) AS b USING(FieldOfStudyId)
+    WHERE a. Level = 1
 )
 GROUP BY AuthorId                         
 """)
 
-con.execute("CREATE UNIQUE INDEX idx_authfield1_AuthorId ON fields1author (AuthorId ASC)")
+con.execute("CREATE UNIQUE INDEX idx_authfield1_AuthorId ON fields1 (AuthorId ASC)")
 
 
 # ## main table 
@@ -410,8 +434,8 @@ LEFT JOIN institutions_career e USING(AuthorId)
 LEFT JOIN institutions_year_career f USING(AuthorId)
 LEFT JOIN all_institutions_year_career g USING(AuthorId)
 LEFT JOIN paper_titles_start h USING(AuthorId)
-LEFT JOIN fields0author i USING(AuthorId)
-LEFT JOIN fields1author j USING(AuthorId)            
+LEFT JOIN fields0 i USING(AuthorId)
+LEFT JOIN fields1 j USING(AuthorId)            
 """)
 
 con.execute("CREATE UNIQUE INDEX idx_ail_AuthorId ON author_info_linking (AuthorId ASC)")

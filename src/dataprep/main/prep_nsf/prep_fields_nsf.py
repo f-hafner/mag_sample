@@ -5,17 +5,17 @@
 Script prep_fields_nsf.py 
 
 Generate tables:
-- fields0_nsf: information for linking authors to nsf based on predicted field on level 0
+- nsf_fields0_collapsed: information for linking authors to nsf based on predicted field on level 0
     - grantid 
     - ParentFieldOfStudyId
     - nsffield0_year: year // field0
-- fields1_nsf: information for linking authors to nsf based on predicted field on level 1
+- nsf_fields0_collapsed: information for linking authors to nsf based on predicted field on level 1
     - grantid 
     - ParentFieldOfStudyId
-    - nsffield0_year: year // field1
-    
+    - nsffield0_year: year // field1    
 """
-
+## TO DO: delete files fields0_nsf, fields1_nsf in db -> only old name
+ 
 import sqlite3 as sqlite
 import warnings
 import time 
@@ -39,17 +39,15 @@ if interactive:
 
 
 ## Level 0:
-
-con.execute("DROP TABLE IF EXISTS fields0_nsf")
+con.execute("DROP TABLE IF EXISTS nsf_fields0_collapsed")
 con.execute(f"""                      
-CREATE TABLE fields0_nsf AS
-SELECT GrantID, ParentFieldOfStudyId
+CREATE TABLE nsf_fields0_collapsed AS
+SELECT GrantID
     , GROUP_CONCAT(year || "//" || fieldname, ";") AS field0_year
 FROM (
     SELECT DISTINCT
         c.grantid AS GrantID,
         d.year,
-        a.ParentFieldOfStudyId,
         b.NormalizedName AS fieldname
     FROM
         crosswalk_fields a
@@ -60,6 +58,7 @@ FROM (
     INNER JOIN (
         SELECT grantid, FieldOfStudyId
         FROM nsffos 
+        WHERE score > 0.4
     ) AS c ON a.ChildFieldOfStudyId = c.FieldOfStudyId
     INNER JOIN (
         SELECT GrantID 
@@ -67,22 +66,37 @@ FROM (
         FROM NSF_MAIN {query_limit}
     ) AS d ON c.grantid = d.GrantID
     WHERE a. ParentLevel = 0
+UNION 
+    SELECT DISTINCT
+        b.grantid AS GrantID,
+        c.year,
+        a.NormalizedName AS fieldname
+    FROM FieldsOfStudy a
+    INNER JOIN (
+        SELECT grantid, FieldOfStudyId
+        FROM nsffos 
+        WHERE score > 0.4
+    ) AS b USING(FieldOfStudyId) 
+    INNER JOIN (
+        SELECT GrantID 
+            , CAST(SUBSTR(Award_AwardEffectiveDate, 7, 4) AS INT) AS year
+        FROM NSF_MAIN {query_limit}
+    ) AS c ON b.grantid = c.GrantID
+    WHERE a. Level = 0
 )
 GROUP BY GrantID                         
-"""
-)
+""")
 
 ## Level 1
-con.execute("DROP TABLE IF EXISTS fields1_nsf")
+con.execute("DROP TABLE IF EXISTS nsf_fields1_collapsed")
 con.execute(f"""                      
-CREATE TABLE fields1_nsf AS
-SELECT GrantID, ChildFieldOfStudyId
+CREATE TABLE nsf_fields1_collapsed AS
+SELECT GrantID
     , GROUP_CONCAT(year || "//" || fieldname, ";") AS field1_year
 FROM (
     SELECT DISTINCT
         c.grantid AS GrantID,
         d.year,
-        a.ChildFieldOfStudyId,
         b.NormalizedName AS fieldname
     FROM
         crosswalk_fields a
@@ -93,6 +107,7 @@ FROM (
     INNER JOIN (
         SELECT grantid, FieldOfStudyId
         FROM nsffos 
+        WHERE score > 0.4
     ) AS c ON a.ChildFieldOfStudyId = c.FieldOfStudyId
     INNER JOIN (
         SELECT GrantID 
@@ -100,6 +115,23 @@ FROM (
         FROM NSF_MAIN {query_limit}
     ) AS d ON c.grantid = d.GrantID
     WHERE a. ParentLevel = 1
+UNION 
+    SELECT DISTINCT
+        b.grantid AS GrantID,
+        c.year,
+        a.NormalizedName AS fieldname
+    FROM FieldsOfStudy a
+    INNER JOIN (
+        SELECT grantid, FieldOfStudyId
+        FROM nsffos 
+        WHERE score > 0.4
+    ) AS b USING(FieldOfStudyId) 
+    INNER JOIN (
+        SELECT GrantID 
+            , CAST(SUBSTR(Award_AwardEffectiveDate, 7, 4) AS INT) AS year
+        FROM NSF_MAIN {query_limit}
+    ) AS c ON b.grantid = c.GrantID
+    WHERE a. Level = 1
 )
 GROUP BY GrantID                         
 """
