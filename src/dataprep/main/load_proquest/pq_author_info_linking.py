@@ -91,7 +91,7 @@ with con:
     GROUP BY goid
     """)
 
-    con.execute("CREATE UNIQUE INDEX idx_pac_goid ON pq_advisors_collapsed(goid ASC)")
+    con.execute("CREATE UNIQUE INDEX idx_pac_goid ON pq_advisors_collapsed (goid ASC)")
 
     print_elapsed_time(start_time)
     print("Making final pq_info_linking table")
