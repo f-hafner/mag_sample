@@ -44,7 +44,7 @@ con.execute("DROP TABLE IF EXISTS fields0_nsf")
 con.execute(f"""                      
 CREATE TABLE fields0_nsf AS
 SELECT GrantID, ParentFieldOfStudyId
-    , GROUP_CONCAT(year || "//" || fieldname, ";") AS nsffield0_year
+    , GROUP_CONCAT(year || "//" || fieldname, ";") AS field0_year
 FROM (
     SELECT DISTINCT
         c.grantid AS GrantID,
@@ -76,13 +76,13 @@ GROUP BY GrantID
 con.execute("DROP TABLE IF EXISTS fields1_nsf")
 con.execute(f"""                      
 CREATE TABLE fields1_nsf AS
-SELECT GrantID, ParentFieldOfStudyId
-    , GROUP_CONCAT(year || "//" || fieldname, ";") AS nsffield1_year
+SELECT GrantID, ChildFieldOfStudyId
+    , GROUP_CONCAT(year || "//" || fieldname, ";") AS field1_year
 FROM (
     SELECT DISTINCT
         c.grantid AS GrantID,
         d.year,
-        a.ParentFieldOfStudyId,
+        a.ChildFieldOfStudyId,
         b.NormalizedName AS fieldname
     FROM
         crosswalk_fields a
