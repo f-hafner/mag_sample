@@ -131,14 +131,15 @@ con.execute("""
                     SELECT PaperId, FieldOfStudyId, Score 
                     FROM PaperFieldsOfStudy 
                 ) b USING(PaperId)
-            ) GROUP BY AuthorId, FieldOfStudyId;
-            CREATE INDEX idx_dfs_AuthorIdFieldId ON detail_author_field_score (AuthorId ASC, FieldOfStudyId ASC)
+            ) GROUP BY AuthorId, FieldOfStudyId        
             """)
 
+con.execute("""
+            CREATE INDEX idx_dfs_AuthorIdFieldId ON detail_author_field_score (AuthorId ASC, FieldOfStudyId ASC)
+            """)
 con.execute("DROP TABLE IF EXISTS author_field_score")
 
 con.execute("""
-
 CREATE TEMP TABLE author_field_score AS 
 SELECT AuthorId, NormalizedName, sum(Score) AS Score
 FROM (
