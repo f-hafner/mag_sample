@@ -123,7 +123,7 @@ con.execute("DROP TABLE IF EXISTS keywords")
 con.execute("DROP TABLE IF EXISTS author_field_score")
 
 con.execute("""
-CCREATE TEMP TABLE author_field_score AS 
+CREATE TEMP TABLE author_field_score AS 
 SELECT AuthorId, field, sum(Score) AS Score
 FROM (
     SELECT a.AuthorId, c.NormalizedName AS field, Score
@@ -156,7 +156,8 @@ FROM (
 )
 GROUP BY AuthorId, field
 """)
-            
+con.execute("""
+            CREATE INDEX idx_fs_AuthorId ON author_field_score (AuthorId ASC)""")           
 #--maybe we need an index here
 
 #-- make the keywords table and continue in author_info_linking
