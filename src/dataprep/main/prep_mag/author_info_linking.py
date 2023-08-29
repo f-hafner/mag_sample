@@ -172,7 +172,6 @@ con.execute("""
                     ) score_rank
                 FROM author_field_score
             )
-´¨
             GROUP BY AuthorId 
             ORDER BY field 
             WHERE score_rank <= 7 
