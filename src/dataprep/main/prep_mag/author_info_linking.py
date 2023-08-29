@@ -118,87 +118,83 @@ con.execute("CREATE UNIQUE INDEX idx_pts_AuthorId ON paper_titles_start (AuthorI
 
 # ### keywords
 print_elapsed_time(start_time)
-print("Creating temp table for keywords at start", flush=True)
-con.execute("DROP TABLE IF EXISTS keywords")
+print("Creating temp table for author_field_score at start", flush=True)
+
+con.execute("DROP TABLE IF EXISTS detail_author_field_score;")
+con.execute("""
+            CREATE TEMP TABLE detail_author_field_score AS 
+            SELECT AuthorId, FieldOfStudyId, sum(Score) AS Score
+            FROM (
+                SELECT a.AuthorId, b.FieldOfStudyId, b.Score --- c.NormalizedName AS field
+                FROM papers_start as a
+                INNER JOIN (
+                    SELECT PaperId, FieldOfStudyId, Score 
+                    FROM PaperFieldsOfStudy 
+                ) b USING(PaperId)
+            ) GROUP BY AuthorId, FieldOfStudyId;
+            CREATE INDEX idx_dfs_AuthorIdFieldId ON detail_author_field_score (AuthorId ASC, FieldOfStudyId ASC)
+            """)
+
 con.execute("DROP TABLE IF EXISTS author_field_score")
 
 con.execute("""
+
 CREATE TEMP TABLE author_field_score AS 
-SELECT AuthorId, field, sum(Score) AS Score
+SELECT AuthorId, NormalizedName, sum(Score) AS Score
 FROM (
-    SELECT a.AuthorId, c.NormalizedName AS field, Score
-    FROM papers_start a
+    SELECT a.AuthorId, NormalizedName, Score --- c.NormalizedName AS field
+    FROM (select * from detail_author_field_score ) as a
     INNER JOIN (
-        SELECT PaperId, FieldOfStudyId, Score 
-        FROM PaperFieldsOfStudy
-    ) b USING(PaperId)
-    INNER JOIN (
-        SELECT FieldOfStudyId, NormalizedName
-        FROM FieldsOfStudy 
-        WHERE Level IN (1)
+    SELECT FieldOfStudyId, NormalizedName
+    FROM FieldsOfStudy 
+    WHERE Level IN (1)
     ) c USING(FieldOfStudyId)
     UNION ALL
-    SELECT AuthorId, NormalizedName as field, Score
-    FROM papers_start h
-    INNER JOIN (
-        SELECT PaperId, FieldOfStudyId, Score 
-        FROM PaperFieldsOfStudy
-    ) i USING(PaperId)
+    SELECT h.AuthorId, k.NormalizedName , Score --- NormalizedName as field
+    FROM (select * from detail_author_field_score ) as h
     INNER JOIN (
         SELECT ParentFieldOfStudyId, ChildFieldOfStudyId
         FROM crosswalk_fields 
         WHERE ParentLevel = 1
-    ) j ON(i.FieldOfStudyId = j.ChildFieldOfStudyId)
+    ) j ON(h.FieldOfStudyId = j.ChildFieldOfStudyId)
     INNER JOIN (
-        SELECT FieldOfStudyId, NormalizedName
-        FROM FieldsOfStudy
+         SELECT FieldOfStudyId, NormalizedName
+         FROM FieldsOfStudy
     ) k ON(j.ParentFieldOfStudyId = k.FieldOfStudyId)
 )
-GROUP BY AuthorId, field
+GROUP BY AuthorId, NormalizedName
 """)
+print("Creating index for author field score", flush=True)
+
 con.execute("""
             CREATE INDEX idx_fs_AuthorId ON author_field_score (AuthorId ASC)""")           
 #--maybe we need an index here
 
 #-- make the keywords table and continue in author_info_linking
+print("Creating temp table for keywords at start", flush=True)
+con.execute("DROP TABLE IF EXISTS keywords")
+
 con.execute("""
             CREATE TEMP TABLE keywords AS 
             SELECT AuthorId, GROUP_CONCAT(field, ";") AS keywords
             FROM (
-                SELECT AuthorId, field
-                    , RANK() OVER (
-                        PARTITION BY AuthorId 
-                        ORDER BY Score DESC
-                    ) score_rank
-                FROM author_field_score
-            )
-            GROUP BY AuthorId 
-            ORDER BY field 
-            WHERE score_rank <= 7 
+                SELECT AuthorId, field, score_rank
+                FROM (
+                    SELECT AuthorId, NormalizedName as field
+                        , RANK() OVER (
+                            PARTITION BY AuthorId 
+                            ORDER BY Score DESC
+                        ) AS score_rank
+                    FROM author_field_score  
+                ) AS sub1
+                WHERE score_rank <= 7
+                ORDER BY AuthorId, field
+            ) AS sub2
+            GROUP BY AuthorId
         """) 
 
-# con.execute("""
-#         CREATE TEMP TABLE keywords AS 
-#         SELECT AuthorId, GROUP_CONCAT(fields, ";") AS keywords
-#         FROM (
-#             SELECT * 
-#             FROM (
-#                 SELECT DISTINCT a.AuthorId, c.NormalizedName AS fields
-#                 FROM papers_start a
-#                 INNER JOIN (
-#                     SELECT PaperId, FieldOfStudyId
-#                     FROM PaperFieldsOfStudy
-#                 ) b USING(PaperId)
-#                 INNER JOIN (
-#                     SELECT FieldOfStudyId, NormalizedName
-#                     FROM FieldsOfStudy 
-#                     WHERE Level IN (1)
-#                 ) c USING(FieldOfStudyId)
-#             )
-#             ORDER BY fields
-#         )
-#         GROUP BY AuthorId 
-# """)
+ 
+print("Creating index for keywords at start", flush=True)
 
 con.execute("CREATE UNIQUE INDEX idx_kw_AuthorId ON keywords (AuthorId ASC)")
 
