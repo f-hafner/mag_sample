@@ -36,6 +36,8 @@ def number_comparator(x, y):
     dist = abs(numpy.log10(x) - numpy.log10(y))
     return dist 
 
+def number_difference_larger_than_0(x, y):
+    return 1 if x > y else 0
 
 def compare_values(a, b, ignore_substr=None):
     "Compare values depending on their type."

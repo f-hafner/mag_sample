@@ -232,6 +232,7 @@ if args.linking_type == "graduates":
     query_proquest = f"""
     SELECT goid
             , year
+            , year as yeardiff_larger_than_0
             , firstname 
             , lastname
             , CASE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
@@ -280,6 +281,7 @@ if args.linking_type == "graduates":
     query_mag = f"""
     SELECT f.AuthorId
         , f.year
+        , f.year as yeardiff_larger_than_0
         , f.firstname
         , f.lastname
         , CASE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
