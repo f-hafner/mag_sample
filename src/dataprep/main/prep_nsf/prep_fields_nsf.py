@@ -14,7 +14,6 @@ Generate tables:
     - ParentFieldOfStudyId
     - nsffield0_year: year // field1    
 """
-## TO DO: delete files fields0_nsf, fields1_nsf in db -> only old name
  
 import sqlite3 as sqlite
 import warnings
