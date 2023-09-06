@@ -1,0 +1,1903 @@
+Namespace(testing=False, verbose=1, field=['engineering'], train_name='flavio_with_protocol_magkeywords', startyear=1985, endyear=2015, loadstartyear=1985, loadendyear=2015, mergemode='1:1', recall=0.9, institution='False', fieldofstudy_cat='False', fieldofstudy_str='False', keywords='True', retrain='True', linking_type='graduates', samplesize=50000, write_to='database')
+Have max 12 cores available
+Testing is False 
+
+I set the write connection to the main database.
+id_field is [127413603] and will be passed to sql queries.
+finished setup ... 
+Time elapsed: 0.0004914005597432455 minutes 
+
+
+    SELECT goid
+            , year
+            , year as yeardiff_larger_than_0
+            , firstname 
+            , lastname
+            , CASE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                WHEN 
+                    "" THEN NULL 
+                    ELSE TRIM(SUBSTR(middle_lastname, 1, l_fullname-l_firstname-l_lastname - 1)) 
+                END AS middlename
+            , fieldofstudy
+            , keywords
+            , institution
+            , coauthors
+            , year_papertitle
+    FROM (
+        SELECT goid
+            , degree_year AS year 
+            , fullname 
+            , SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) AS firstname
+            , REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "") AS lastname 
+            , TRIM(SUBSTR(fullname, length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1)) + 1)) AS middle_lastname 
+            , length(fullname) AS l_fullname 
+            , length(SUBSTR(TRIM(fullname),1,instr(trim(fullname)||' ',' ')-1) ) AS l_firstname
+            , length(REPLACE(fullname, RTRIM(fullname, REPLACE(fullname, " ", "")), "")) AS l_lastname
+            , fieldname AS fieldofstudy
+            , university_id
+            , degree_year || "//" || thesistitle as year_papertitle 
+        FROM pq_authors 
+        INNER JOIN (
+            SELECT goid, fieldname 
+            FROM pq_fields_mag
+            WHERE mag_field0 IN (?)
+        ) USING (goid)
+    )
+    -- ## NOTE: use left join here as not all graduates have advisor (particularly pre-1980) and possibly also keywords
+    LEFT JOIN (
+        SELECT goid, fields_lvl1 as keywords, advisors as coauthors 
+        FROM pq_info_linking
+    ) USING(goid)
+    INNER JOIN (
+        SELECT university_id, normalizedname as institution
+        FROM pq_unis
+        WHERE location like "%United States%"
+    ) USING(university_id)
+    WHERE year >= 1985 and year <= 2015 AND length(firstname) > 1
+     
+
+
+    SELECT f.AuthorId
+        , f.year
+        , f.year as yeardiff_larger_than_0
+        , f.firstname
+        , f.lastname
+        , CASE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            WHEN 
+                "" THEN NULL 
+                ELSE TRIM(SUBSTR(f.middle_lastname, 1, f.l_fullname - f.l_firstname - f.l_lastname - 1)) 
+            END as middlename 
+            -- ## NOTE this gives "" for middlename when it is missing 
+        , f.fieldofstudy
+        , g.keywords
+        , g.coauthors
+        , g.institution
+        , g.year_papertitle
+    FROM (
+        SELECT a.AuthorId
+            , a.YearFirstPub AS year
+            , a.FirstName AS firstname
+            , REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "") AS lastname 
+                    -- https://stackoverflow.com/questions/21388820/how-to-get-the-last-index-of-a-substring-in-sqlite
+            , TRIM(SUBSTR(b.NormalizedName, length(a.FirstName) + 1)) AS middle_lastname 
+                    -- this gives all except the first name 
+            , length(b.NormalizedName) as l_fullname 
+            , length(a.FirstName) as l_firstname
+            , length(REPLACE(b.NormalizedName, RTRIM(b.NormalizedName, REPLACE(b.NormalizedName, " ", "")), "")) as l_lastname
+            , e.NormalizedName AS fieldofstudy
+        FROM author_sample AS a
+        INNER JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM Authors
+        ) AS b USING(AuthorId)
+        INNER JOIN (
+            SELECT AuthorId
+            FROM author_field0
+            WHERE FieldOfStudyId_lvl0 IN (?)
+                AND Degree <= 0
+        ) USING(AuthorId)
+        LEFT JOIN (
+            SELECT AuthorId, NormalizedName
+            FROM author_fields c
+            INNER JOIN (
+                SELECT FieldOfStudyId, NormalizedName
+                FROM FieldsOfStudy
+            ) AS d USING(FieldOfStudyId)
+            -- ## Condition on fieldofstudy being in the level 0 id_field
+            INNER JOIN (
+                SELECT ParentFieldOfStudyId, ChildFieldOfStudyId
+                FROM crosswalk_fields
+                WHERE ParentLevel = 0
+                    AND ParentFieldOfStudyId IN (?)
+            ) AS e ON (e.ChildFieldOfStudyId = c.FieldOfStudyId)
+            WHERE FieldClass = 'first'
+        ) AS e USING(AuthorId)
+    ) f
+    LEFT JOIN (
+        SELECT AuthorId
+                , institutions as institution
+                , main_us_institutions_career
+                , coauthors
+                , keywords
+                , year_papertitle
+        FROM author_info_linking
+    ) AS g USING(AuthorId)
+    WHERE length(firstname) > 1 AND year >= 1985 - 5 AND year <= 2015 + 5 
+        -- ## use this to condition on people that have at least at some point their main affiliation in the US
+        AND g.main_us_institutions_career IS NOT NULL
+        AND g.institution != "chinese academy of sciences"
+     
+
+Time elapsed: 72.86345707178116 minutes 
+
+Starting active labeling...
+firstname : samuel
+lastname : au
+middlename : kwok wai
+year : 2003
+yeardiff_larger_than_0 : 2003
+year_papertitle : ((2003, 'large scale servo control using a matrix wire network for driving a large number of actuators'), (2004, 'stabilization and path following of a single wheel robot'), (2006, 'an ankle foot emulation system for the study of human walking biomechanics'), (2007, 'biomimetic prostheses the next generation'), (2007, 'powered ankle foot prosthesis for the improvement of amputee walking economy'), (2008, '2008 special issue powered ankle foot prosthesis to assist level ground and stair descent gaits'), (2008, 'powered ankle foot prosthesis'))
+keywords : frozenset({'simulation', 'surgery', 'electrical engineering', 'physical medicine and rehabilitation', 'control theory', 'mechanical engineering', 'structural engineering'})
+
+firstname : samuel
+lastname : au
+middlename : kwokwai
+year : 2007
+yeardiff_larger_than_0 : 2007
+year_papertitle : ((2007, 'powered ankle foot prosthesis for the improvement of amputee walking economy'),)
+keywords : frozenset({'surgery', 'physical medicine and rehabilitation', 'mechanical engineering'})
+
+0/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished
+firstname : sreemanth
+lastname : uppuluri
+middlename : m v
+year : 2004
+yeardiff_larger_than_0 : 2004
+year_papertitle : ((2004, 'replication of microstructures in polymers using laser fabricated glass ceramic stamps'), (2006, 'contact optical nanolithography using nanoscale c shaped apertures'), (2006, 'design fabrication and characterization of nanometer scale ridged aperture optical antennae'), (2006, 'nanolithography using high transmission nanoscale bowtie apertures'), (2008, 'nanopatterning using nsom probes integrated with high transmission nanoscale bowtie aperture'), (2010, 'parallel optical nanolithography using nanoscale bowtie aperture array'), (2010, 'three dimensional mapping of optical near field of a nanoscale bowtie antenna'))
+keywords : frozenset({'optoelectronics', 'nanotechnology', 'electrical engineering', 'chemical engineering', 'optics', 'composite material', 'mechanical engineering'})
+
+firstname : sreemanth
+lastname : uppuluri
+middlename : m v
+year : 2010
+yeardiff_larger_than_0 : 2010
+year_papertitle : ((2010, 'parallel optical nanolithography using nanoscale bowtie apertures'),)
+keywords : frozenset({'optics', 'optoelectronics', 'composite material', 'nanotechnology'})
+
+1/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : kelsey
+lastname : hatzell
+middlename : b
+year : 2012
+yeardiff_larger_than_0 : 2012
+year_papertitle : ((2012, 'a survey of long term health modeling estimation and control of lithium ion batteries challenges and opportunities'), (2013, 'a high performance pseudocapacitive suspension electrode for the electrochemical flow capacitor'), (2013, 'investigation of carbon materials for use as a flowable electrode in electrochemical flow capacitors'), (2014, 'activated carbon spheres as a flowable electrode in electrochemical flow capacitors'), (2014, 'capacitive deionization concept based on suspension electrodes without ion exchange membranes'), (2014, 'composite manganese oxide percolating networks as a suspension electrode for an asymmetric flow capacitor'), (2014, 'effects of flow cell design on charge percolation and storage in the carbon slurry electrodes of electrochemical flow capacitors'), (2014, 'highly porous carbon spheres for electrochemical capacitors and capacitive flowable suspension electrodes'), (2014, 'using flow electrodes in multiple reactors in series for continuous energy generation from capacitive mixing'), (2015, 'flowable conducting particle networks in redox active electrolytes for grid energy storage'))
+keywords : frozenset({'inorganic chemistry', 'optoelectronics', 'nanotechnology', 'electrical engineering', 'chemical engineering', 'composite material', 'structural engineering'})
+
+firstname : marta
+lastname : hatzell
+middlename : c
+year : 2014
+yeardiff_larger_than_0 : 2014
+year_papertitle : ((2014, 'electrochemical energy generation from natural and synthetic salinity gradients using reverse electrodialysis and capacitive mixing'),)
+keywords : frozenset({'optoelectronics', 'chemical engineering', 'inorganic chemistry'})
+
+2/10 positive, 0/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : kinjal
+lastname : gupta
+middlename : dhar
+year : 2013
+yeardiff_larger_than_0 : 2013
+year_papertitle : ((2013, 'a machine learning approach to cepheid variable star classification using data alignment and maximum likelihood'), (2014, 'domain adaptation under data misalignment an application to cepheid variable star classification'), (2015, 'star classification under data variability an emerging challenge in astroinformatics'), (2016, 'automated supernova ia classification using adaptive learning techniques'), (2019, 'a general approach to domain adaptation with applications in astronomy'))
+keywords : frozenset({'computer network', 'astrophysics', 'data science', 'statistics', 'artificial intelligence', 'control theory', 'astronomy'})
+
+firstname : maya
+lastname : gupta
+middlename : rani
+year : 2003
+yeardiff_larger_than_0 : 2003
+year_papertitle : ((2003, 'an information theory approach to supervised learning'),)
+keywords : frozenset({'pattern recognition', 'statistics', 'artificial intelligence', 'control theory', 'algorithm'})
+
+2/10 positive, 1/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ozgur
+lastname : gurbuz
+middlename : None
+year : 1999
+yeardiff_larger_than_0 : 1999
+year_papertitle : ((1999, 'a resource management framework for qos provisioning in w cdma systems'), (1999, 'dynamic resource scheduling for variable qos traffic in w cdma'), (1999, 'dynamic resource scheduling strategies for qos in w cdma'), (1999, 'modeling simulation and verification of an enterprise network'), (2000, 'dynamic resource scheduling schemes for w cdma systems'), (2002, 'power control based qos provisioning for multimedia in w cdma'), (2004, 'a transparent arq scheme for broadband wireless access'), (2004, 'angular mac protocol for wireless ad hoc networks with smart antennas'), (2004, 'dynamic resource scheduling drs a multimedia qos framework for w cdma'), (2004, 'dynamic resource scheduling drs a multimedia qos framework for w cdma research articles'))
+keywords : frozenset({'computer network', 'environmental resource management', 'real time computing', 'electrical engineering', 'algorithm', 'electronic engineering', 'distributed computing'})
+
+firstname : ozgur
+lastname : gurbuz
+middlename : None
+year : 2000
+yeardiff_larger_than_0 : 2000
+year_papertitle : ((2000, 'power control based qos provisioning for wireless multimedia networks'),)
+keywords : frozenset({'computer network', 'electronic engineering', 'electrical engineering'})
+
+2/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : brandon
+lastname : noia
+middlename : None
+year : 2009
+yeardiff_larger_than_0 : 2009
+year_papertitle : ((2009, 'test wrapper optimization for embedded cores in tsv based three dimensional socs'), (2010, 'optimization methods for post bond die internal external testing in 3d stacked ics'), (2010, 'test architecture optimization for tsv based 3d stacked ics'), (2011, 'identification of defective tsvs in pre bond testing of 3d ics'), (2011, 'pre bond probing of tsvs in 3d stacked ics'), (2011, 'test architecture optimization and test scheduling for tsv based 3 d stacked ics'), (2011, 'test wrapper optimisation for embedded cores in through silicon via based three dimensional system on chips'), (2011, 'testing and design for testability techniques for 3d integrated circuits'), (2012, 'optimization methods for post bond testing of 3d stacked ics'), (2012, 'pre bond testing of die logic and tsvs in high performance 3d sics'))
+keywords : frozenset({'optoelectronics', 'electrical engineering', 'mathematical optimization', 'embedded system', 'algorithm', 'electronic engineering', 'mechanical engineering'})
+
+firstname : brandon
+lastname : noia
+middlename : None
+year : 2014
+yeardiff_larger_than_0 : 2014
+year_papertitle : ((2014, 'design for test and test optimization techniques for tsv based 3d stacked ics'),)
+keywords : frozenset({'reliability engineering', 'optoelectronics', 'electrical engineering', 'mathematical optimization', 'econometrics', 'electronic engineering', 'distributed computing'})
+
+3/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : chiayen
+lastname : lee
+middlename : None
+year : 2009
+yeardiff_larger_than_0 : 2009
+year_papertitle : ((2009, 'an efficient computational procedure for determining the container loading pattern'), (2011, 'a decomposition of productivity change in the semiconductor manufacturing industry'), (2012, 'two dimensional efficiency decomposition to measure the demand effect in productivity analysis'), (2013, 'a more efficient algorithm for convex nonparametric least squares'), (2014, 'a simulation analysis for evaluating tft lcd fab capacity expansion with a distant transportation problem'), (2014, 'call for papers special issue big data analytics for systems control and decision making in services and manufacturing'), (2014, 'meta data envelopment analysis finding a direction towards marginal profit maximization'), (2014, 'proactive data envelopment analysis effective production and capacity expansion in stochastic environments'), (2014, 'stochastic programming for vendor portfolio selection and order allocation under delivery uncertainty'), (2015, 'measuring efficiency in imperfectly competitive markets an example of rational inefficiency'))
+keywords : frozenset({'agricultural economics', 'mathematical optimization', 'microeconomics', 'econometrics', 'operations research', 'industrial organization', 'marketing'})
+
+firstname : chiayen
+lastname : lee
+middlename : None
+year : 2012
+yeardiff_larger_than_0 : 2012
+year_papertitle : ((2012, 'demand effects in productivity and efficiency analysis'),)
+keywords : frozenset({'finance', 'microeconomics', 'agricultural economics', 'econometrics'})
+
+4/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : david
+lastname : welsh
+middlename : j s
+year : 1994
+yeardiff_larger_than_0 : 1994
+year_papertitle : ((1994, 'spectral and parametric wave models of lake erie'), (1996, 'high resolution short term lake forecasts for lake erie'), (1998, 'improved wind wave forecasts for the great lakes'), (2000, 'lake michigan forecast system and the prospects for a sediment transport model'), (2001, 'on coupling the swan and wam wave models for accurate nearshore wave predictions'))
+keywords : frozenset({'climatology', 'meteorology', 'artificial intelligence', 'hydrology', 'oceanography', 'control theory', 'optics'})
+
+firstname : david
+lastname : welsh
+middlename : j s
+year : 1997
+yeardiff_larger_than_0 : 1997
+year_papertitle : ((1997, 'the improvement of wind wave forecasts in the great lakes'),)
+keywords : frozenset({'marine engineering', 'climatology', 'meteorology', 'oceanography', 'composite material', 'atmospheric sciences'})
+
+5/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : juiching
+lastname : cheng
+middlename : None
+year : 1994
+yeardiff_larger_than_0 : 1994
+year_papertitle : ((1994, 'analysis of a slot coupled coplanar waveguide fed patch antenna'), (1995, 'theoretical modeling of cavity backed patch antennas using a hybrid technique'), (1999, 'an accelerated hybrid genetic algorithm for optimization of electromagnetic structures'), (1999, 'efficient printed antenna array synthesis including coupling effects using evolutionary genetic algorithms'), (1999, 'fast simulation of large scale planar circuits using an object oriented sparse solver'), (2001, 'an advanced electromagnetic tool for design of multilayer printed antenna arrays'))
+keywords : frozenset({'mathematical analysis', 'electrical engineering', 'artificial intelligence', 'mathematical optimization', 'control theory', 'optics', 'electronic engineering'})
+
+firstname : juiching
+lastname : cheng
+middlename : None
+year : 1998
+yeardiff_larger_than_0 : 1998
+year_papertitle : ((1998, 'theoretical modeling of mmic s using wavelets parallel computing and a hybrid mom fem technique'),)
+keywords : frozenset({'mathematical analysis', 'artificial intelligence', 'parallel computing', 'optics', 'algorithm', 'electronic engineering', 'structural engineering'})
+
+6/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : sergio
+lastname : amaral
+middlename : daniel marques
+year : 2010
+yeardiff_larger_than_0 : 2010
+year_papertitle : ((2010, 'design and optimization of the internal cooling channels of a high pressure turbine blade part i methodology'), (2010, 'design and optimization of the internal cooling channels of a high pressure turbine blade part ii optimization'), (2014, 'a decomposition based approach to uncertainty analysis of feed forward multicomponent systems'), (2015, 'a decomposition based approach to uncertainty quantification of multicomponent systems'), (2016, 'optimal l subscript 2 norm empirical importance weights for the change of probability measure'), (2017, 'a decomposition based uncertainty quantification approach for environmental impacts of aviation technology and operation'), (2017, 'optimal l_2 l2 norm empirical importance weights for the change of probability measure'))
+keywords : frozenset({'statistics', 'mathematical optimization', 'algorithm', 'econometrics', 'composite material', 'mechanical engineering', 'mechanics'})
+
+firstname : sergio
+lastname : amaral
+middlename : daniel marques
+year : 2015
+yeardiff_larger_than_0 : 2015
+year_papertitle : ((2015, 'a decomposition based approach to uncertainty quantification of multicomponent systems'),)
+keywords : frozenset({'reliability engineering', 'statistical physics', 'systems engineering', 'statistics', 'mathematical optimization', 'algorithm'})
+
+7/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : wei
+lastname : wang
+middlename : None
+year : 2011
+yeardiff_larger_than_0 : 2011
+year_papertitle : ((2011, 'synthesis of the hydroxide cluster al13 μ3 oh 6 μ oh 18 h2o 24 15 from an aqueous solution'), (2012, 'oligomeric group 13 hydroxide compounds a rare but varied class of molecules'), (2013, 'electrolytic synthesis of aqueous aluminum nanoclusters and in situ characterization by femtosecond raman spectroscopy and computations'), (2013, 'sc2 μ oh 2 h2o 6 no3 2 no3 2 aqueous synthesis and characterization'), (2014, 'effects of oxygen incorporation on the physical properties of amorphous metal thin films'), (2014, 'solution based prompt inorganic condensation and atomic layer deposition of al2o3 films a side by side comparison'), (2015, 'chemically amplified dehydration of thin oxide films'), (2015, 'electrochemically expandable soft carbon as anodes for na ion batteries'), (2015, 'self activation of cellulose a new preparation methodology for activated carbon electrodes in electrochemical capacitors'), (2016, 'crystallizing elusive chromium polycations'))
+keywords : frozenset({'inorganic chemistry', 'optoelectronics', 'nanotechnology', 'analytical chemistry', 'chemical engineering', 'optics', 'composite material'})
+
+firstname : wei
+lastname : wang
+middlename : None
+year : 2014
+yeardiff_larger_than_0 : 2014
+year_papertitle : ((2014, 'de novo nanostructures and their applications in energy storage'),)
+keywords : frozenset({'optoelectronics', 'nanotechnology', 'electrical engineering', 'chemical engineering', 'composite material'})
+
+8/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ying
+lastname : he
+middlename : None
+year : 1999
+yeardiff_larger_than_0 : 1999
+year_papertitle : ((1999, 'a markov decision process model for capacity expansion and allocation'), (1999, 'markov decision processes for integrating life cycle dynamics into fab level decision making'), (2003, 'convergence of simultaneous perturbation stochastic approximation for nondifferentiable optimization'))
+keywords : frozenset({'knowledge management', 'agricultural economics', 'mathematical analysis', 'artificial intelligence', 'mathematical optimization', 'operations research', 'algorithm'})
+
+firstname : ying
+lastname : he
+middlename : None
+year : 2002
+yeardiff_larger_than_0 : 2002
+year_papertitle : ((2002, 'simulation based algorithms for markov decision processes'),)
+keywords : frozenset({'artificial intelligence', 'combinatorics', 'mathematical optimization', 'algorithm'})
+
+9/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : arvind
+lastname : ravi
+middlename : None
+year : 2006
+yeardiff_larger_than_0 : 2006
+year_papertitle : ((2006, 'computational model for early cardiac looping'), (2009, 'trpv4 channels mediate cyclic strain induced endothelial cell reorientation through integrin to integrin signaling'), (2011, 'a latent pro survival function for the mir 290 295 cluster in mouse embryonic stem cells'), (2011, 'ethnoveterinary practices in sheep of north coastal zone of andhra pradesh'), (2011, 'genome wide impact of a recently expanded microrna cluster in mouse'), (2011, 'studies on migration of sheep flocks in north coastal zone of andhra pradesh identification of traditional migratory tracts'), (2012, 'proliferation and tumorigenesis of a murine sarcoma cell line in the absence of dicer1'), (2013, 'dystextia acute stroke in the modern age'), (2013, 'let 7 represses nr6a1 and a mid gestation developmental program in adult fibroblasts'), (2013, 'tqm tools and techniques in promoting team working culture in the manufacturing organisations'))
+keywords : frozenset({'molecular biology', 'veterinary medicine', 'cell biology', 'cancer research', 'genetics', 'marketing', 'biophysics'})
+
+firstname : arvind
+lastname : ravikumar
+middlename : pawan
+year : 2015
+yeardiff_larger_than_0 : 2015
+year_papertitle : ((2015, 'ii vi materials based high performance intersubband devices'),)
+keywords : frozenset({'optics', 'optoelectronics'})
+
+10/10 positive, 2/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jonathan
+lastname : rosen
+middlename : None
+year : 2002
+yeardiff_larger_than_0 : 2002
+year_papertitle : ((2002, 'bloodborne pathogen exposure risk for non hospital based healthcare workers'), (2006, 'violence prevention in the mental health setting the new york state experience'), (2007, 'an exploratory study of mandated safety measures for home visiting case managers'), (2007, 'non hospital based registered nurses and the risk of bloodborne pathogen exposure'), (2008, 'environmental evaluation for workplace violence in healthcare and social services'), (2009, 'violence in the health care industry'))
+keywords : frozenset({'public relations', 'nursing', 'internal medicine', 'risk analysis', 'medical emergency', 'emergency medicine', 'psychiatry'})
+
+firstname : jonathan
+lastname : rosenberg
+middlename : david
+year : 2001
+yeardiff_larger_than_0 : 2001
+year_papertitle : ((2001, 'distributed algorithms and protocols for scalable internet telephony'),)
+keywords : frozenset({'computer network', 'world wide web', 'telecommunications', 'distributed computing'})
+
+10/10 positive, 3/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : tao
+lastname : liu
+middlename : None
+year : 2008
+yeardiff_larger_than_0 : 2008
+year_papertitle : ((2008, 'the efficient analysis of l probe coupled patch antenna and arrays with bodies of revolution'), (2011, 'design of miniaturized broadband and high gain metamaterial patch antenna'), (2013, 'an ultra thin metamaterial absorber and its application in reducing rcs of slot antenna an ultra thin metamaterial absorber and its application in reducing rcs of slot antenna'), (2013, 'rcs reduction of waveguide slot antenna with metamaterial absorber'), (2014, 'an ultra wideband printed antenna with low radar cross section an ultra wideband printed antenna with low radar cross section'), (2015, 'a low rcs waveguide slot antenna array with metamaterial absorber'), (2015, 'broadband metamaterial surface for antenna rcs reduction and gain enhancement'), (2015, 'erratum hybrid metamaterial device with wideband absorption and multiband transmission based on spoof surface plasmon polaritons and perfect absorber appl phys lett 106 181103 2015'), (2015, 'hybrid metamaterial device with wideband absorption and multiband transmission based on spoof surface plasmon polaritons and perfect absorber'), (2015, 'wideband radar cross section reduction covering x and ku band using artificial magnetic conductor structures'))
+keywords : frozenset({'condensed matter physics', 'optoelectronics', 'mathematical analysis', 'electrical engineering', 'optics', 'electronic engineering', 'mechanical engineering'})
+
+firstname : tao
+lastname : li
+middlename : None
+year : 2012
+yeardiff_larger_than_0 : 2012
+year_papertitle : ((2012, 'efficient statistical measurement methods in wired and wireless systems'),)
+keywords : frozenset({'computer network', 'electronic engineering', 'artificial intelligence', 'operations research', 'data mining', 'algorithm', 'computer hardware'})
+
+10/10 positive, 4/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jesus
+lastname : garza
+middlename : m de la
+year : 1985
+yeardiff_larger_than_0 : 1985
+year_papertitle : ((1985, 'a generalized model for monitoring accounts receivable'), (1986, 'prepayment ability to offset inflation'), (1990, 'monitoring accounts payables'), (1991, 'technology transfer t2 model for expert systems'), (1992, 'an object space framework for design construction integration'))
+keywords : frozenset({'operations management', 'software engineering', 'finance', 'accounting', 'artificial intelligence', 'actuarial science', 'engineering management'})
+
+firstname : jesus
+lastname : garzarodriguez
+middlename : m de la
+year : 1988
+yeardiff_larger_than_0 : 1988
+year_papertitle : ((1988, 'a knowledge engineering approach to the analysis and evaluation of schedules for mid rise construction'),)
+keywords : frozenset({'knowledge management', 'linguistics', 'meteorology', 'programming language', 'artificial intelligence', 'mathematical optimization', 'operations research', 'medical education', 'engineering management'})
+
+10/10 positive, 5/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jong
+lastname : hong
+middlename : kyu
+year : 2010
+yeardiff_larger_than_0 : 2010
+year_papertitle : ((2010, 'three dimensional scaffold of electrosprayed fibers with large pore size for tissue regeneration'), (2011, 'next generation of electrosprayed fibers for tissue regeneration'), (2012, 'analysis of void shape and size in the collector plate and polycaprolactone molecular weight on electrospun scaffold pore size'))
+keywords : frozenset({'pathology', 'molecular biology', 'biomedical engineering', 'nanotechnology', 'cell biology', 'chemical engineering', 'composite material'})
+
+firstname : dongwoo
+lastname : hong
+middlename : None
+year : 2007
+yeardiff_larger_than_0 : 2007
+year_papertitle : ((2007, 'efficient test methodologies for high speed serial links'),)
+keywords : frozenset({'computer network', 'electronic engineering', 'acoustics', 'artificial intelligence', 'computer hardware'})
+
+10/10 positive, 5/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ting
+lastname : xu
+middlename : None
+year : 2007
+yeardiff_larger_than_0 : 2007
+year_papertitle : ((2007, 'particle image velocimetry measurements of the velocity profile in he ii forced flow'), (2007, 'particle image velocimetry studies of counterflow heat transport in superfluid helium ii'), (2008, 'density effect of solidified hydrogen isotope particles on particle image velocimetry measurements of he ii flow'), (2009, 'development and testing of electrical joints for the 36 t series connected hybrid magnet'), (2009, 'piv application in he ii forced flow research'), (2009, 'series connected hybrid magnetic shielding conceptual design for the helmholtz centre berlin for materials and energy'), (2009, 'the nhmfl hybrid magnet projects'), (2010, 'recent progress of the series connected hybrid magnet projects'), (2011, 'joint design and test for the sch'), (2011, 'thermo mechanical behaviour of a single slice test device for the frib high power target'))
+keywords : frozenset({'condensed matter physics', 'atomic physics', 'electrical engineering', 'optics', 'composite material', 'mechanical engineering', 'mechanics'})
+
+firstname : jingyan
+lastname : xu
+middlename : None
+year : 2003
+yeardiff_larger_than_0 : 2003
+year_papertitle : ((2003, 'averaging analysis of adaptive plant disturbance canceling'),)
+keywords : frozenset({'knowledge management', 'statistical physics', 'mathematical analysis', 'mathematical optimization', 'control theory', 'electronic engineering'})
+
+10/10 positive, 6/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : benjamin
+lastname : goldman
+middlename : a
+year : 2012
+yeardiff_larger_than_0 : 2012
+year_papertitle : ((2012, 'new algorithms for reduced memory and real time noise prediction'), (2019, 'from american archivist editorial board'))
+keywords : frozenset({'acoustics', 'structural engineering', 'library science', 'artificial intelligence', 'algorithm', 'computer hardware', 'distributed computing'})
+
+firstname : benjamin
+lastname : goldman
+middlename : d
+year : 2015
+yeardiff_larger_than_0 : 2015
+year_papertitle : ((2015, 'an aeroelastic evaluation of the flexible thermal protection system for an inatable aerodynamic decelerator'),)
+keywords : frozenset({'structural engineering', 'mechanical engineering', 'mechanics'})
+
+10/10 positive, 7/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : sungsik
+lastname : kim
+middlename : None
+year : 2002
+yeardiff_larger_than_0 : 2002
+year_papertitle : ((2002, 'feram technology for system on a chip'), (2003, 'a current gain scheme for high density and low voltage feram'), (2004, 'texture analyses for blt films by electron backscatter diffraction and spm techniques'))
+keywords : frozenset({'metallurgy', 'optoelectronics', 'electrical engineering', 'computer hardware', 'embedded system', 'optics', 'electronic engineering'})
+
+firstname : su
+lastname : kim
+middlename : jin
+year : 2011
+yeardiff_larger_than_0 : 2011
+year_papertitle : ((2011, 'three dimensional numerical simulation of turbulent open channel flow through vegetation'),)
+keywords : frozenset({'mathematical analysis', 'mechanical engineering', 'mechanics'})
+
+10/10 positive, 8/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : yun
+lastname : zhou
+middlename : None
+year : 2005
+yeardiff_larger_than_0 : 2005
+year_papertitle : ((2005, 'defend against topological attacks in sensor networks'), (2005, 'key establishment in sensor networks based on triangle grid deployment model'), (2005, 'llk a link layer key establishment scheme for wireless sensor networks'), (2006, 'a location based naming mechanism for securing sensor networks'), (2006, 'a location based naming mechanism for securing sensor networks research articles'), (2006, 'babra batch based broadcast authentication in wireless sensor networks'), (2006, 'scalable link layer key agreement in sensor networks'), (2006, 'security of ieee 802 16 in mesh mode'), (2007, 'a two layer key establishment scheme for wireless sensor networks'), (2007, 'access control in wireless sensor networks'))
+keywords : frozenset({'computer network', 'environmental resource management', 'real time computing', 'computer security', 'artificial intelligence', 'theoretical computer science', 'distributed computing'})
+
+firstname : yun
+lastname : zhou
+middlename : None
+year : 1996
+yeardiff_larger_than_0 : 1996
+year_papertitle : ((1996, 'shear strength of geomembrane cohesionless soil interface system'),)
+keywords : frozenset({'geometry', 'statistical physics', 'geotechnical engineering', 'artificial intelligence', 'composite material', 'mechanics'})
+
+10/10 positive, 9/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jun
+lastname : zhang
+middlename : None
+year : 2013
+yeardiff_larger_than_0 : 2013
+year_papertitle : ((2013, 'kullback leibler divergence based optimal compression of preisach operator in hysteresis modeling'), (2013, 'robust control of vo 2 coated microactuators based on self sensing feedback'), (2014, 'a hysteresis compensated self sensing scheme for vanadium dioxide coated microactuators'), (2014, 'inversion of an extended generalized prandtl ishlinskii hysteresis model theory and experimental results'), (2014, 'modeling and inverse compensation of hysteresis in vanadium dioxide using an extended generalized prandtl ishlinskii model'), (2014, 'modeling and inverse compensation of nonmonotonic hysteresis in vo _2 coated microactuators'), (2014, 'robust control of vo _ bf 2 coated microbenders using self sensing feedback'), (2015, 'compressive sensing based preisach hysteresis model identification'), (2015, 'optimal compression of generalized prandtl ishlinskii hysteresis models'), (2016, 'vo 2 based mems mirrors'))
+keywords : frozenset({'condensed matter physics', 'optoelectronics', 'mathematical analysis', 'artificial intelligence', 'control theory', 'applied mathematics', 'algorithm'})
+
+firstname : jun
+lastname : zhang
+middlename : None
+year : 2008
+yeardiff_larger_than_0 : 2008
+year_papertitle : ((2008, 'waveform diversity and design for agile sensing and environment characterization'),)
+keywords : frozenset({'remote sensing', 'acoustics', 'mathematical optimization', 'algorithm', 'electronic engineering'})
+
+10/10 positive, 10/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : koohong
+lastname : chung
+middlename : None
+year : 2003
+yeardiff_larger_than_0 : 2003
+year_papertitle : ((2003, 'validation of daganzoʼs behavioral theory of multi lane traffic flow final report'), (2004, 'test of theory of driver behavior on homogeneous freeways'), (2007, 'relation between traffic density and capacity drop at three freeway bottlenecks'), (2009, 'safety performance of high occupancy vehicle facilities evaluation of hov lane configurations in california'))
+keywords : frozenset({'computer network', 'transport engineering', 'control theory', 'medical emergency', 'structural engineering', 'mechanical engineering', 'mechanics'})
+
+firstname : koo
+lastname : chung
+middlename : hong
+year : 2004
+yeardiff_larger_than_0 : 2004
+year_papertitle : ((2004, 'understanding and mitigating capacity reductions at freeway bottlenecks'),)
+keywords : frozenset({'computer network', 'real time computing', 'topology', 'mathematical optimization', 'control theory', 'optics', 'algorithm', 'mechanical engineering'})
+
+10/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : sarah
+lastname : pfatteicher
+middlename : k a
+year : 2000
+yeardiff_larger_than_0 : 2000
+year_papertitle : ((2000, 'the hyatt horror failure and responsibility in american engineering'), (2001, 'teaching vs preaching ec2000 and the engineering ethics dilemma'), (2003, 'depending on character asce shapes its first code of ethics'))
+keywords : frozenset({'public relations', 'engineering ethics', 'marketing', 'medical education', 'law', 'engineering management', 'pedagogy'})
+
+firstname : sarah
+lastname : pfatteicher
+middlename : k a
+year : 1996
+yeardiff_larger_than_0 : 1996
+year_papertitle : ((1996, 'death by design ethics responsibility and failure in the american civil engineering community 1852 1986'),)
+keywords : frozenset({'public relations', 'engineering ethics', 'public administration', 'law', 'pedagogy', 'law and economics'})
+
+11/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : erik
+lastname : norberg
+middlename : None
+year : 2017
+yeardiff_larger_than_0 : 2017
+year_papertitle : ((2017, 'control of widely tunable lasers with high q resonator as an integral part of the cavity'), (2017, 'heterogeneous silicon widely tunable lasers with monolithically integrated high q ring'), (2018, 'a heterogeneously integrated iii v si colliding pulse mode locked laser with on chip feedback'), (2018, 'characterization of a fully integrated heterogeneous silicon iii v colliding pulse mode locked laser with on chip feedback'))
+keywords : frozenset({'physical therapy', 'optoelectronics', 'electrical engineering', 'optics', 'composite material', 'electronic engineering'})
+
+firstname : erik
+lastname : norberg
+middlename : j
+year : 2011
+yeardiff_larger_than_0 : 2011
+year_papertitle : ((2011, 'monolithically integrated reconfigurable filters for microwave photonic links'),)
+keywords : frozenset({'acoustics', 'optoelectronics', 'electrical engineering', 'control theory', 'optics', 'electronic engineering'})
+
+12/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : luiz
+lastname : mello
+middlename : s homem de
+year : 1986
+yeardiff_larger_than_0 : 1986
+year_papertitle : ((1986, 'and or graph representation of assembly plans'), (1990, 'assembly sequence planning'))
+keywords : frozenset({'computer network', 'operations management', 'artificial intelligence', 'engineering drawing', 'mathematical optimization', 'control theory', 'algorithm'})
+
+firstname : luiz
+lastname : mello
+middlename : scaramelli homem de
+year : 1989
+yeardiff_larger_than_0 : 1989
+year_papertitle : ((1989, 'task sequence planning for robotic assembly'),)
+keywords : frozenset({'knowledge management', 'combinatorics', 'artificial intelligence', 'database', 'algorithm', 'programming language', 'information retrieval', 'theoretical computer science'})
+
+13/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : syed
+lastname : shah
+middlename : irtiza ali
+year : 2020
+yeardiff_larger_than_0 : 2020
+year_papertitle : ((2020, 'airfoil selection procedure wind tunnel experimentation and implementation of 6dof modeling on a flying wing micro aerial vehicle'), (2020, 'experimental investigation of propeller induced flow on flying wing micro aerial vehicle for improved 6dof modeling'), (2020, 'selection methodology of an electric actuator for nose landing gear of a light weight aircraft'), (2021, 'estimation of stability parameters for wide body aircraft using computational techniques'))
+keywords : frozenset({'marine engineering', 'structural engineering', 'artificial intelligence', 'control theory', 'aerospace engineering', 'mechanical engineering', 'mechanics'})
+
+firstname : syed
+lastname : shah
+middlename : irtiza ali
+year : 2010
+yeardiff_larger_than_0 : 2010
+year_papertitle : ((2010, 'single camera based vision systems for ground amp aerial robots'),)
+keywords : frozenset({'acoustics', 'artificial intelligence', 'control theory', 'computer vision', 'algorithm'})
+
+14/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : thomas
+lastname : sullivan
+middlename : None
+year : 2014
+yeardiff_larger_than_0 : 2014
+year_papertitle : ((2014, 'multi objective multi domain genetic optimization of a hydraulic rescue spreader'), (2015, 'integrated mechanical and thermodynamic optimization of an engine linkage using a multi objective genetic algorithm'), (2017, 'solution rectification of slider crank mechanisms with transmission angle control'))
+keywords : frozenset({'control engineering', 'electrical engineering', 'mathematical optimization', 'control theory', 'mechanical engineering', 'mechanics'})
+
+firstname : thomas
+lastname : sullivan
+middlename : m
+year : 1996
+yeardiff_larger_than_0 : 1996
+year_papertitle : ((1996, 'multi microphone correlation based processing for robust automatic speech recognition'),)
+keywords : frozenset({'acoustics', 'speech recognition', 'electrical engineering', 'control theory', 'electronic engineering'})
+
+14/10 positive, 11/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : chuan
+lastname : wang
+middlename : None
+year : 2005
+yeardiff_larger_than_0 : 2005
+year_papertitle : ((2005, 'single wall carbon nanotube synthesis by co disproportionation on nickel incorporated mcm 41'), (2006, 'controlling of physicochemical properties of nickel substituted mcm 41 by adjustment of the synthesis solution ph and tetramethylammonium silicate concentration'), (2006, 'dendritic gold nanostructures fabrication and potential application in nanoelectronics'), (2006, 'high efficiency high speed vcsels with deep oxidation layers'), (2007, 'high q integrated inductor using post cmos selective grown porous silicon sgps technique for rfic applications'), (2007, 'high q integrated inductor using post cmos selectively grown porous silicon sgps technique for rfic applications'), (2007, 'small dimension power efficient high speed vertical cavity surface emitting lasers'), (2007, 'two bit memory devices based on single wall carbon nanotubes demonstration and mechanism'), (2008, 'growth of gold fractal nanostructures by electrochemical deposition in organic electrolytes morphologies and their transitions'), (2008, 'synthesis characterization and catalytic performance of highly dispersed vanadium grafted sba 15 catalyst'))
+keywords : frozenset({'inorganic chemistry', 'optoelectronics', 'nanotechnology', 'electrical engineering', 'chemical engineering', 'optics', 'electronic engineering'})
+
+firstname : chuanqi
+lastname : wang
+middlename : None
+year : 2015
+yeardiff_larger_than_0 : 2015
+year_papertitle : ((2015, 'characterizing testing and modeling the mechanical properties of recycled content expanded polystyrene block geofoam'),)
+keywords : frozenset({'petroleum engineering', 'civil engineering', 'geotechnical engineering', 'econometrics', 'composite material', 'forensic engineering', 'structural engineering'})
+
+14/10 positive, 12/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : thomas
+lastname : cunningham
+middlename : j
+year : 1992
+yeardiff_larger_than_0 : 1992
+year_papertitle : ((1992, 'noise and current voltage characterization of complementary heterojunction field effect transistor structures below 8 k'), (1993, 'an interdigitated pixel pin detector for energetic particle spectroscopy in space'), (1993, 'cosmic ray detector with interdigitated finger pixels for two dimensional position information from a single wafer side'), (1993, 'ingaas detectors for miniature infrared instruments'), (1993, 'noise and electrical characteristics below 10 k of small chfet circuits and discrete devices'), (1994, 'gaas jfets intended for deep cryogenic vlwir readout electronics'), (1996, 'improvements in gaas jfets for deep cryogenic operation'), (1996, 'progress in gaas jfets for 4 kelvin ir readout applications'), (1997, 'readout characteristics of integrated monolithic ingaas active pixel sensor array'), (1998, 'advances in discrete gaas jfets and simple amplifiers for deep cryogenic readouts'))
+keywords : frozenset({'optoelectronics', 'electrical engineering', 'artificial intelligence', 'aerospace engineering', 'optics', 'composite material', 'electronic engineering'})
+
+firstname : thomas
+lastname : cunningham
+middlename : john
+year : 1991
+yeardiff_larger_than_0 : 1991
+year_papertitle : ((1991, 'annealed indium oxide gallium arsenide heterojunctions for transparent ohmic contacts to gallium arsenide'),)
+keywords : frozenset({'condensed matter physics', 'optoelectronics', 'analytical chemistry', 'composite material', 'mechanics'})
+
+14/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : sang
+lastname : lee
+middlename : ho
+year : 1996
+yeardiff_larger_than_0 : 1996
+year_papertitle : ((1996, 'a logic database system with extended functionality'), (2003, 'synthesis and characterization of bifunctional organic glasses based on diphenylhydrazone and barbituric acid derivative for photorefractive application'))
+keywords : frozenset({'medicinal chemistry', 'photochemistry', 'organic chemistry', 'optics', 'programming language', 'composite material', 'discrete mathematics'})
+
+firstname : sang
+lastname : lee
+middlename : ho
+year : 1992
+yeardiff_larger_than_0 : 1992
+year_papertitle : ((1992, 'enhancement of biodegradation of chlorinated organic chemicals by chemical oxidation pretreatment'),)
+keywords : frozenset({'inorganic chemistry', 'food science', 'pulp and paper industry', 'organic chemistry', 'environmental chemistry', 'biochemistry'})
+
+15/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : bin
+lastname : wang
+middlename : None
+year : 2004
+yeardiff_larger_than_0 : 2004
+year_papertitle : ((2004, 'reliability of pfet eeprom with 70 spl aring tunnel oxide manufactured in generic logic cmos processes'), (2004, 'study of stress induced leakage current and charge loss of nonvolatile memory cell with 70 spl aring tunnel oxide using floating gate integrator technique'), (2005, 'charge retention of silicided and unsilicided floating gates in embedded logic nonvolatile memory'), (2005, 'effect of layout orientation on the performance and reliability of high voltage n ldmos in standard submicron logic sti cmos process'), (2005, 'measurement of ultralow gate tunneling currents using floating gate integrator technique'), (2007, 'highly reliable 90 nm logic multitime programmable nvm cells using novel work function engineered tunneling devices'), (2007, 'reliability of a 90nm embedded multi time programmable logic nvm cells using work function engineered tunneling device'), (2007, 'scaling tunneling oxide to 50a in floating gate logic nvm at 65nm and beyond'), (2008, 'floating gate nonvolatile memory with ultrathin 5 nm tunnel oxide'))
+keywords : frozenset({'condensed matter physics', 'electronic engineering', 'optoelectronics', 'electrical engineering', 'control theory', 'composite material', 'computer hardware'})
+
+firstname : bin
+lastname : wang
+middlename : None
+year : 2000
+yeardiff_larger_than_0 : 2000
+year_papertitle : ((2000, 'chemical mechanical planarization of aluminum and copper interconnects with magnetic liners'),)
+keywords : frozenset({'metallurgy', 'chemical engineering', 'composite material', 'optoelectronics'})
+
+15/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : tao
+lastname : zhang
+middlename : None
+year : 2014
+yeardiff_larger_than_0 : 2014
+year_papertitle : ((2014, 'a low power 28 gb s cdr using artificial lc transmission line technique in 65 nm cmos'), (2015, 'a 10 gb s laser driver in 130 nm cmos technology for high energy physics applications'), (2015, 'a low voltage low power 25 gb s clock and data recovery with equalizer in 65 nm cmos'), (2015, 'thermal analysis for the proto vipram00 chip'), (2016, '10 gb s distributed amplifier based vcsel driver ic with esd protection in 130 nm cmos'), (2016, 'gbld10 a compact low power 10 gb s vcsel driver'), (2017, 'a compact low power driver array for vcsels in 65 nm cmos technology'), (2017, 'a temperature compensated triple path pll with k_ mathrm vco non linearity desensitization capable of operating at 77 k'), (2017, 'field trial of long reach twdm pon for fixed line wireless convergence'), (2017, 'ldq10 a compact ultra low power radiation hard 4 10 gb s driver array'))
+keywords : frozenset({'computer network', 'acoustics', 'optoelectronics', 'electrical engineering', 'optics', 'electronic engineering', 'mechanical engineering'})
+
+firstname : tao
+lastname : zhang
+middlename : None
+year : 1993
+yeardiff_larger_than_0 : 1993
+year_papertitle : ((1993, 'methods for improving the efficiency of high speed communication networks'),)
+keywords : frozenset({'computer network', 'data mining', 'algorithm', 'mathematical optimization'})
+
+15/10 positive, 13/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : taeyoung
+lastname : kim
+middlename : None
+year : 2013
+yeardiff_larger_than_0 : 2013
+year_papertitle : ((2013, 'video segmentation by tracking many figure ground segments'), (2017, 'detection of frequency dependent endothelial response to oscillatory shear stress using a microfluidic transcellular monitor'), (2017, 'robust manufacturing of lipid polymer nanoparticles through feedback control of parallelized swirling microvortices'), (2018, 'detecting the functional complexities between high density lipoprotein mimetics'), (2018, 'high density lipoprotein mimetic nanotherapeutics for cardiovascular and neurodegenerative diseases'), (2019, 'development of a shape memory tube to prevent vascular stenosis'), (2020, 'polymeric nanoparticles controlled by on chip self assembly enhance cancer treatment effectiveness'), (2020, 'serum glucose excretion after roux en y gastric bypass a potential target for diabetes treatment'))
+keywords : frozenset({'pharmacology', 'nanotechnology', 'internal medicine', 'cell biology', 'artificial intelligence', 'chemical engineering', 'composite material'})
+
+firstname : taeyoung
+lastname : kim
+middlename : None
+year : 2002
+yeardiff_larger_than_0 : 2002
+year_papertitle : ((2002, 'improved thermally stable poly ethylene terephthalate pet solid state polymerization of pet'),)
+keywords : frozenset({'chemical engineering', 'polymer chemistry', 'inorganic chemistry'})
+
+15/10 positive, 14/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jungyup
+lastname : han
+middlename : None
+year : 2003
+yeardiff_larger_than_0 : 2003
+year_papertitle : ((2003, 'multi analyte detection handheld analyzer for point of care application with disposable biochips'), (2008, 'development of functional lab on a chip on polymer for point of care testing of metabolic parameters'))
+keywords : frozenset({'nanotechnology', 'electrical engineering', 'chromatography', 'nursing', 'optics', 'electronic engineering', 'mechanical engineering'})
+
+firstname : jun
+lastname : han
+middlename : hyun
+year : 2014
+yeardiff_larger_than_0 : 2014
+year_papertitle : ((2014, 'nanogap device fabrication and applications'),)
+keywords : frozenset({'optics', 'chemical engineering', 'optoelectronics', 'nanotechnology'})
+
+15/10 positive, 15/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : beckry
+lastname : abdelmagid
+middlename : None
+year : 1997
+yeardiff_larger_than_0 : 1997
+year_papertitle : ((1997, 'grp prestressing of wood decks'), (2000, 'durability of composite reinforcement for timber bridges'), (2003, 'flexure creep properties of e glass reinforced polymers'))
+keywords : frozenset({'metallurgy', 'civil engineering', 'chemical engineering', 'composite material', 'mechanical engineering', 'structural engineering'})
+
+firstname : beckry
+lastname : abdelmagid
+middlename : mohamed
+year : 1986
+yeardiff_larger_than_0 : 1986
+year_papertitle : ((1986, 'analyses and design of underground reinforced plastic mortar pipelines'),)
+keywords : frozenset({'marine engineering', 'automotive engineering', 'optoelectronics', 'systems engineering', 'civil engineering', 'composite material', 'mechanical engineering', 'structural engineering'})
+
+15/10 positive, 16/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : taha
+lastname : ouarda
+middlename : b m j
+year : 1993
+yeardiff_larger_than_0 : 1993
+year_papertitle : ((1993, 'peaks over threshold model for seasonal flood variations'), (1993, 'robust estimators in hydrologic frequency analysis'), (1995, 'comment on comparison of six extreme flood estimation techniques for ungauged watersheds in coastal british columbia by loukas and quick'), (1997, 'comment on the use of artificial neural networks for the prediction of water quality parameters by h r maier and g c dandy'), (1997, 'indexed sequential hydrologic modeling for hydropower capacity estimation'), (1998, 'approximate confidence intervals for quantiles of gamma and generalized gamma distributions'), (1998, 'effect of trimming on lp iii flood quantile estimates'), (1998, 'etude de la variabilite spatiale des regimes hydrologiques comparaison de differents modeles d homogeneite regionale'), (1999, 'derivation of streamflow statistics based on a filtered point process'), (1999, 'treatment of zeroes in tail modeling of low flows'))
+keywords : frozenset({'statistical physics', 'statistics', 'artificial intelligence', 'hydrology', 'econometrics', 'applied mathematics', 'mechanical engineering'})
+
+firstname : taha
+lastname : ouarda
+middlename : b m j
+year : 1991
+yeardiff_larger_than_0 : 1991
+year_papertitle : ((1991, 'stochastic optimal operation of large scale hydropower systems'),)
+keywords : frozenset({'reliability engineering', 'industrial engineering', 'mathematical optimization', 'operations research', 'control theory', 'civil engineering'})
+
+15/10 positive, 16/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : yong
+lastname : wang
+middlename : None
+year : 2006
+yeardiff_larger_than_0 : 2006
+year_papertitle : ((2006, 'a survey of security issues in wireless sensor networks'), (2006, 'the performance of elliptic curve based group diffie hellman protocols for secure group communication over ad hoc networks'), (2007, 'a key management protocol for hybrid wireless sensor networks'), (2007, 'group rekeying schemes for secure group communication in wireless sensor networks'), (2007, 'keyrev an efficient key revocation scheme for wireless sensor networks'), (2007, 'layered clustering communication protocol for wireless sensor networks'), (2008, 'a key management protocol for wireless sensor networks with multiple base stations'), (2008, 'a security framework for wireless sensor networks utilizing a unique session key'), (2008, 'providing reliable data transport for dynamic event sensing in wireless sensor networks'), (2008, 'security in wireless sensor networks'))
+keywords : frozenset({'computer network', 'public relations', 'mathematical analysis', 'computer security', 'artificial intelligence', 'discrete mathematics', 'distributed computing'})
+
+firstname : yong
+lastname : wang
+middlename : None
+year : 2008
+yeardiff_larger_than_0 : 2008
+year_papertitle : ((2008, 'exploring the mechanisms critical to the operation of metal face seals through modeling and experiments'),)
+keywords : frozenset({'geometry', 'mechanics', 'composite material', 'mechanical engineering', 'structural engineering'})
+
+15/10 positive, 16/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ahmed
+lastname : helmy
+middlename : None
+year : 2010
+yeardiff_larger_than_0 : 2010
+year_papertitle : ((2010, 'session details invited papers'),)
+keywords : frozenset({'computer network', 'medical education'})
+
+firstname : ahmed
+lastname : helmy
+middlename : mohamed alaaeldin abbas mohamed
+year : 2013
+yeardiff_larger_than_0 : 2013
+year_papertitle : ((2013, 'novel rf microwave circuits and systems for lab on chip on board chemical sensors'),)
+keywords : frozenset({'electronic engineering', 'electrical engineering'})
+
+15/10 positive, 17/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : joseph
+lastname : mcguire
+middlename : None
+year : 1988
+yeardiff_larger_than_0 : 1988
+year_papertitle : ((1988, 'surface characterization for prediction of food particle behavior at interfaces theoretical considerations and limitations'), (1990, 'application of ellipsometry to evaluate surface cleaning effectiveness'), (1990, 'temperature influences on surface energetic parameters evaluated at solid liquid interfaces'), (1991, 'the effect of drop volume on contact angle'), (1991, 'the effect of ph and nacl concentration on adsorption of β lactoglobulin at hydrophilic and hydrophobic silicon surfaces'), (1991, 'use of the equilibrium contact angle as an index of contact surface cleanliness'), (1992, 'a one film model ellipsometry program for the simultaneous calculation of protein film thickness and refractive index'), (1992, 'antimicrobial activity of nisin adsorbed to hydrophilic and hydrophobic silicon surfaces'), (1992, 'ellipsometric evaluation of β lactoglobulin adsorption onto low and high energy materials'), (1992, 'the surface activity of α lactalbumin β lactoglobulin and bovine serum albumin'))
+keywords : frozenset({'optoelectronics', 'analytical chemistry', 'chemical engineering', 'mineralogy', 'chromatography', 'composite material', 'mechanics'})
+
+firstname : joseph
+lastname : mcguire
+middlename : None
+year : 1987
+yeardiff_larger_than_0 : 1987
+year_papertitle : ((1987, 'the influence of solid surface energetics on macromolecular adsorption from milk'),)
+keywords : frozenset({'analytical chemistry', 'chemical engineering', 'thermodynamics', 'optics', 'composite material', 'crystallography', 'mechanics'})
+
+15/10 positive, 17/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ahmed
+lastname : helmy
+middlename : None
+year : 2010
+yeardiff_larger_than_0 : 2010
+year_papertitle : ((2010, 'session details invited papers'),)
+keywords : frozenset({'computer network', 'medical education'})
+
+firstname : ahmed
+lastname : helmy
+middlename : mohamed alaaeldin abbas mohamed
+year : 2013
+yeardiff_larger_than_0 : 2013
+year_papertitle : ((2013, 'novel rf microwave circuits and systems for lab on chip on board chemical sensors'),)
+keywords : frozenset({'electronic engineering', 'electrical engineering'})
+
+15/10 positive, 17/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished
+firstname : joseph
+lastname : mcguire
+middlename : None
+year : 1988
+yeardiff_larger_than_0 : 1988
+year_papertitle : ((1988, 'surface characterization for prediction of food particle behavior at interfaces theoretical considerations and limitations'), (1990, 'application of ellipsometry to evaluate surface cleaning effectiveness'), (1990, 'temperature influences on surface energetic parameters evaluated at solid liquid interfaces'), (1991, 'the effect of drop volume on contact angle'), (1991, 'the effect of ph and nacl concentration on adsorption of β lactoglobulin at hydrophilic and hydrophobic silicon surfaces'), (1991, 'use of the equilibrium contact angle as an index of contact surface cleanliness'), (1992, 'a one film model ellipsometry program for the simultaneous calculation of protein film thickness and refractive index'), (1992, 'antimicrobial activity of nisin adsorbed to hydrophilic and hydrophobic silicon surfaces'), (1992, 'ellipsometric evaluation of β lactoglobulin adsorption onto low and high energy materials'), (1992, 'the surface activity of α lactalbumin β lactoglobulin and bovine serum albumin'))
+keywords : frozenset({'optoelectronics', 'analytical chemistry', 'chemical engineering', 'mineralogy', 'chromatography', 'composite material', 'mechanics'})
+
+firstname : joseph
+lastname : mcguire
+middlename : None
+year : 1987
+yeardiff_larger_than_0 : 1987
+year_papertitle : ((1987, 'the influence of solid surface energetics on macromolecular adsorption from milk'),)
+keywords : frozenset({'analytical chemistry', 'chemical engineering', 'thermodynamics', 'optics', 'composite material', 'crystallography', 'mechanics'})
+
+15/10 positive, 18/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : david
+lastname : smith
+middlename : j
+year : 1980
+yeardiff_larger_than_0 : 1980
+year_papertitle : ((1980, 'a modified tongue lip adhesion for pierre robin anomalad'), (1981, 'photoplethysmographic monitoring of vascular status in burned extremities'), (1982, 'application of topical thrombin for skin graft donor sites'), (1982, 'rule of thumb criteria for tongue lip adhesion in pierre robin anomalad'), (1982, 'surgical options in the repair of lower extremity soft tissue wounds'), (1983, 'aggressive treatment of adult osteomyelitis'), (1983, 'endothelium lined small artery prostheses a preliminary report'), (1983, 'transcutaneous po2 monitoring in the vascular laboratory'), (1984, 'computed tomography and thin section tomography in facial trauma'))
+keywords : frozenset({'surgery', 'intensive care medicine', 'radiology', 'internal medicine', 'orthodontics', 'anatomy', 'biochemistry'})
+
+firstname : david
+lastname : smith
+middlename : wilburn
+year : 1990
+yeardiff_larger_than_0 : 1990
+year_papertitle : ((1990, 'numerical and experimental analysis of circularly polarized radiating line antennas'),)
+keywords : frozenset({'acoustics', 'mathematical analysis', 'electrical engineering', 'topology', 'parallel computing', 'composite material', 'optics', 'algorithm', 'electronic engineering'})
+
+16/10 positive, 18/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : montserrat
+lastname : fuentes
+middlename : None
+year : 2000
+yeardiff_larger_than_0 : 2000
+year_papertitle : ((2000, 'predicting integrals of diffusion processes'), (2000, 'predicting integrals of diffusion processes with unknown diffusion parameters'), (2000, 'threshold dependence of mortality effects for fine and coarse particles in phoenix arizona'), (2001, 'a high frequency kriging approach for non stationary environmental processes'), (2001, 'fixed domain asymptotics for variograms using subsampling'), (2002, 'interpolation of nonstationary air pollution processes a spatial spectral approach'), (2002, 'spectral methods for nonstationary spatial processes'), (2003, 'mesoscale variability of sea viewing wide field of view sensor seawifs satellite ocean color global patterns and spatial scales'), (2003, 'recent advances in space time statistics with applications to environmental data an overview application of recent advances in space time statistics to atmospheric data'), (2003, 'statistical assessment of geographic areas of compliance with air quality standards application of recent advances in space time statistics to atmospheric data'))
+keywords : frozenset({'remote sensing', 'mathematical analysis', 'environmental engineering', 'statistics', 'artificial intelligence', 'applied mathematics', 'algorithm'})
+
+firstname : montserrat
+lastname : fuentes
+middlename : None
+year : 1998
+yeardiff_larger_than_0 : 1998
+year_papertitle : ((1998, 'prediction of random fields and modeling of spatial temporal satellite data'),)
+keywords : frozenset({'remote sensing', 'combinatorics', 'mathematical analysis', 'statistics', 'mathematical optimization', 'econometrics', 'optics', 'algorithm'})
+
+16/10 positive, 19/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : didier
+lastname : rouaud
+middlename : gilbert
+year : 1997
+yeardiff_larger_than_0 : 1997
+year_papertitle : ((1997, 'dead time effect and compensations of three level neutral point clamp inverters for high performance drive applications'), (1999, 'experimental comparisons of space vector neutral point balancing strategies for three level topology'), (2002, 'adjustable speed drive performance evaluation methods'))
+keywords : frozenset({'computer network', 'control engineering', 'electrical engineering', 'artificial intelligence', 'topology', 'control theory', 'mechanical engineering'})
+
+firstname : didier
+lastname : rouaud
+middlename : gilbert
+year : 1992
+yeardiff_larger_than_0 : 1992
+year_papertitle : ((1992, 'harmonic mitigation using a modified slip energy recovery system'),)
+keywords : frozenset({'acoustics', 'mathematical analysis', 'electrical engineering', 'control theory', 'optics', 'electronic engineering'})
+
+17/10 positive, 19/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : karl
+lastname : zeller
+middlename : None
+year : 1992
+yeardiff_larger_than_0 : 1992
+year_papertitle : ((1992, 'a solar radiation algorithm for ecosystem dynamic models'), (1993, 'fluxes of nitrogen oxides and ozone measured by eddy correlation over a shortgrass prairie'), (1995, 'atmospheric surface layer similarity theory applied to chemically reactive species'), (1995, 'o3 and no2 fluxes over snow measured by eddy correlation'), (1996, 'measurements of upward turbulent ozone fluxes above a subalpine spruce fir forest'), (1997, 'a model investigation of turbulence driven pressure pumping effects on the rate of diffusion of co2 n2o and ch4 through layered snowpacks'), (1997, 'air pollution status of a representative site in the czech republic brdy mountains'), (1997, 'air pollution status of the bulgarian govedartsi ecosystem'))
+keywords : frozenset({'inorganic chemistry', 'botany', 'meteorology', 'atmospheric sciences', 'ecology', 'environmental chemistry', 'mechanics'})
+
+firstname : karl
+lastname : zeller
+middlename : frederick
+year : 1990
+yeardiff_larger_than_0 : 1990
+year_papertitle : ((1990, 'eddy diffusivities for sensible heat ozone and momentum from eddy correlation and gradient measurements'),)
+keywords : frozenset({'metallurgy', 'computational physics', 'astrophysics', 'classical mechanics', 'composite material', 'atmospheric sciences', 'mechanics'})
+
+17/10 positive, 19/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ahmet
+lastname : oztekin
+middlename : None
+year : 2009
+yeardiff_larger_than_0 : 2009
+year_papertitle : ((2009, 'a decision analytic approach for technology portfolio prioritization aviation safety applications'), (2009, 'a regulatory based approach to safety analysis of unmanned aircraft systems'), (2010, 'an inductive reasoning approach for building system safety risk models of aviation accidents'))
+keywords : frozenset({'knowledge management', 'risk analysis', 'artificial intelligence', 'aeronautics', 'econometrics', 'operations research', 'management science'})
+
+firstname : ahmet
+lastname : oztekin
+middlename : None
+year : 2009
+yeardiff_larger_than_0 : 2009
+year_papertitle : ((2009, 'a generalized hybrid fuzzy bayesian methodology for modeling complex uncertainty'),)
+keywords : frozenset({'machine learning', 'statistics', 'artificial intelligence', 'control theory', 'risk analysis', 'applied mathematics', 'theoretical computer science'})
+
+18/10 positive, 19/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : wei
+lastname : li
+middlename : None
+year : 2010
+yeardiff_larger_than_0 : 2010
+year_papertitle : ((2010, 'approximate optimization for proportional fair ap association in multi rate wlans'), (2011, 'achieving proportional fairness via ap power control in multi rate wlans'), (2011, 'mobility in ipv6 whether and how to hierarchize the network'), (2011, 'partially overlapping channel assignment based on node orthogonality for 802 11 wireless networks'), (2012, 'delay modeling in mobile cognitive radio networks'), (2012, 'distributed energy efficient power optimization in two tier femtocell networks'), (2013, 'cooperative multi hop relaying via network formation games in cognitive radio networks'), (2013, 'distributed power control and pricing for two tier ofmda femtocell networks using fictitious game'), (2013, 'distributed uplink power control for two tier femtocell networks via convex pricing'), (2013, 'dual utility based green power game in two tier ofdma femtocell networks with firefly algorithm'))
+keywords : frozenset({'computer network', 'electrical engineering', 'mathematical economics', 'mathematical optimization', 'algorithm', 'electronic engineering', 'distributed computing'})
+
+firstname : wei
+lastname : li
+middlename : None
+year : 2013
+yeardiff_larger_than_0 : 2013
+year_papertitle : ((2013, 'system architecture level design and modeling of mixed signal soc using systemc systemc ams and cross layer co simulation tool'),)
+keywords : frozenset({'software engineering', 'simulation', 'electrical engineering', 'embedded system', 'programming language', 'electronic engineering', 'mechanical engineering'})
+
+18/10 positive, 19/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ahmet
+lastname : oztekin
+middlename : None
+year : 2009
+yeardiff_larger_than_0 : 2009
+year_papertitle : ((2009, 'a decision analytic approach for technology portfolio prioritization aviation safety applications'), (2009, 'a regulatory based approach to safety analysis of unmanned aircraft systems'), (2010, 'an inductive reasoning approach for building system safety risk models of aviation accidents'))
+keywords : frozenset({'knowledge management', 'risk analysis', 'artificial intelligence', 'aeronautics', 'econometrics', 'operations research', 'management science'})
+
+firstname : ahmet
+lastname : oztekin
+middlename : None
+year : 2009
+yeardiff_larger_than_0 : 2009
+year_papertitle : ((2009, 'a generalized hybrid fuzzy bayesian methodology for modeling complex uncertainty'),)
+keywords : frozenset({'machine learning', 'statistics', 'artificial intelligence', 'control theory', 'risk analysis', 'applied mathematics', 'theoretical computer science'})
+
+18/10 positive, 19/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished
+firstname : wei
+lastname : li
+middlename : None
+year : 2010
+yeardiff_larger_than_0 : 2010
+year_papertitle : ((2010, 'approximate optimization for proportional fair ap association in multi rate wlans'), (2011, 'achieving proportional fairness via ap power control in multi rate wlans'), (2011, 'mobility in ipv6 whether and how to hierarchize the network'), (2011, 'partially overlapping channel assignment based on node orthogonality for 802 11 wireless networks'), (2012, 'delay modeling in mobile cognitive radio networks'), (2012, 'distributed energy efficient power optimization in two tier femtocell networks'), (2013, 'cooperative multi hop relaying via network formation games in cognitive radio networks'), (2013, 'distributed power control and pricing for two tier ofmda femtocell networks using fictitious game'), (2013, 'distributed uplink power control for two tier femtocell networks via convex pricing'), (2013, 'dual utility based green power game in two tier ofdma femtocell networks with firefly algorithm'))
+keywords : frozenset({'computer network', 'electrical engineering', 'mathematical economics', 'mathematical optimization', 'algorithm', 'electronic engineering', 'distributed computing'})
+
+firstname : wei
+lastname : li
+middlename : None
+year : 2013
+yeardiff_larger_than_0 : 2013
+year_papertitle : ((2013, 'system architecture level design and modeling of mixed signal soc using systemc systemc ams and cross layer co simulation tool'),)
+keywords : frozenset({'software engineering', 'simulation', 'electrical engineering', 'embedded system', 'programming language', 'electronic engineering', 'mechanical engineering'})
+
+18/10 positive, 19/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : adriana
+lastname : silva
+middlename : de souza e
+year : 2003
+yeardiff_larger_than_0 : 2003
+year_papertitle : ((2003, 'from simulations to hybrid space how nomadic technologies change the real'), (2004, 'mobile networks and public spaces bringing multiuser environments into the physical space'), (2006, 'from cyber to hybrid mobile technologies as interfaces of hybrid spaces'), (2006, 'hybrid reality games reframed potential uses in educational contexts'), (2008, 'playing life and living play how hybrid reality games reframe space play and the ordinary'), (2009, 'digital cityscapes merging digital and urban playspaces'), (2009, 'hybrid reality and location based gaming redefining mobility and game spaces in urban environments'), (2009, 'hybrid spaces in art and science fiction from cyberspace to mobile interfaces'), (2009, 'playful urban spaces'), (2010, 'locative mobile social networks mapping communication and location in urban spaces'))
+keywords : frozenset({'computer network', 'art history', 'world wide web', 'human computer interaction', 'aesthetics', 'computer security', 'multimedia'})
+
+firstname : adriana
+lastname : silva
+middlename : de souza e
+year : 1998
+yeardiff_larger_than_0 : 1998
+year_papertitle : ((1998, 'kinetics and dynamics of magnetic suspensions under applied magnetic fields'),)
+keywords : frozenset({'condensed matter physics', 'statistical physics', 'mathematical analysis', 'analytical chemistry', 'optics', 'composite material', 'mechanics'})
+
+18/10 positive, 19/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : wei
+lastname : li
+middlename : None
+year : 2010
+yeardiff_larger_than_0 : 2010
+year_papertitle : ((2010, 'approximate optimization for proportional fair ap association in multi rate wlans'), (2011, 'achieving proportional fairness via ap power control in multi rate wlans'), (2011, 'mobility in ipv6 whether and how to hierarchize the network'), (2011, 'partially overlapping channel assignment based on node orthogonality for 802 11 wireless networks'), (2012, 'delay modeling in mobile cognitive radio networks'), (2012, 'distributed energy efficient power optimization in two tier femtocell networks'), (2013, 'cooperative multi hop relaying via network formation games in cognitive radio networks'), (2013, 'distributed power control and pricing for two tier ofmda femtocell networks using fictitious game'), (2013, 'distributed uplink power control for two tier femtocell networks via convex pricing'), (2013, 'dual utility based green power game in two tier ofdma femtocell networks with firefly algorithm'))
+keywords : frozenset({'computer network', 'electrical engineering', 'mathematical economics', 'mathematical optimization', 'algorithm', 'electronic engineering', 'distributed computing'})
+
+firstname : wei
+lastname : li
+middlename : None
+year : 2013
+yeardiff_larger_than_0 : 2013
+year_papertitle : ((2013, 'system architecture level design and modeling of mixed signal soc using systemc systemc ams and cross layer co simulation tool'),)
+keywords : frozenset({'software engineering', 'simulation', 'electrical engineering', 'embedded system', 'programming language', 'electronic engineering', 'mechanical engineering'})
+
+18/10 positive, 19/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished
+firstname : adriana
+lastname : silva
+middlename : de souza e
+year : 2003
+yeardiff_larger_than_0 : 2003
+year_papertitle : ((2003, 'from simulations to hybrid space how nomadic technologies change the real'), (2004, 'mobile networks and public spaces bringing multiuser environments into the physical space'), (2006, 'from cyber to hybrid mobile technologies as interfaces of hybrid spaces'), (2006, 'hybrid reality games reframed potential uses in educational contexts'), (2008, 'playing life and living play how hybrid reality games reframe space play and the ordinary'), (2009, 'digital cityscapes merging digital and urban playspaces'), (2009, 'hybrid reality and location based gaming redefining mobility and game spaces in urban environments'), (2009, 'hybrid spaces in art and science fiction from cyberspace to mobile interfaces'), (2009, 'playful urban spaces'), (2010, 'locative mobile social networks mapping communication and location in urban spaces'))
+keywords : frozenset({'computer network', 'art history', 'world wide web', 'human computer interaction', 'aesthetics', 'computer security', 'multimedia'})
+
+firstname : adriana
+lastname : silva
+middlename : de souza e
+year : 1998
+yeardiff_larger_than_0 : 1998
+year_papertitle : ((1998, 'kinetics and dynamics of magnetic suspensions under applied magnetic fields'),)
+keywords : frozenset({'condensed matter physics', 'statistical physics', 'mathematical analysis', 'analytical chemistry', 'optics', 'composite material', 'mechanics'})
+
+18/10 positive, 19/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : william
+lastname : lovegrove
+middlename : p
+year : 2010
+yeardiff_larger_than_0 : 2010
+year_papertitle : ((2010, 'improved single camera stereo system for mobile robotics'), (2017, 'a model community stem outreach event using the ieee move truck'))
+keywords : frozenset({'real time computing', 'public relations', 'computer graphics images', 'optics', 'artificial intelligence', 'medical emergency', 'computer vision'})
+
+firstname : william
+lastname : lovegrove
+middlename : palmer
+year : 1990
+yeardiff_larger_than_0 : 1990
+year_papertitle : ((1990, 'methodology for studying transient behavior in computer networks using simulation'),)
+keywords : frozenset({'control engineering', 'computer engineering', 'control theory', 'data mining', 'theoretical computer science', 'distributed computing'})
+
+18/10 positive, 19/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : fei
+lastname : wang
+middlename : None
+year : 2002
+yeardiff_larger_than_0 : 2002
+year_papertitle : ((2002, 'real time drr generation using cylindrical harmonics'), (2003, 'a new robust information theoretic measure and its application to image alignment'), (2003, 'cumulative residual entropy a new measure of information its application to image alignment'), (2004, 'cumulative residual entropy a new measure of information'), (2005, 'simultaneous registration and segmentation of anatomical structures from brain mri'), (2006, 'groupwise point pattern registration using a novel cdf based jensen shannon divergence'), (2006, 'joint registration and segmentation of neuroanatomic structures from brain mri'), (2006, 'simultaneous nonrigid registration of multiple point sets and atlas construction'), (2007, 'unsupervised clustering using multi resolution perceptual grouping'))
+keywords : frozenset({'statistical physics', 'combinatorics', 'artificial intelligence', 'control theory', 'data mining', 'algorithm', 'discrete mathematics'})
+
+firstname : fei
+lastname : wang
+middlename : None
+year : 2004
+yeardiff_larger_than_0 : 2004
+year_papertitle : ((2004, 'a modified nodal integral method for the time dependent incompressible navier stokes equations and its parallel implementation'),)
+keywords : frozenset({'mathematical analysis', 'algorithm', 'parallel computing', 'mechanics'})
+
+18/10 positive, 20/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : michael
+lastname : pollino
+middlename : None
+year : 2007
+yeardiff_larger_than_0 : 2007
+year_papertitle : ((2007, 'experimental study of the controlled rocking response of steel braced frames'), (2007, 'seismic retrofit of bridge steel truss piers using a controlled rocking approach'), (2010, 'seismic testing of a bridge steel truss pier designed for controlled rocking'))
+keywords : frozenset({'acoustics', 'mathematical analysis', 'control theory', 'structural engineering', 'mechanical engineering', 'mechanics'})
+
+firstname : michael
+lastname : perrino
+middlename : None
+year : 2014
+yeardiff_larger_than_0 : 2014
+year_papertitle : ((2014, 'an experimental study into pylon wing and flap installation effects on jet noise generated by commercial aircraft'),)
+keywords : frozenset({'acoustics', 'mathematical analysis', 'control theory', 'structural engineering', 'mechanical engineering', 'mechanics'})
+
+18/10 positive, 21/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : julie
+lastname : whitney
+middlename : ann gordon
+year : 2013
+yeardiff_larger_than_0 : 2013
+year_papertitle : ((2013, 'figure of merit for macrouniformity based on image quality ruler evaluation and machine learning framework'), (2013, 'wavelet based figure of merit for macro uniformity'), (2016, 'expert prescribed weighting for support vector machine classification'), (2017, 'parallel design of a product and internet of things iot architecture to minimize the cost of utilizing big data bd for sustainable value creation'), (2019, 'a method for sensor reduction in a supervised machine learning classification system'), (2019, 'reducing rf distance error by characterizing multipath'), (2020, 'new calibration method for implementing machine learning in low cost sensor applications'))
+keywords : frozenset({'machine learning', 'artificial intelligence', 'optics', 'data mining', 'algorithm', 'electronic engineering', 'mechanical engineering'})
+
+firstname : julie
+lastname : whitney
+middlename : ann gordon
+year : 1992
+yeardiff_larger_than_0 : 1992
+year_papertitle : ((1992, 'microfabrication of thermally isolated structures for a silicon micromachined flow sensor'),)
+keywords : frozenset({'electronic engineering', 'acoustics', 'optoelectronics', 'chemical engineering', 'aerospace engineering', 'mechanical engineering', 'mechanics'})
+
+18/10 positive, 21/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ahmed
+lastname : ahmed
+middlename : mohamed sayed
+year : 2012
+yeardiff_larger_than_0 : 2012
+year_papertitle : ((2012, 'lvrt performance limit of dfig with traditional ac crowbar and dc link brake approach'), (2016, 'hybrid damping for active front end converter'))
+keywords : frozenset({'marine engineering', 'electrical engineering', 'control theory', 'mechanical engineering', 'electronic engineering', 'automotive engineering'})
+
+firstname : ahmed
+lastname : ahmed
+middlename : mohamed sayed
+year : 2009
+yeardiff_larger_than_0 : 2009
+year_papertitle : ((2009, 'control of pwm ac motor drive systems under faulty conditions'),)
+keywords : frozenset({'topology', 'computer hardware', 'electrical engineering', 'control theory'})
+
+18/10 positive, 22/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : thomas
+lastname : radcliff
+middlename : d
+year : 2000
+yeardiff_larger_than_0 : 2000
+year_papertitle : ((2000, 'constant temperature calorimetry for in core power measurement'), (2000, 'on the three dimensional interaction of a rotor tip vortex with a cylindrical surface'), (2002, 'high temperature test facility for reactor in core sensor testing'), (2002, 'modeling and optimization of a constant temperature in core power sensor'))
+keywords : frozenset({'optoelectronics', 'nuclear physics', 'electrical engineering', 'mechanics', 'analytical chemistry', 'composite material', 'nuclear engineering'})
+
+firstname : thomas
+lastname : radcliff
+middlename : dean
+year : 1995
+yeardiff_larger_than_0 : 1995
+year_papertitle : ((1995, 'experimental and numerical simulation of boron transport in a nuclear reactor vessel'),)
+keywords : frozenset({'statistical physics', 'mechanics', 'thermodynamics', 'structural engineering', 'mechanical engineering', 'nuclear engineering'})
+
+18/10 positive, 22/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : nancy
+lastname : vigne
+middlename : g la
+year : 2005
+yeardiff_larger_than_0 : 2005
+year_papertitle : ((2005, 'examining the effect of incarceration and in prison family contact on prisoners family relationships'), (2006, 'family support in the prisoner reentry process expectations and realities'), (2012, 'evaluating the use of radio frequency identification device rfid technology to prevent and investigate sexual assaults in a correctional setting'))
+keywords : frozenset({'applied psychology', 'clinical psychology', 'social psychology', 'criminology', 'law', 'marketing', 'computer hardware'})
+
+firstname : nancy
+lastname : vigne
+middlename : g la
+year : 1996
+yeardiff_larger_than_0 : 1996
+year_papertitle : ((1996, 'crime prevention through the design and management of the built environment the case of the dc metro'),)
+keywords : frozenset({'transport engineering', 'finance', 'public relations', 'criminology', 'regional science', 'econometrics', 'public economics', 'law', 'marketing'})
+
+18/10 positive, 22/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : thomas
+lastname : radcliff
+middlename : d
+year : 2000
+yeardiff_larger_than_0 : 2000
+year_papertitle : ((2000, 'constant temperature calorimetry for in core power measurement'), (2000, 'on the three dimensional interaction of a rotor tip vortex with a cylindrical surface'), (2002, 'high temperature test facility for reactor in core sensor testing'), (2002, 'modeling and optimization of a constant temperature in core power sensor'))
+keywords : frozenset({'optoelectronics', 'nuclear physics', 'electrical engineering', 'mechanics', 'analytical chemistry', 'composite material', 'nuclear engineering'})
+
+firstname : thomas
+lastname : radcliff
+middlename : dean
+year : 1995
+yeardiff_larger_than_0 : 1995
+year_papertitle : ((1995, 'experimental and numerical simulation of boron transport in a nuclear reactor vessel'),)
+keywords : frozenset({'statistical physics', 'mechanics', 'thermodynamics', 'structural engineering', 'mechanical engineering', 'nuclear engineering'})
+
+18/10 positive, 22/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished
+firstname : nancy
+lastname : vigne
+middlename : g la
+year : 2005
+yeardiff_larger_than_0 : 2005
+year_papertitle : ((2005, 'examining the effect of incarceration and in prison family contact on prisoners family relationships'), (2006, 'family support in the prisoner reentry process expectations and realities'), (2012, 'evaluating the use of radio frequency identification device rfid technology to prevent and investigate sexual assaults in a correctional setting'))
+keywords : frozenset({'applied psychology', 'clinical psychology', 'social psychology', 'criminology', 'law', 'marketing', 'computer hardware'})
+
+firstname : nancy
+lastname : vigne
+middlename : g la
+year : 1996
+yeardiff_larger_than_0 : 1996
+year_papertitle : ((1996, 'crime prevention through the design and management of the built environment the case of the dc metro'),)
+keywords : frozenset({'transport engineering', 'finance', 'public relations', 'criminology', 'regional science', 'econometrics', 'public economics', 'law', 'marketing'})
+
+18/10 positive, 22/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ken
+lastname : chen
+middlename : shuang
+year : 2006
+yeardiff_larger_than_0 : 2006
+year_papertitle : ((2006, 'real time imaging of liquid water in an operating proton exchange membrane fuel cell'), (2008, 'in situ high resolution neutron radiography of cross sectional liquid water profiles in proton exchange membrane fuel cells'), (2008, 'understanding liquid water distribution and removal phenomena in an operating pemfc via neutron radiography'), (2012, 'modeling chemical and thermal states of reactive metal oxides in a cr5 solar thermochemical heat engine'))
+keywords : frozenset({'agronomy', 'optoelectronics', 'analytical chemistry', 'chemical engineering', 'composite material', 'mechanical engineering', 'mechanics'})
+
+firstname : ken
+lastname : chen
+middlename : shuang
+year : 1992
+yeardiff_larger_than_0 : 1992
+year_papertitle : ((1992, 'studies of multilayer slide coating and related processes volumes i and ii'),)
+keywords : frozenset({'mathematical analysis', 'control theory', 'composite material', 'structural engineering', 'mechanical engineering', 'mechanics'})
+
+18/10 positive, 22/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : nik
+lastname : hashim
+middlename : nur wahidah nik
+year : 2016
+yeardiff_larger_than_0 : 2016
+year_papertitle : ((2016, 'classifications of clinical depression detection using acoustic measures in malay speakers'), (2016, 'outflow of traffic from the national capital kuala lumpur to the north south and east coast highways using flow speed and density relationships'), (2016, 'tactile to vibrotactile sensory feedback interface for prosthethic hand users'), (2017, 'evaluation of voice acoustics as predictors of clinical depression scores'), (2017, 'receiver operating characteristics measure for the recognition of stuttering dysfluencies using line spectral frequencies'), (2017, 'speech based class attendance'), (2018, 'analysis of two adjacent articulation quranic letters based on mfcc and dtw'), (2018, 'color recognition wearable device using machine learning for visualy impaired person'), (2019, 'augmentative and alternative communication method based on tongue clicking for mute disabilities'), (2019, 'recognition of isolated handwritten arabic characters'))
+keywords : frozenset({'clinical psychology', 'transport engineering', 'linguistics', 'speech recognition', 'internal medicine', 'artificial intelligence', 'control theory'})
+
+firstname : nik
+lastname : hashim
+middlename : nur wahidah nik
+year : 2014
+yeardiff_larger_than_0 : 2014
+year_papertitle : ((2014, 'analysis of speech features as potential indicators for depression and high risk suicide and possible predictors for the hamilton depression rating hamd and beck depression inventory scale bdi ii'),)
+keywords : frozenset({'clinical psychology', 'gerontology', 'family medicine', 'psychotherapist', 'psychiatry'})
+
+18/10 positive, 23/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : raoul
+lastname : farer
+middlename : None
+year : 2000
+yeardiff_larger_than_0 : 2000
+year_papertitle : ((2000, 'on the use of robotics for melt blowing to form shaped molded fabric structures'), (2002, 'meltblown structures formed by a robotic and meltblowing integrated system impact of process parameters on fiber orientation and diameter distribution'), (2003, 'forming shaped molded structures by integrating meltblowing and robotic technologies'))
+keywords : frozenset({'simulation', 'acoustics', 'artificial intelligence', 'engineering drawing', 'chemical engineering', 'composite material', 'mechanical engineering'})
+
+firstname : raoul
+lastname : farer
+middlename : None
+year : 1999
+yeardiff_larger_than_0 : 1999
+year_papertitle : ((1999, 'formation of 3d meltblown structures using robotic control of fiber deposition'),)
+keywords : frozenset({'computer network', 'acoustics', 'electrical engineering', 'control theory', 'composite material', 'mechanical engineering'})
+
+19/10 positive, 23/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : md
+lastname : kabir
+middlename : enamul
+year : 1994
+yeardiff_larger_than_0 : 1994
+year_papertitle : ((1994, 'distribution of soil fractions and location of soil bacteria in a vertisol under cultivation and perennial grass'),)
+keywords : frozenset({'agronomy', 'environmental chemistry', 'botany'})
+
+firstname : md
+lastname : kabir
+middlename : enamul
+year : 2010
+yeardiff_larger_than_0 : 2010
+year_papertitle : ((2010, 'dynamic behavior of granular materials'),)
+keywords : frozenset({'condensed matter physics', 'geotechnical engineering', 'artificial intelligence', 'composite material', 'mechanical engineering', 'structural engineering'})
+
+20/10 positive, 23/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : min
+lastname : li
+middlename : None
+year : 2012
+yeardiff_larger_than_0 : 2012
+year_papertitle : ((2012, 'a sensor assisted self authentication framework for hardware trojan detection'), (2012, 'custom on chip sensors for post silicon failing path isolation in the presence of process variations'), (2013, 'a hybrid approach for fast and accurate trace signal selection for post silicon debug'), (2014, 'multi mode trace signal selection for post silicon debug'))
+keywords : frozenset({'computer network', 'real time computing', 'electrical engineering', 'artificial intelligence', 'computer hardware', 'embedded system', 'electronic engineering'})
+
+firstname : min
+lastname : li
+middlename : None
+year : 1999
+yeardiff_larger_than_0 : 1999
+year_papertitle : ((1999, 'modeling and design of shielding enclosures for emi mitigation experiments and finite difference time domain and method of moments modeling'),)
+keywords : frozenset({'acoustics', 'electrical engineering', 'optics', 'composite material', 'mechanical engineering'})
+
+20/10 positive, 24/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : laura
+lastname : chavez
+middlename : h arias
+year : 2013
+yeardiff_larger_than_0 : 2013
+year_papertitle : ((2013, 'desalination and reuse of high salinity shale gas produced water drivers technologies and future directions'), (2015, 'antimicrobial electrospun biopolymer nanofiber mats functionalized with graphene oxide silver nanocomposites'), (2015, 'influence of active layer and support layer surface structures on organic fouling propensity of thin film composite forward osmosis membranes'))
+keywords : frozenset({'petroleum engineering', 'environmental engineering', 'waste management', 'chemical engineering', 'chromatography', 'nuclear chemistry', 'composite material'})
+
+firstname : laura
+lastname : chavez
+middlename : h arias
+year : 2014
+yeardiff_larger_than_0 : 2014
+year_papertitle : ((2014, 're designing membranes electrospun nanofibers for control of structure and material properties'),)
+keywords : frozenset({'optoelectronics', 'nanotechnology', 'chemical engineering', 'chromatography', 'biochemistry'})
+
+20/10 positive, 25/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ana
+lastname : ferreira
+middlename : sofia rufino
+year : 2012
+yeardiff_larger_than_0 : 2012
+year_papertitle : ((2012, 'a decomposition based approach to stability analysis of large scale stochastic systems'), (2012, 'stability certification of large scale stochastic systems using dissipativity'), (2013, 'a graph partitioning approach to predicting patterns in lateral inhibition systems'), (2013, 'predicting patterns in lateral inhibition systems via graph partitioning'), (2014, 'pattern formation with a compartmental lateral inhibition system'), (2017, 'inquire large scale early insight discovery for qualitative research'), (2018, 'symmetry reduction for performance certification of interconnected systems'))
+keywords : frozenset({'combinatorics', 'artificial intelligence', 'control theory', 'algorithm', 'structural engineering', 'theoretical computer science', 'discrete mathematics'})
+
+firstname : ana
+lastname : ferreira
+middlename : sofia rufino
+year : 2015
+yeardiff_larger_than_0 : 2015
+year_papertitle : ((2015, 'exploiting structure and input output properties in networked dynamical systems'),)
+keywords : frozenset({'mathematical analysis', 'artificial intelligence', 'computational biology', 'mathematical optimization', 'topology', 'epistemology', 'control theory', 'discrete mathematics'})
+
+21/10 positive, 25/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : suranjan
+lastname : sarkar
+middlename : None
+year : 2007
+yeardiff_larger_than_0 : 2007
+year_papertitle : ((2007, 'molecular dynamics simulation of effective thermal conductivity and study of enhanced thermal transport mechanism in nanofluids'), (2007, 'thermal conductivity computation of nanofluids by equilibrium molecular dynamics simulation nanoparticle loading and temperature effect'), (2009, 'direct numerical simulation of heat transfer in spray cooling through 3d multiphase flow modeling using parallel computing'), (2009, 'modeling thermal boundary layer effect on liquid vapor interface dynamics in spray cooling'), (2013, 'optimizing operational performance of riser systems through improved understanding of riser thermal behaviour'))
+keywords : frozenset({'atomic physics', 'chemical engineering', 'thermodynamics', 'chemical physics', 'composite material', 'mechanical engineering', 'mechanics'})
+
+firstname : mita
+lastname : sarkar
+middlename : None
+year : 2008
+yeardiff_larger_than_0 : 2008
+year_papertitle : ((2008, 'multiphase flow modeling of spray cooling to improve heat transfer'),)
+keywords : frozenset({'optoelectronics', 'mathematical analysis', 'composite material', 'mechanical engineering', 'mechanics'})
+
+22/10 positive, 25/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jason
+lastname : anderson
+middlename : h
+year : 1998
+yeardiff_larger_than_0 : 1998
+year_papertitle : ((1997, 'architectures and algorithms for laser programmed gate arrays with foldable logic blocks'), (1998, 'an lpga with foldable pla style logic blocks'), (1998, 'technology mapping for large complex plds'), (2000, 'a placement algorithm for fpga designs with multiple i o standards'), (2002, 'power aware technology mapping for lut based fpgas'), (2003, 'switching activity analysis and pre layout activity prediction for fpgas'), (2004, 'active leakage power optimization for fpgas'), (2004, 'interconnect capacitance estimation for fpgas'), (2004, 'power estimation techniques for fpgas'), (2004, 'run time conscious automatic timing driven fpga layout synthesis'))
+keywords : frozenset({'computer network', 'electronic engineering', 'electrical engineering', 'artificial intelligence', 'embedded system', 'control theory', 'computer hardware'})
+
+firstname : jason
+lastname : anderson
+middlename : scott
+year : 1998
+yeardiff_larger_than_0 : 1998
+year_papertitle : ((1998, 'nonlinear dynamical systems analysis characterization with neural networks and adaptive bifurcation detection'),)
+keywords : frozenset({'artificial intelligence', 'systems engineering', 'mathematical analysis', 'control theory'})
+
+22/10 positive, 26/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : michael
+lastname : scott
+middlename : j
+year : 1990
+yeardiff_larger_than_0 : 1990
+year_papertitle : ((1990, 'consequences of climatic change for the human environment'), (1990, 'global energy and the greenhouse issue'), (1991, 'strategies for modeling the uncertain impacts of climate change'), (1993, 'valuing effects of climate change and fishery enhancement on chinook salmon'), (1994, 'effects of climate change on commercial building energy demand'), (1994, 'implications of policies to prevent climate change for future food security'), (1995, 'dark after chernobyl closing former soviet power reactors'), (1996, 'climate change impacts on u s commercial building energy consumption an analysis using sample survey data'))
+keywords : frozenset({'agricultural economics', 'architectural engineering', 'climatology', 'fishery', 'ecology', 'natural resource economics', 'atmospheric sciences'})
+
+firstname : michael
+lastname : scott
+middlename : harrison
+year : 2004
+yeardiff_larger_than_0 : 2004
+year_papertitle : ((2004, 'software frameworks for the computational simulation of structural systems'),)
+keywords : frozenset({'software engineering', 'mathematical analysis', 'artificial intelligence', 'applied mathematics', 'structural engineering', 'mechanics'})
+
+22/10 positive, 27/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : fan
+lastname : zhang
+middlename : None
+year : 2014
+yeardiff_larger_than_0 : 2014
+year_papertitle : ((2014, 'preliminary development of thermal power calculation code h power for a supercritical water reactor'), (2015, 'full scope modeling and analysis on the secondary circuit of chinese large capacity advanced pwr based on relap5 code'), (2017, 'development of three dimensional thermal hydraulic analysis code for steam generator with two fluid model and porous media approach'), (2019, 'multilayer data driven cyber attack detection system for industrial control systems based on network system and process data'), (2020, 'a robust cybersecurity solution platform architecture for digital instrumentation and control systems in nuclear power facilities'), (2020, 'robust localized cyber attack detection for key equipment in nuclear power plants'), (2021, 'estimation of sensor measurement errors in reactor coolant systems using multi sensor fusion'))
+keywords : frozenset({'computer security', 'artificial intelligence', 'nuclear engineering', 'control theory', 'data mining', 'mechanical engineering', 'mechanics'})
+
+firstname : fan
+lastname : zhang
+middlename : None
+year : 2005
+yeardiff_larger_than_0 : 2005
+year_papertitle : ((2005, 'a new paradigm of modeling watershed water quality'),)
+keywords : frozenset({'control engineering', 'biochemical engineering', 'mathematical analysis', 'statistics', 'electrical engineering', 'mathematical optimization', 'thermodynamics', 'control theory', 'applied mathematics'})
+
+22/10 positive, 28/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : bo
+lastname : li
+middlename : None
+year : 2006
+yeardiff_larger_than_0 : 2006
+year_papertitle : ((2006, 'implementation and validation of sandia outdoor photovoltaic test method and performance model at arizona state university'), (2008, 'failure analysis of design qualification testing 2007 vs 2005'), (2010, 'failure analysis of module design qualification testing iii 1997 2005 vs 2005 2007 vs 2007 2009'), (2011, 'successful transfer of sandia national laboratories outdoor test technology to tuv rheinland photovoltaic testing laboratory'), (2012, 'failure rate analysis of module design qualification testing iv 1997 2005 vs 2005 2007 vs 2007 2009 vs 2009 2011'))
+keywords : frozenset({'reliability engineering', 'systems engineering', 'mathematics education', 'electrical engineering', 'industrial organization', 'composite material', 'nuclear engineering'})
+
+firstname : bo
+lastname : li
+middlename : None
+year : 2005
+yeardiff_larger_than_0 : 2005
+year_papertitle : ((2005, 'uv liga compatible electroformed nano structured materials for micro mechanical systems'),)
+keywords : frozenset({'optoelectronics', 'chemical engineering', 'composite material', 'mechanical engineering', 'mechanics'})
+
+22/10 positive, 28/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : yusheng
+lastname : li
+middlename : None
+year : 2009
+yeardiff_larger_than_0 : 2009
+year_papertitle : ((2009, 'a comparison of the performance of high qe photomultiplier tubes to conventional photomultiplier tubes'), (2009, 'a pixellated detector module for c spect'), (2009, 'analytic derivation of pinhole collimator sensitivity for a general source distribution'), (2009, 'c spect a clinical cardiac spect tct platform design concepts and performance potential'), (2009, 'feasibility of a high resolution pixellated detector for c spect'), (2009, 'the geometric response function for convergent slit slat collimators'), (2010, 'analytic derivation of pinhole collimation sensitivity for a general source model using spherical harmonics'), (2010, 'development of a modular detector system for c spect'), (2010, 'view sampling requirements for cardiac spect'), (2011, 'noise propagation for iterative penalized likelihood image reconstruction based on fisher information'))
+keywords : frozenset({'nuclear medicine', 'optoelectronics', 'mathematical analysis', 'electrical engineering', 'artificial intelligence', 'optics', 'algorithm'})
+
+firstname : yusheng
+lastname : li
+middlename : None
+year : 1999
+yeardiff_larger_than_0 : 1999
+year_papertitle : ((1999, 'approximating the pareto set of convex bicriteria optimization problems to aid decision making in design'),)
+keywords : frozenset({'pure mathematics', 'statistics', 'artificial intelligence', 'mathematical optimization', 'operations research'})
+
+22/10 positive, 28/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : ahmad
+lastname : alomari
+middlename : None
+year : 2013
+yeardiff_larger_than_0 : 2013
+year_papertitle : ((2013, 'smart event traffic management impact on the central florida regional transportation network and lessons learned'), (2015, 'challenges in formal methods for testing and verification of cloud computing systems'), (2015, 'evaluation of conditional transit signal priority technology for regional implementation'), (2015, 'wrong way driving multifactor risk based model for florida interstates and toll facilities'), (2015, 'wrong way driving prevention incident survey results and planned countermeasure implementation in florida'), (2016, 'modeling the risk of wrong way driving on freeways and toll roads'), (2016, 'regional evaluation of bus rapid transit with and without transit signal priority'), (2016, 'should legacy highway advisory radio and citizens band radio advisory systems be continued analysis of traveler usage and satisfaction regarding these systems'), (2017, 'a technical note on evaluating the effectiveness of bus rapid transit with transit signal priority'), (2018, 'green evolutionary based algorithm for multiple services scheduling in cloud computing'))
+keywords : frozenset({'computer network', 'transport engineering', 'advertising', 'computer security', 'medical emergency', 'computer hardware', 'distributed computing'})
+
+firstname : ahmad
+lastname : alomari
+middlename : nasser
+year : 2006
+yeardiff_larger_than_0 : 2006
+year_papertitle : ((2006, 'high speed vertical cavity surface emitting lasers with reduced electrical and thermal constraints on modulation bandwidth'),)
+keywords : frozenset({'atomic physics', 'acoustics', 'optoelectronics', 'electrical engineering', 'optics', 'composite material', 'mechanical engineering'})
+
+22/10 positive, 28/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : yusheng
+lastname : li
+middlename : None
+year : 2009
+yeardiff_larger_than_0 : 2009
+year_papertitle : ((2009, 'a comparison of the performance of high qe photomultiplier tubes to conventional photomultiplier tubes'), (2009, 'a pixellated detector module for c spect'), (2009, 'analytic derivation of pinhole collimator sensitivity for a general source distribution'), (2009, 'c spect a clinical cardiac spect tct platform design concepts and performance potential'), (2009, 'feasibility of a high resolution pixellated detector for c spect'), (2009, 'the geometric response function for convergent slit slat collimators'), (2010, 'analytic derivation of pinhole collimation sensitivity for a general source model using spherical harmonics'), (2010, 'development of a modular detector system for c spect'), (2010, 'view sampling requirements for cardiac spect'), (2011, 'noise propagation for iterative penalized likelihood image reconstruction based on fisher information'))
+keywords : frozenset({'nuclear medicine', 'optoelectronics', 'mathematical analysis', 'electrical engineering', 'artificial intelligence', 'optics', 'algorithm'})
+
+firstname : yusheng
+lastname : li
+middlename : None
+year : 1999
+yeardiff_larger_than_0 : 1999
+year_papertitle : ((1999, 'approximating the pareto set of convex bicriteria optimization problems to aid decision making in design'),)
+keywords : frozenset({'pure mathematics', 'statistics', 'artificial intelligence', 'mathematical optimization', 'operations research'})
+
+22/10 positive, 28/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished
+firstname : ahmad
+lastname : alomari
+middlename : None
+year : 2013
+yeardiff_larger_than_0 : 2013
+year_papertitle : ((2013, 'smart event traffic management impact on the central florida regional transportation network and lessons learned'), (2015, 'challenges in formal methods for testing and verification of cloud computing systems'), (2015, 'evaluation of conditional transit signal priority technology for regional implementation'), (2015, 'wrong way driving multifactor risk based model for florida interstates and toll facilities'), (2015, 'wrong way driving prevention incident survey results and planned countermeasure implementation in florida'), (2016, 'modeling the risk of wrong way driving on freeways and toll roads'), (2016, 'regional evaluation of bus rapid transit with and without transit signal priority'), (2016, 'should legacy highway advisory radio and citizens band radio advisory systems be continued analysis of traveler usage and satisfaction regarding these systems'), (2017, 'a technical note on evaluating the effectiveness of bus rapid transit with transit signal priority'), (2018, 'green evolutionary based algorithm for multiple services scheduling in cloud computing'))
+keywords : frozenset({'computer network', 'transport engineering', 'advertising', 'computer security', 'medical emergency', 'computer hardware', 'distributed computing'})
+
+firstname : ahmad
+lastname : alomari
+middlename : nasser
+year : 2006
+yeardiff_larger_than_0 : 2006
+year_papertitle : ((2006, 'high speed vertical cavity surface emitting lasers with reduced electrical and thermal constraints on modulation bandwidth'),)
+keywords : frozenset({'atomic physics', 'acoustics', 'optoelectronics', 'electrical engineering', 'optics', 'composite material', 'mechanical engineering'})
+
+22/10 positive, 29/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : richard
+lastname : miller
+middlename : None
+year : 1999
+yeardiff_larger_than_0 : 1999
+year_papertitle : ((1999, 'the productivity of health care and pharmaceuticals an international comparison'), (2000, 'is there a link between pharmaceutical consumption and improved health in oecd countries'), (2004, 'estimating the compensating differential for employer provided health insurance'), (2004, 'health care matters pharmaceuticals obesity and the quality of life'), (2004, 'the effects of pharmaceutical consumption and obesity on the quality of life in the organization of economic cooperation and development oecd countries'), (2006, 'is the united states an outlier in health care and health outcomes a preliminary analysis'))
+keywords : frozenset({'agricultural economics', 'nursing', 'family medicine', 'environmental health', 'econometrics', 'labour economics', 'demography'})
+
+firstname : richard
+lastname : miller
+middlename : alan
+year : 1989
+yeardiff_larger_than_0 : 1989
+year_papertitle : ((1989, 'analysis of the fracture process zone in mortar using laser holographic interferometry'),)
+keywords : frozenset({'mechanics', 'optics', 'composite material', 'mechanical engineering', 'structural engineering'})
+
+22/10 positive, 30/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : myunghoon
+lastname : seong
+middlename : None
+year : 2011
+yeardiff_larger_than_0 : 2011
+year_papertitle : ((2011, 'analysis and design of a multi effect desalination system with thermal vapor compression and harvested heat addition'), (2012, 'electrostatically driven collapsible au thin films assembled using transfer printing for thermal switching'), (2012, 'modeling and theoretical efficiency of a silicon nanowire based thermoelectric junction with area enhancement'), (2012, 'partially coherent phonon transport in two dimensionally rough nanowires'), (2012, 'thermal conductivity of silicon nanowire arrays with controlled roughness'), (2013, 'area of contact and thermal transport across transfer printed metal dielectric interfaces'), (2013, 'detailed consideration of the electron phonon thermal conductance at metal dielectric interfaces'), (2013, 'erratum electrostatically driven collapsible au thin films assembled using transfer printing for thermal switching appl phys lett 100 211904 2012'), (2013, 'low temperature phonon boundary scattering in slightly rough silicon nanowires'), (2013, 'spectral phonon scattering from sub 10 nm surface roughness wavelengths in metal assisted chemically etched si nanowires'))
+keywords : frozenset({'condensed matter physics', 'optoelectronics', 'nanotechnology', 'optics', 'composite material', 'mechanical engineering', 'mechanics'})
+
+firstname : myunghoon
+lastname : seong
+middlename : None
+year : 2009
+yeardiff_larger_than_0 : 2009
+year_papertitle : ((2009, 'thin film nickel titanium in mems valve and membrane wrinkling control'),)
+keywords : frozenset({'metallurgy', 'optoelectronics', 'mechanics', 'mechanical engineering', 'structural engineering'})
+
+22/10 positive, 31/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : yan
+lastname : li
+middlename : None
+year : 2014
+yeardiff_larger_than_0 : 2014
+year_papertitle : ((2014, 'concerns to the emerging grid codes for wind turbines lvrt in weak ac grid'), (2014, 'synchronizing stability of dfig based wind turbines attached to weak ac grid'), (2016, 'analysis and control of doubly fed induction generator for zero voltage ride through'), (2019, 'modelling and stability analysis of a three port dc dc converter with virtual impedance control for hybrid energy storage system'))
+keywords : frozenset({'marine engineering', 'statistical physics', 'electrical engineering', 'computer hardware', 'control theory', 'electronic engineering', 'mechanical engineering'})
+
+firstname : yan
+lastname : li
+middlename : None
+year : 2009
+yeardiff_larger_than_0 : 2009
+year_papertitle : ((2009, 'an automated system for image to vector georeferencing'),)
+keywords : frozenset({'artificial intelligence', 'public relations', 'pure mathematics'})
+
+22/10 positive, 31/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : fan
+lastname : yang
+middlename : nils
+year : 2016
+yeardiff_larger_than_0 : 2016
+year_papertitle : ((2016, 'beta adrenoreceptor blockade abolishes atomoxetine induced risk taking'), (2018, '0218 effects of sleep deprivation and recovery sleep on human brain network organization'), (2018, '0227 sleep deprivation enlarges inter stimulus interval effect on vigilant attention'), (2018, 'sleep deprivation enhances inter stimulus interval effect on vigilant attention performance'), (2018, 'successful reorganization of category selective visual cortex following occipito temporal lobectomy in childhood'), (2019, 'test retest reliability of cerebral blood flow for assessing brain function at rest and during a vigilance task'), (2020, '0060 morning locus coeruleus activation during the pvt predicts later day sleepiness'), (2020, '0075 neural correlates of cognitive fatigue in parkinson disease'), (2020, '25 mechanisms underlying nocturia in women with bladder pain syndrome interstitial cystitis'), (2020, 'low cholesterol level linked to reduced semantic fluency performance and reduced gray matter volume in the medial temporal lobe'))
+keywords : frozenset({'audiology', 'urology', 'internal medicine', 'artificial intelligence', 'cognitive psychology', 'psychiatry', 'neuroscience'})
+
+firstname : fan
+lastname : yang
+middlename : None
+year : 2013
+yeardiff_larger_than_0 : 2013
+year_papertitle : ((2013, 'bacteria microbial communities and engineering studies on the microbial ecology of selected engineered systems'),)
+keywords : frozenset({'microbiology', 'ecology', 'agricultural economics', 'environmental chemistry'})
+
+22/10 positive, 32/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : james
+lastname : kelly
+middlename : t
+year : 1997
+yeardiff_larger_than_0 : 1997
+year_papertitle : ((1997, 'detecting and studying e sup e sup minus r_arrow h sup 0 a sup 0 h sup h sup minus in the mssm implications of supersymmetric decays and discriminating gut scenarios'), (2000, 'detailed flow patterns in the nasal cavity'), (2000, 'particle image velocimetry measurements in complex geometries'), (2001, 'deposition of fine and coarse aerosols in a rat nasal mold'), (2001, 'in vivo measurement of fine and coarse aerosol deposition in the nasal airways of female long evans rats'), (2002, 'nasal and lung deposition of fine and coarse particles in rats'), (2003, 'nasal molds as predictors of fine and coarse particle deposition in rat nasal airways'), (2003, 'respiratory deposition and inhalability of monodisperse aerosols in long evans rats'), (2004, 'particle deposition in human nasal airway replicas manufactured by different methods part ii ultrafine particles'))
+keywords : frozenset({'internal medicine', 'chemical engineering', 'optics', 'particle physics', 'composite material', 'environmental chemistry', 'mechanics'})
+
+firstname : james
+lastname : kelly
+middlename : edward
+year : 1989
+yeardiff_larger_than_0 : 1989
+year_papertitle : ((1989, 'modeling the continuous casting of steel'),)
+keywords : frozenset({'metallurgy', 'mechanics', 'composite material', 'mechanical engineering', 'structural engineering'})
+
+22/10 positive, 33/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : pengjun
+lastname : wan
+middlename : None
+year : 1993
+yeardiff_larger_than_0 : 1993
+year_papertitle : ((1993, 'minimum steiner trees in normed planes'), (1995, 'a 23 log 3 competitive algorithm for the counterfeit coin problem'), (1995, 'a 3 2 log3 competive algorithm for the counterfeit cain problem'), (1996, 'a new multihop lightwave network based on the generalized de bruijn graph'), (1996, 'on real time quasi durable checkpointing'), (1996, 'on supporting mission critical multimedia applications'), (1996, 'twdm single hop lightwave networks using multiple fixed transceivers at each station'), (1997, 'a log 2 3 1 2 competitive algorithm for the counterfeit coin problem'), (1997, 'comparing file copies with at most three disagreeing pages'), (1997, 'near optimal conflict free channel set assignments for an optical cluster based hypercube network'))
+keywords : frozenset({'computer network', 'combinatorics', 'mathematical analysis', 'computer security', 'artificial intelligence', 'topology', 'electronic engineering'})
+
+firstname : pengjun
+lastname : wan
+middlename : None
+year : 1997
+yeardiff_larger_than_0 : 1997
+year_papertitle : ((1997, 'multichannel lightwave networks'),)
+keywords : frozenset({'computer network', 'optoelectronics', 'systems engineering', 'electrical engineering', 'optics', 'electronic engineering', 'distributed computing'})
+
+22/10 positive, 34/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : chung
+lastname : moon
+middlename : hee
+year : 2016
+yeardiff_larger_than_0 : 2016
+year_papertitle : ((2016, 'multi analyte paper analytical devices pad with cmos integration for point of care diagnostics'), (2016, 'origami microfluidic paper analytical devices ompad for sensing and diagnostics'), (2018, 'a three dimensional electrochemical paper based analytical device for low cost diagnostics'))
+keywords : frozenset({'optoelectronics', 'nanotechnology', 'electrical engineering', 'analytical chemistry', 'composite material', 'electronic engineering', 'mechanical engineering'})
+
+firstname : chung
+lastname : moon
+middlename : hee
+year : 2015
+yeardiff_larger_than_0 : 2015
+year_papertitle : ((2015, 'investigation of bio directed assembly of metal oxide and metal nanomaterials for chemiresistive gas sensors'),)
+keywords : frozenset({'organic chemistry', 'chemical engineering', 'composite material', 'nanotechnology'})
+
+22/10 positive, 34/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : bin
+lastname : chen
+middlename : None
+year : 2011
+yeardiff_larger_than_0 : 2011
+year_papertitle : ((2011, 'sers spectroscopy and sers imaging of shewanella oneidensis using silver nanoparticles and nanowires'), (2012, 'phoretic deposition of graphene on manganese cobalt oxide composites for supercapacitor electrodes'), (2014, 'x ray absorption study of graphene oxide and transition metal oxide nanocomposites'), (2015, 'electrophoretically deposited graphene oxide and carbon nanotube composite for electrochemical capacitors'))
+keywords : frozenset({'inorganic chemistry', 'optoelectronics', 'nanotechnology', 'analytical chemistry', 'chemical engineering', 'nuclear chemistry', 'biochemistry'})
+
+firstname : ying
+lastname : chen
+middlename : None
+year : 2014
+yeardiff_larger_than_0 : 2014
+year_papertitle : ((2014, 'sensing and energy harvesting of fluidic flow by inas nanowires carbon nanotubes and graphene'),)
+keywords : frozenset({'nanotechnology', 'electrical engineering', 'analytical chemistry', 'chemical engineering', 'mechanics'})
+
+22/10 positive, 34/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : yingchen
+lastname : yang
+middlename : None
+year : 2006
+yeardiff_larger_than_0 : 2006
+year_papertitle : ((2006, 'distant touch hydrodynamic imaging with an artificial lateral line'), (2006, 'high sensitivity bi directional flow sensor based on biological inspiration of animal haircell sensors'), (2006, 'mems based flow sensors and their application on flow imaging'), (2006, 'multisensor processing algorithms for underwater dipole localization and tracking using mems artificial lateral line sensors'), (2006, 'polymer micro and nano scale fabrication technology development for bioinspired sensing'), (2007, 'design and characterization of artificial haircell sensor for flow sensing with ultrahigh velocity and angular sensitivity'), (2007, 'from artificial hair cell sensor to artificial lateral line system development and application'), (2007, 'hydrogel encapsulated microfabricated haircells mimicking fish cupula neuromast'), (2007, 'localization and tracking of acoustic stimuli using millimetric artificial lateral line flow sensing arrays'), (2008, 'biomimetic flow imaging with an artificial fish lateral line'))
+keywords : frozenset({'acoustics', 'nanotechnology', 'artificial intelligence', 'control theory', 'optics', 'electronic engineering', 'mechanics'})
+
+firstname : ming
+lastname : yang
+middlename : None
+year : 1995
+yeardiff_larger_than_0 : 1995
+year_papertitle : ((1995, 'development and analysis of a multiple beam laser system for measurement of surface vibrations'),)
+keywords : frozenset({'acoustics', 'optics', 'composite material', 'mechanical engineering', 'mechanics'})
+
+22/10 positive, 35/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : lei
+lastname : wang
+middlename : None
+year : 2005
+yeardiff_larger_than_0 : 2005
+year_papertitle : ((2005, 'realistic expatriate assignment preview a potential solution to expatriate premature return'), (2009, 'institutional and individual factors impacting domestic private companies in china'), (2010, 'direct and indirect effects of individual and environmental factors on motivation for self employment'), (2010, 'propensity for self employment contrasting the usa and mexico'), (2010, 'strategizing of china s major players a bourdieusian perspective'), (2010, 'the effect of followers behavior on leader efficacy'), (2011, 'organizational citizenship behavior the role of value identity based motivation'), (2012, 'a cross cultural study of motivation for self employment comparing china mexico and the usa'), (2012, 'moral disengagement through displacement of responsibility the role of leadership beliefs'))
+keywords : frozenset({'clinical psychology', 'public relations', 'economic growth', 'social psychology', 'gender studies', 'epistemology', 'labour economics'})
+
+firstname : lei
+lastname : wang
+middlename : None
+year : 2001
+yeardiff_larger_than_0 : 2001
+year_papertitle : ((2001, 'designing low power communication systems via noise tolerance'),)
+keywords : frozenset({'computer network', 'acoustics', 'electrical engineering', 'computer hardware', 'electronic engineering'})
+
+22/10 positive, 36/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : bin
+lastname : chen
+middlename : None
+year : 2015
+yeardiff_larger_than_0 : 2015
+year_papertitle : ((2015, 'considering agent and task openness in ad hoc team formation'), (2016, 'collaborative human task assignment for open systems'), (2016, 'collaborative human task assignment for open systems extended abstract'))
+keywords : frozenset({'knowledge management', 'public relations', 'social psychology', 'human computer interaction', 'mathematics education', 'artificial intelligence', 'mathematical optimization'})
+
+firstname : bin
+lastname : chen
+middlename : None
+year : 2008
+yeardiff_larger_than_0 : 2008
+year_papertitle : ((2008, 'development and application of the light triggered emitter turn off lt eto thyristor'),)
+keywords : frozenset({'electrical engineering'})
+
+22/10 positive, 37/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : yi
+lastname : xu
+middlename : None
+year : 1998
+yeardiff_larger_than_0 : 1998
+year_papertitle : ((1998, 'operation sequences based cell formation methods a critical survey'), (2000, 'designing multi product lines job routing in cellular manufacturing systems'), (2003, 'models for a family of products with shelf life and production and shortage costs in emerging markets'))
+keywords : frozenset({'computer network', 'process engineering', 'artificial intelligence', 'mathematical optimization', 'microeconomics', 'operations research', 'algorithm'})
+
+firstname : yi
+lastname : xu
+middlename : None
+year : 1991
+yeardiff_larger_than_0 : 1991
+year_papertitle : ((1991, 'study of wave propagation and dynamic load transfer in heterogeneous granular media'),)
+keywords : frozenset({'acoustics', 'mechanics', 'optics', 'composite material', 'structural engineering'})
+
+22/10 positive, 38/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : jungbae
+lastname : kim
+middlename : None
+year : 2006
+yeardiff_larger_than_0 : 2006
+year_papertitle : ((2006, 'integrated organic photovoltaic modules with a scalable voltage output'), (2007, 'recent advances in organic photovoltaic cells and integrated modules'), (2008, 'comparison of pentacene and amorphous silicon amoled display driver circuits'), (2008, 'high performance ingazno thin film transistors with high k amorphous ba0 5sr0 5tio3 gate insulator'), (2009, 'enhanced nonlinear absorption in low finesse metal dielectric fabry perot resonators'), (2009, 'erratum high performance ingazno thin film transistors with high k amorphous ba0 5sr0 5tio3 gate insulator appl phys lett 93 242111 2008'), (2009, 'fabrication of a blue m times n pixel organic light emitting diode video display incorporating a thermally stable emitter'), (2009, 'low voltage ingazno thin film transistors with al2o3 gate insulator grown by atomic layer deposition'), (2009, 'spice optimization of organic fet models using charge transport elements'), (2010, 'flexible hybrid complementary inverters with high gain and balanced noise margins using pentacene and amorphous ingazno thin film transistors'))
+keywords : frozenset({'optoelectronics', 'medicinal chemistry', 'electrical engineering', 'computer hardware', 'optics', 'composite material', 'electronic engineering'})
+
+firstname : jungbae
+lastname : kim
+middlename : None
+year : 1995
+yeardiff_larger_than_0 : 1995
+year_papertitle : ((1995, 'enzymatic catalysis in extreme environments'),)
+keywords : frozenset({'chemical engineering', 'organic chemistry', 'biochemistry', 'inorganic chemistry'})
+
+22/10 positive, 38/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : chiachin
+lastname : chang
+middlename : None
+year : 2011
+yeardiff_larger_than_0 : 2011
+year_papertitle : ((2011, 'influences of technological attributes and environmental factors on technology commercialization'), (2012, 'a co opetition perspective of technology alliance governance modes'), (2012, 'exploring the evolution of nano technology'), (2013, 'evaluating the operational performance of knowledge based industries the perspective of intellectual capital'), (2013, 'resolving the innovation puzzle of latecomers the case of taiwan'), (2013, 'the selection of technology for late starters a case study of the energy smart photovoltaic industry'), (2015, 'a hybrid decision making model for factors influencing the purchase intentions of technology products the moderating effect of lifestyle'), (2015, 'exploring the intention to continue using social networking sites the case of facebook'), (2015, 'influences of knowledge spillover and utilization on the nis performance a multi stage efficiency perspective'), (2018, 'technology acquisition models for fast followers in high technological markets an empirical analysis of the led industry'))
+keywords : frozenset({'knowledge management', 'public relations', 'environmental economics', 'environmental planning', 'social psychology', 'industrial organization', 'marketing'})
+
+firstname : chiachin
+lastname : chang
+middlename : None
+year : 1999
+yeardiff_larger_than_0 : 1999
+year_papertitle : ((1999, 'nonlinear theories of forced surface waves in a circular basin'),)
+keywords : frozenset({'atomic physics', 'acoustics', 'combinatorics', 'mathematical analysis', 'control theory', 'optics', 'composite material', 'structural engineering', 'mechanics'})
+
+22/10 positive, 39/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+firstname : patrick
+lastname : mcmahon
+middlename : j
+year : 1995
+yeardiff_larger_than_0 : 1995
+year_papertitle : ((1995, 'a new dynamic testing apparatus to study glenohumeral joint motion'), (1995, 'shoulder muscle forces and tendon excursions during glenohumeral abduction in the scapular plane'), (1995, 'soft tissue injury as an indication of child abuse'), (1995, 'the role of the long head of the biceps brachii in superior stability of the glenohumeral joint'), (1999, 'injuries in baseball edited by james r andrews bertram zarins and kevin e wilk philadelphia lippincott raven 1998 139 00 656 pp'), (1999, 'the painful shoulder zeroing in on the most common causes'), (2000, 'the effects of ulnar axial malalignment on supination and pronation'), (2001, 'experimental comparison of arthroscopic and robot assisted anterior cruciate ligament tunnel reconstruction'), (2001, 'precision of acl tunnel placement using traditional and robotic techniques'), (2002, 'thermal capsuloplasty of the glenohumeral joint technique and results of treatment'))
+keywords : frozenset({'physical therapy', 'surgery', 'family medicine', 'orthodontics', 'medical emergency', 'anatomy', 'structural engineering'})
+
+firstname : patrick
+lastname : mcmahon
+middlename : david james
+year : 1985
+yeardiff_larger_than_0 : 1985
+year_papertitle : ((1985, 'application of renormalization group theory in solution thermodynamics'),)
+keywords : frozenset({'condensed matter physics', 'theoretical physics', 'statistical physics', 'thermodynamics', 'particle physics', 'algorithm', 'mathematical physics'})
+
+22/10 positive, 40/10 negative
+Do these records refer to the same thing?
+(y)es / (n)o / (u)nsure / (f)inished / (p)revious
+Finished labeling
+Done in 374.42698515256245 minutes.
