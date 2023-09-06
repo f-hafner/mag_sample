@@ -117,7 +117,9 @@ bash $script_path/link/graduates.sh $logfile_path
 # --train_name "christoph_degree0" --keepyears "19852015"
 # need to run the write_csv_links script with these options as well
 # to get all links into db
-python -m $script_path.link.write_csv_links --linking_type "graduates" --train_name "christoph_fielddegree0" \
+python -m $script_path.link.write_csv_links --linking_type "graduates" \
+                                            --train_name "combined" \
+                                            --keepyears "19852015" \
     &> $logfile_path/write_csv_links_graduates.log
 
 Rscript -e "rmarkdown::render('$script_path/reports/quality_linking.Rmd', output_dir = '$output_path')" \
