@@ -167,7 +167,7 @@ python -m $script_path.link.topic_similarity \
     --top_n_authors 200 \
     --write_dir similarities_temp/ \
     --window_size 5 \
-    --ncores 30 \
+    --ncores 12 \
     &> $logfile_path/topic_similarity.log
 
 python -m  $script_path.link.read_topic_similarity \
