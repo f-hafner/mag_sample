@@ -156,16 +156,18 @@ Rscript -e "rmarkdown::render('$script_path/reports/quality_linking_grants.Rmd',
 
 # # Generate panel data set etc. for the linked entities
 python -m $script_path.link.prep_linked_data \
-    --filter_trainname_graduates "christoph_" \
+    --filter_trainname_graduates "combined" \
     --filter_trainname_advisors "combined" \
     &> $logfile_path/prep_linked_data.log
 
 # # Calculate topic overlap between linked graduates and 
     # possible new employers & colleagues
+
 python -m $script_path.link.topic_similarity \
     --top_n_authors 200 \
     --write_dir similarities_temp/ \
     --window_size 5 \
+    --ncores 30 \
     &> $logfile_path/topic_similarity.log
 
 python -m  $script_path.link.read_topic_similarity \
