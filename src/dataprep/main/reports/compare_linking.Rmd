@@ -9,7 +9,8 @@ output: pdf_document
 knitr::opts_chunk$set(echo = TRUE)
 datapath <- "/mnt/ssd/linked_ids_temp/"
 packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "ggplot2", 
-              "stringdist", "knitr", "bit64", "kableExtra") 
+              "stringdist", "knitr", "bit64", "kableExtra",
+              "magutils") 
 
 lapply(packages, library, character.only = TRUE)
 
@@ -175,6 +176,7 @@ compare <- function(field, linktype, linker1, linker2, years, inspect=FALSE){
  
 ```
 
+
 ### Which fields and which linking runs to compare?
 
 ### Comparison for Graduates
@@ -204,6 +206,35 @@ linker1 = "christoph_with_protocol_magkeywords"
 linker2 = "flavio_with_protocol_magkeywords"
 ```
 
+```{r}
+res_inspect <- lapply(fields_to_process, function(x) compare(x,  "graduates", linker1, linker2, "19852015", inspect = TRUE))
+names(res_inspect) <- fields_to_process
+```
+
+```{r}
+d_biology <- res_inspect$biology
+d_chemistry <- res_inspect$chemistry
+
+d_biology |> filter(pqid %in% d_chemistry$pqid) |> head()
+
+d_biology |> filter(pqid == 304765279)
+d_chemistry |> filter(pqid == 304765279)
+
+graduate_links |> filter(goid == 304765279)
+```
+
+
+
+```{r}
+dk <- map(
+  .x = names(res_inspect),
+  .f = ~res_inspect[[.x]] |> mutate(field = .x)
+) |> 
+  bind_rows()
+```
+
+
+
 ```{r comparison graduates, include=FALSE}
 
 # Loop through the fields
@@ -214,13 +245,144 @@ res <- lapply(fields_to_process, function(x) compare(x,  "graduates", linker1, l
 ```{r comparison graduates table, include=TRUE}
 res_combined_graduates <- reduce(res, rbind)
 
-res_combined_graduates %>%
-  mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>%  # this is an updated form of mutate_if()
-  kable(format = "latex", digits = 2, booktabs = TRUE) %>%
-  kable_styling(latex_options = c("striped", "scale_down"))
-
-res_combined_graduates %>% mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>% View()
 ```
+
+### Load additional data from proquest for tables
+
+```{r graduate: N theses, N links, include=TRUE}
+all_graduates <- get_proquest(conn = con, from = "graduates", start_year = 1990, end_year = 2015) |>
+  collect()
+
+graduate_links <- get_links(conn = con, from = "graduates") |> 
+  collect() |>
+  left_join(all_graduates |>
+              select(goid, fieldname0_mag),
+            by = "goid")
+
+```
+
+
+```{r numbers by field, include=TRUE}
+
+graduate_counts <- list(
+  "total" = all_graduates,
+  "links" = graduate_links
+)
+
+graduate_counts <- map(
+  graduate_counts,
+  ~ .x |> 
+    filter(fieldname0_mag %in% fields_to_process) |> 
+    group_by(fieldname0_mag) |> 
+    summarise(nb = n())
+)
+
+```
+
+Add final number of links to res_combined_graduates
+
+```{r}
+
+res_combined_graduates <- res_combined_graduates |>
+  left_join(graduate_counts$links |>
+              rename(n_links_final = nb),
+            by = c("field" = "fieldname0_mag"))
+
+```
+
+
+
+Calculate weighted average of linking stats across fields
+ 
+```{r}
+across_fields_graduates <- res_combined_graduates |> 
+  left_join(graduate_counts$total |>
+              rename(n_graduates = nb),
+            by = c("field" = "fieldname0_mag"))
+
+across_fields_graduates <- across_fields_graduates |>
+  mutate(share = n_graduates / sum(n_graduates)) |>
+  summarise(
+    across(all_of(c("same", "only1", "only2", "diff")),
+           ~weighted.mean(.x, w = share)),
+    across(all_of(c("nlink1", "nlink2", "n_links_final")),
+           ~sum(.x))
+  ) |>
+  mutate(field = "Total")
+
+```
+
+
+Prepare the table 
+
+```{r}
+df_table_graduates <-  res_combined_graduates %>%  
+  select(field, same, only1, only2, diff, nlink1, nlink2, n_links_final) %>%
+  bind_rows(across_fields_graduates) |> 
+  mutate(
+    field = stringr::str_to_title((field)),
+    across(where(is.numeric), \(x) round(x, digits = 2)) # this is an updated form of mutate_if()
+    ) 
+
+```
+
+
+
+```{r}
+
+table_caption <- "Comparing the links for graduates across labellers"
+table_label <- "compare_linking_graduates"
+table_columns <- c("Field", "Same ID", "Only by 1", "Only by 2", "Different ID", "Labeller 1", "Labeller 2", "Combined")
+footnote <- c(
+  "The table compares the identified links from ProQuest to MAG across training sets by two different labellers.",
+  "The unit of observation is the graduate in ProQuest.",
+  "First, the columns headed by ``Fraction of links found'' pool the links from the two models together and report the fractions across",
+  "four cases: ",
+  "``Same ID'' are cases where the models trained on the different training sets find the same MAG identifier.",
+  "``Only by 1'' and ``Only by 2'' are cases where only the model trained on either of the training sets found a link to MAG at all.",
+  "``Different ID'' are cases where both models find links to MAG, but to different identifiers.",
+  "Second, the columns headed by ``Number of links found'' report the total number of links found.",
+  "``Labeller 1'' and ``Labeller 2'' are the number of links found by the two models trained on different training data.",
+  "``Combined'' are the number of links after combining the links from the two model as described in the text.",
+  "The last row reports the total across fields. The fractions are weighted by the number of graduates in the respective fields in ProQuest 1990--2015."
+)
+footnote <- paste0(footnote, collapse = " ")
+
+table_graduates <- df_table_graduates |>   
+  kable(format = "latex", 
+        digits = 2, 
+        booktabs = TRUE, 
+        caption = table_caption, 
+        label = table_label,
+        col.names = table_columns
+        )  |>
+  kableExtra::row_spec(row = length(fields_to_process), hline_after = TRUE) |>
+  kableExtra::add_header_above(
+    header = c(" " = 1, "Fraction of links found" = 4, "Number of links found" = 3)
+  ) |>
+  kableExtra::kable_styling(font_size = 9) |>
+  kableExtra::footnote(
+    general = footnote, 
+    footnote_as_chunk = TRUE, 
+    threeparttable = TRUE,
+    fixed_small_size = TRUE
+    ) 
+
+
+# TODO: report average across fields, weighted by number of proquest graduates (?) in each field?
+```
+
+
+
+
+```{r}
+output_path <- "../../../../output/tables/"
+filename <- paste0(output_path, "compare_linking_graduates.tex")
+save_kable(table_graduates, file = filename)
+
+```
+
+
 
 ### Comparison for Advisors
 #### Christoph and Flavio with Protocol and cleaned institutions
