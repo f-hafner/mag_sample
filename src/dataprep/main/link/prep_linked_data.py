@@ -82,25 +82,35 @@ print(f"{where_stmt_iterations_advisors=}", flush=True)
         # will be linked to different authorids because they come from different fields.
 print("current_links for graduates", flush = True)
 con.execute(f"""
-CREATE TEMP TABLE current_links_temp AS 
-SELECT AuthorId, goid, link_score, iteration_id 
-FROM (
-    SELECT a.*, COUNT(AuthorId) OVER(PARTITION BY goid) AS n_links,
-    count(goid) over(partition by authorid) as n_links_authors  
-    FROM linked_ids a
-    INNER JOIN (
-        SELECT iteration_id 
-        FROM (
-            SELECT iteration_id, MAX(iteration_id) AS max_id 
-            FROM linking_info
-            {where_stmt_iterations_graduates}
-            GROUP BY field
+    CREATE TEMP TABLE current_links_temp AS 
+    SELECT AuthorId, goid, link_score, iteration_id, rnk
+    FROM (
+        SELECT a.*
+        , COUNT(AuthorId) OVER(PARTITION BY goid) AS n_links -- >1 if  same goid is linked to different MAG ids
+        , COUNT(goid) OVER(PARTITION BY AuthorId) as n_links_authors  -- >1 if  same MAG id is linked to different goids
+        , COUNT(*) OVER(PARTITION BY AuthorId, goid) AS n_same_links -- >1 if  same goid is linked to the same authorid in MAG in different fields
+        , ROW_NUMBER() OVER ( 
+            PARTITION BY AuthorId, goid
+            ORDER BY link_score DESC
+        ) AS rnk
+        FROM linked_ids a
+        INNER JOIN (
+            SELECT iteration_id 
+            FROM (
+                SELECT iteration_id, MAX(iteration_id) AS max_id 
+                FROM linking_info
+                {where_stmt_iterations_graduates}
+                GROUP BY field
+            )
+            WHERE iteration_id = max_id 
+        ) b USING(iteration_id)
+        WHERE link_score > 0.7
+    )
+    WHERE (
+            (n_links = 1 and n_links_authors = 1) OR
+            (n_links = n_same_links and n_links = n_links_authors)
         )
-        WHERE iteration_id = max_id 
-    ) b USING(iteration_id)
-    WHERE link_score > 0.7
-)
-WHERE n_links = 1 and n_links_authors = 1
+        AND rnk = 1
 """)
 
 con.execute("CREATE UNIQUE INDEX idx_lcf_AuthorIdgoid ON current_links_temp (AuthorId ASC, goid ASC)")
@@ -135,7 +145,13 @@ con.execute(f"""
 CREATE TABLE current_links_advisors AS 
 SELECT AuthorId, relationship_id, link_score, iteration_id 
 FROM (
-    SELECT a.*, COUNT(AuthorId) OVER(PARTITION BY relationship_id) AS n_links  
+    SELECT a.*
+        , COUNT(AuthorId) OVER(PARTITION BY relationship_id) AS n_links  
+        , COUNT(*) OVER(PARTITION BY AuthorId, relationship_id) as n_same_links
+        , ROW_NUMBER() OVER ( 
+            PARTITION BY AuthorId, relationship_id
+            ORDER BY link_score DESC
+        ) AS rnk
     FROM linked_ids_advisors a
     INNER JOIN (
         SELECT iteration_id 
@@ -149,7 +165,8 @@ FROM (
     ) b USING(iteration_id)
     WHERE link_score > 0.7
 )
-WHERE n_links = 1
+WHERE (n_links = 1 OR n_links = n_same_links)
+    AND rnk = 1
 """)
 
 # for now, do not condition on certain time distance between 
