@@ -1,0 +1,326 @@
+---
+title: "Comparing links in chemistry"
+author: "Flavio & Christoph"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output: 
+  pdf_document:
+    toc: true
+    toc_depth: 3
+---
+
+This document compares the final links we obtain for chemistry.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+set.seed(1234)
+
+packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "ggplot2", "lubridate", "magutils")
+
+lapply(packages, library, character.only = TRUE)
+
+datapath <- "/mnt/ssd/"
+db_file  <- paste0(datapath, "AcademicGraph/AcademicGraph.sqlite")
+
+```
+
+```{r}
+select_fields <- c("biology",
+                   "business",
+                   "chemistry",
+                   "computer science" ,
+                   "economics",
+                   "engineering",
+                   "environmental science",
+                   "geography",
+                   "geology" ,
+                   "history",
+                   "materials science",
+                   "mathematics",
+                   "medicine",
+                   "art",
+                   "philosophy",
+                   "physics",
+                   "political science",
+                   "psychology" ,
+                   "sociology") 
+
+```
+
+
+```{r}
+con <- DBI::dbConnect(RSQLite::SQLite(), db_file)
+cat("The database connection is: \n")
+src_dbi(con)
+```
+
+```{r}
+field_names_id <- tbl(con, sql(paste0(
+    "SELECT FieldOfStudyId, NormalizedName
+    FROM FieldsOfStudy
+    WHERE Level = 0 
+        AND NormalizedName IN (", 
+        paste0(paste0("'", select_fields, "'"), collapse = ", "),
+        ")"
+)))
+field_names_id <- collect(field_names_id)
+
+
+query_mag <- paste0(
+ "SELECT AuthorId
+        , year
+        , fieldofstudy
+        , mag_field0 
+    FROM (
+        SELECT a.AuthorId
+            , a.YearFirstPub AS year
+            , e.NormalizedName AS fieldofstudy
+            , e.ParentFieldOfStudyId as mag_field0
+        FROM author_sample AS A 
+        INNER JOIN (
+            SELECT AuthorId, NormalizedName, ParentFieldOfStudyId
+            FROM author_fields c
+            INNER JOIN (
+                SELECT FieldOfStudyId, NormalizedName
+                FROM FieldsOfStudy
+            ) AS d USING(FieldOfStudyId)
+            INNER JOIN (
+                SELECT ParentFieldOfStudyId
+                    , ChildFieldOfStudyId
+                    , ParentFieldOfStudyId 
+                FROM crosswalk_fields
+                WHERE ParentLevel = 0
+                    AND ParentFieldOfStudyId IN (",
+                         paste0(field_names_id$FieldOfStudyId, collapse = ", "),
+                    ")
+            ) AS e ON (e.ChildFieldOfStudyId = c.FieldOfStudyId)
+            WHERE FieldClass = 'first'
+        ) AS e USING(AuthorId)
+    )
+WHERE year >= 1980 and year <= 2022 
+")
+```
+
+
+
+
+```{r}
+
+linked_ids <- tbl(con, "current_links") 
+linking_info <- tbl(con, "linking_info") %>%
+    filter(mergemode == "1:1" & fieldofstudy_str == "False")
+pq_authors <- get_proquest(conn = con, from = "graduates", start_year = 1990, end_year = 2015)
+mag_authors <- tbl(con, sql(query_mag))
+
+
+```
+
+
+```{r, include = FALSE}
+mag_authors <- collect(mag_authors)
+linked_ids <- collect(linked_ids)
+linking_info <- collect(linking_info)
+pq_authors <- collect(pq_authors)
+```
+
+
+Combine data pq and MAG
+
+```{r}
+
+d_linked <- linked_ids |> 
+  select(AuthorId, goid) |> 
+  left_join(pq_authors |>
+              select(-gender),
+            by = "goid") |> 
+  left_join(mag_authors |>
+              select(AuthorId, year_firstpub = year),
+            by = "AuthorId")
+
+```
+
+
+# Chemistry: first affiliation of MAG authors should be the graduating institution. [paper](https://direct.mit.edu/rest/article-abstract/95/2/698/58091/Chinese-Graduate-Students-and-U-S-Scientific?redirectedFrom=fulltext)
+
+
+```{r}
+d_main <- d_linked |> 
+  filter(fieldname0_mag == "chemistry") |> 
+  mutate(grp = case_when( # some people publish already way before the PhD
+    year_firstpub > degree_year ~ "first pub after PhD",
+    year_firstpub < degree_year - 6 ~ "first pub before PhD",
+    TRUE ~ "first pub during PhD"
+  )) |>
+  select(AuthorId, goid, degree_year, grp)
+  
+  
+```
+
+
+```{r}
+
+d_main |> 
+  group_by(grp, degree_year) |> 
+  summarise(nb = n()) |>
+  ungroup() |>
+  group_by(degree_year) |>
+  mutate(total = sum(nb)) |>
+  ggplot(aes(x = degree_year, y = nb/total)) + 
+  geom_line(aes(linetype = grp)) +
+  theme(legend.position = "bottom")
+
+```
+
+Gaule/Piacentini had 21154 graduates from 1999 to 2008; we have 
+
+```{r}
+
+d_main |> 
+  filter(degree_year >= 1999 & degree_year <= 2008) |> 
+  summarise(n())
+
+```
+- they had chemists and chemical engineers; we miss the engineers in this sample.
+
+
+```{r}
+
+query_authors <- unique(d_main$AuthorId)
+query_authors <- paste0(query_authors, collapse = ", ")
+q_authors_affil <- paste0(
+  "SELECT AuthorId, AffiliationId, Year
+  FROM AuthorAffiliation
+  INNER JOIN (
+    SELECT AuthorId, YearFirstPub
+    FROM author_sample
+  ) USING(AuthorId)
+  WHERE AuthorId IN (", query_authors, ")
+  AND Year <= YearFirstPub + 20"
+)
+
+authors_affil <- tbl(con, sql(q_authors_affil)) |>
+  collect() 
+
+authors_first_affil <- authors_affil |>
+  group_by(AuthorId) |>
+  filter(Year == min(Year)) |>
+  filter(!duplicated(AuthorId)) |>
+  ungroup()
+
+
+
+```
+
+
+```{r}
+links_to_cng <- tbl(con, "links_to_cng") |>
+  collect()
+```
+
+
+### Place of first publication
+
+```{r}
+place_first_pub <- d_main |>
+  left_join(pq_authors |>
+              select(goid, university_id),
+            by = "goid") |>
+  inner_join(links_to_cng |>
+              filter(from_dataset == "pq") |>
+              select(from_id, unitid_graduate = unitid),
+            by = c("university_id" = "from_id")) |>
+  left_join(authors_first_affil |>
+              select(AuthorId, AffiliationId),
+            by = "AuthorId") |>
+  inner_join(links_to_cng |>
+              filter(from_dataset == "mag") |>
+              select(from_id, unitid_author = unitid),
+            by = c("AffiliationId" = "from_id"))
+```
+
+```{r}
+place_first_pub |>
+  mutate(same_institution = ifelse(unitid_graduate == unitid_author, 1, 0)) |>
+  group_by(degree_year) |>
+  summarise(same_institution = mean(same_institution, na.rm = T),
+            .groups = "drop") |>
+  ggplot(aes(x = degree_year, y = same_institution)) +
+  geom_line() +
+  geom_point()
+
+```
+
+### If publishing during PhD, does so at least once at the PhD university?
+
+```{r}
+publish_during_phd <- authors_affil |>
+  left_join(d_main |>
+              select(-grp),
+            by = c("AuthorId")) |>
+  filter(Year <= degree_year & Year >= degree_year - 6) |>
+  inner_join(links_to_cng |>
+              filter(from_dataset == "mag") |>
+              select(from_id, unitid_author = unitid),
+            by = c("AffiliationId" = "from_id")) |>
+  left_join(pq_authors |>
+              select(goid, university_id),
+            by = "goid") |>
+  inner_join(links_to_cng |>
+              filter(from_dataset == "pq") |>
+              select(from_id, unitid_graduate = unitid),
+            by = c("university_id" = "from_id")) |>
+  select(AuthorId, Year, degree_year, unitid_author, unitid_graduate, university_id) |>
+  mutate(same_institution = ifelse(unitid_author == unitid_graduate, 1, 0),
+         same_institution = ifelse(is.na(same_institution), 0, same_institution))
+
+```
+
+
+Fraction of students not publishing during PhD:
+```{r}
+1 - n_distinct(publish_during_phd$AuthorId) / n_distinct(d_main$AuthorId)
+```
+
+```{r}
+# group by student: at least one pub with the PhD university?
+publish_during_phd <- publish_during_phd |>
+  group_by(AuthorId) |>
+  filter(same_institution == max(same_institution)) |>
+  filter(!duplicated(AuthorId))
+
+publish_during_phd |>
+  group_by(degree_year) |>
+  summarise(same_institution = mean(same_institution, na.rm = T),
+            .groups = "drop") |>
+  ggplot(aes(x = degree_year, y = same_institution)) +
+  geom_line() +
+  geom_point()
+  
+
+```
+
+```{r}
+
+summary(publish_during_phd)
+
+```
+
+Notes
+
+- some may publish after phd with the phd affiliation -- not captured here 
+- misses 
+  - research institutes that are not in Carnegie, ie scripps research institute
+  - chemical engineers
+- all in all, this is a lower bound on the precision in the sample of chemists publishing during their PhD
+- the lower bound on precision for the sample of chemists can be calculated as follows
+  - 18% publish after PhD; assume they are all false positives 
+  - of the remaining 82%, 96% publish at their graduating university
+  - thus, our precision is at least 0.82 * 0.96 = 0.78
+- this calculation is more difficult in fields where graduates publish more often after graduating
+
+
+
+```{r, include = FALSE}
+DBI::dbDisconnect(con)
+```
+

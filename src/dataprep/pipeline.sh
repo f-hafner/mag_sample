@@ -125,6 +125,9 @@ python -m $script_path.link.write_csv_links --linking_type "graduates" \
 Rscript -e "rmarkdown::render('$script_path/reports/quality_linking.Rmd', output_dir = '$output_path')" \
     &> $logfile_path/quality_linking.log
 
+Rscript -e "rmarkdown::render('$script_path/reports/quality_linking_graduates_chemistry.Rmd', output_dir = '$output_path')" \
+    &> $logfile_path/quality_linking_graduates_chemistry.log
+
 # ## 2. Link thesis advisors to MAG
 bash $script_path/link/advisors.sh &> $logfile_path/link_advisors.log
 
