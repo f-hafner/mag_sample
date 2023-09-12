@@ -231,19 +231,46 @@ all_graduates <- get_proquest(conn = con, from = "graduates", start_year = 1990,
   collect()
 
 graduate_links <- get_links(conn = con, from = "graduates") |> 
-  collect() |>
-  left_join(all_graduates |>
-              select(goid, fieldname0_mag),
-            by = "goid")
+  collect() 
+
+
+advisor_links <- get_links(conn = con, from = "advisors") |>
+  left_join(tbl(con, "pq_advisors") |>
+              select(goid, relationship_id),
+            by = "relationship_id") |>
+  collect() 
+
+d_links <- list(
+  graduates = graduate_links,
+  advisors = advisor_links
+)
+
+d_links <- map(
+  .x = d_links,
+  .f = ~.x |> 
+    left_join(all_graduates |> 
+                select(goid, fieldname0_mag),
+              by = "goid")
+)
+
+
 
 ```
+
+```{r}
+map(d_links, ~mean(is.na(.x[["fieldname0_mag"]])))
+
+map(d_links, ~.x |> filter(is.na(fieldname0_mag)) |> head())
+```
+
+
 
 
 ```{r numbers by field, include=TRUE}
 
 graduate_counts <- list(
   "total" = all_graduates,
-  "links" = graduate_links
+  "links" = d_links$graduates
 )
 
 graduate_counts <- map(
@@ -254,6 +281,10 @@ graduate_counts <- map(
     summarise(nb = n())
 )
 
+advisor_link_counts <- d_links$advisors |>
+  filter(fieldname0_mag %in% fields_to_process) |> 
+  group_by(fieldname0_mag) |> 
+  summarise(nb = n())
 ```
 
 Add final number of links to res_combined_graduates
@@ -345,8 +376,6 @@ table_graduates <- df_table_graduates |>
     fixed_small_size = TRUE
     ) 
 
-
-# TODO: report average across fields, weighted by number of proquest graduates (?) in each field?
 ```
 
 
@@ -410,6 +439,102 @@ res_combined_advisors %>%
 #   mutate(across(where(is.numeric), \(x) round(x, digits = 2))) %>% View()
 
 ```
+
+
+#### Make table 
+
+
+Add total final links 
+
+```{r}
+res_combined_advisors <- res_combined_advisors |> 
+  left_join(advisor_link_counts |>
+              rename(n_links_final = nb),
+            by = c("field" = "fieldname0_mag"))
+```
+
+Summarise across fields
+
+```{r}
+across_fields_advisors <- res_combined_advisors |> 
+  left_join(graduate_counts$total |>
+              rename(n_graduates = nb),
+            by = c("field" = "fieldname0_mag"))
+
+across_fields_advisors <- across_fields_advisors |>
+  mutate(share = n_graduates / sum(n_graduates)) |>
+  summarise(
+    across(all_of(c("same", "only1", "only2", "diff")),
+           ~weighted.mean(.x, w = share)),
+    across(all_of(c("n_links_final")),
+           ~sum(.x))
+  ) |>
+  mutate(field = "Total")
+```
+
+
+
+
+```{r}
+df_table_advisors <-  res_combined_advisors %>%  
+  select(field, same, only1, only2, diff, n_links_final) %>%
+  bind_rows(across_fields_advisors) |>
+  mutate(
+    field = stringr::str_to_title((field)),
+    across(where(is.numeric), \(x) round(x, digits = 2)) # this is an updated form of mutate_if()
+    ) 
+```
+
+```{r}
+
+table_caption <- "Linking the advisors"
+table_label <- "compare_linking_advisors"
+table_columns <- c("Field", "Same ID", "Only by 1", "Only by 2", "Different ID", "Number of links")
+footnote <- c(
+  "The table summarises the links found from from ProQuest advisors to MAG authors.",
+  # the compares the identified links from ProQuest to MAG across training sets by two different labellers.",
+  # "The unit of observation is the graduate in ProQuest.",
+  "First, the columns headed by ``Fraction of links found'' compare the identified links across two different labellers as described in the text.",
+  "The columns show the fraction of links found for two training sets constructed by two different labellers.",
+  "``Same ID'' are advisors for which the models trained on the different training sets find the same MAG identifier.",
+  "``Only by 1'' and ``Only by 2'' are advisors for which only the model trained on either of the training sets found a link to MAG at all.",
+  "``Different ID'' are advisors for which both models find links to MAG, but to different identifiers.",
+  "Second, the last column reports the total number of links found for each field, after all post-processing (see text for details).",
+  "Third, the last row reports the total across fields. The fractions are weighted by the number of graduates in the respective fields in ProQuest 1990--2015."
+)
+footnote <- paste0(footnote, collapse = " ")
+
+table_graduates <- df_table_advisors |>   
+  kable(format = "latex", 
+        digits = 2, 
+        booktabs = TRUE, 
+        caption = table_caption, 
+        label = table_label,
+        col.names = table_columns
+        )  |>
+  kableExtra::row_spec(row = length(fields_to_process), hline_after = TRUE) |>
+  kableExtra::add_header_above(
+    header = c(" " = 1, "Fraction of links found" = 4, " " = 1),
+    line = FALSE
+  ) |>
+  kableExtra::kable_styling(font_size = 9) |>
+  kableExtra::footnote(
+    general = footnote, 
+    footnote_as_chunk = TRUE, 
+    threeparttable = TRUE,
+    fixed_small_size = TRUE
+    ) 
+
+```
+
+
+```{r}
+output_path <- "../../../../output/tables/"
+filename <- paste0(output_path, "compare_linking_advisors.tex")
+save_kable(table_graduates, file = filename)
+```
+
+
 
 # Compare names manually
 
