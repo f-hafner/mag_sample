@@ -215,7 +215,7 @@ names(res_inspect) <- fields_to_process
 ```{r comparison graduates, include=FALSE}
 
 # Loop through the fields
-res <- lapply(fields_to_process, function(x) compare(x,  "graduates", linker1, linker2, "19852015"))
+# res <- lapply(fields_to_process, function(x) compare(x,  "graduates", linker1, linker2, "19852015"))
 
 ```
 
@@ -231,14 +231,16 @@ all_graduates <- get_proquest(conn = con, from = "graduates", start_year = 1990,
   collect()
 
 graduate_links <- get_links(conn = con, from = "graduates") |> 
-  collect() 
+  collect() |> 
+  filter(goid %in% all_graduates$goid)
 
 
 advisor_links <- get_links(conn = con, from = "advisors") |>
   left_join(tbl(con, "pq_advisors") |>
               select(goid, relationship_id),
-            by = "relationship_id") |>
-  collect() 
+            by = "relationship_id") |> 
+  collect() |>
+  filter(goid %in% all_graduates$goid) 
 
 d_links <- list(
   graduates = graduate_links,
@@ -254,6 +256,9 @@ d_links <- map(
 )
 
 
+# some are not loaded in get_proquest b/c they have special degrees (Psy.D). -> filter on goid being in all_graduates 
+# others are in get_proquest but have missing field of study. why? -- but they need to have a link in the first place!
+
 
 ```
 
@@ -261,6 +266,27 @@ d_links <- map(
 map(d_links, ~mean(is.na(.x[["fieldname0_mag"]])))
 
 map(d_links, ~.x |> filter(is.na(fieldname0_mag)) |> head())
+
+# count is zero for advisors: this means that none of the graduates with missing field above are in the linked, which is what I expect
+# Note: a complication is that linked graduates and all_graduates both have units that are not in the other set
+  # (this is because the sampling for linking is different than the sampling in get_proquest)
+# therefore, it's also important to make the sets overlapping, and then compare the links found/check whether they have fields missing
+```
+
+
+```{r}
+dk <- tbl(con, "pq_fields_mag") |> 
+  group_by(goid) |> 
+  filter(position == min(position)) |>
+  ungroup() |> 
+  select(goid, fieldname, mag_field0) |>
+  collect()
+
+head(dk)
+```
+
+```{r}
+dk |> filter(goid == 89141485)
 ```
 
 
