@@ -8,8 +8,8 @@ Calculate topic similarity for linked graduates
     - between potential employers
         - to faculty average 
         - to most similar faculty member
-The first reported field0 in the proquest data is used 
-as the relevant field of study for each graduate: this means 
+The mag field0 of the first reported keyword that is successfully
+matched to mag field0 is used as the relevant field of study for each graduate: this means 
 that for economics graduates, only other economists/economics "departments"
 are considered for computing the topic similarities.
 """

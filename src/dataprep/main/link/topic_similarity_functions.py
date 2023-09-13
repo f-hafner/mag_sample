@@ -59,9 +59,15 @@ class QueryBuilder():
                 WHERE degree_year = {self.degree_year_to_query}
             ) USING(goid)
             INNER JOIN (
-                SELECT goid, mag_field0 AS Field0
-                FROM pq_fields_mag
-                WHERE position = 0
+                SELECT goid, Field0
+                FROM (
+                    SELECT goid
+                        , position
+                        , mag_field0 AS Field0
+                        , MIN(position) OVER(PARTITION BY goid) as min_position
+                    FROM pq_fields_mag
+                )
+                WHERE position = min_position
                     AND field0 = {self.field_to_query}
             ) USING(goid)
         """
