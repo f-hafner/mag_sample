@@ -176,3 +176,7 @@ python -m $script_path.link.topic_similarity \
 python -m  $script_path.link.read_topic_similarity \
     --read_dir similarities_temp/ \
     &> $logfile_path/read_topic_similarity.log
+
+Rscript -e "rmarkdown::render('$script_path/reports/compare_linking.Rmd', output_dir = '$output_path')" \
+    &> $logfile_path/compare_linking.log
+
