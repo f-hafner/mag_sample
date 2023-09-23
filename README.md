@@ -6,6 +6,7 @@ The present repository is an extract from a project that uses data from Microsof
 ## Directory structure
 - `src/`: data preparation and linking; analyze the publication careers of scientists.
 - `output/`: destination for tables and figures generated in `src/`. 
+- `snapshots/`: contains files to reproduce the environments (for now, `yml` files for conda).
 
 ## Contents
 
