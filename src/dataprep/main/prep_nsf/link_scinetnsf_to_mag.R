@@ -2,12 +2,17 @@
 # Keeps only those with link between NSF grant and author ID.
 # Data downloaded and uploaded into db in: scinet_data_to_db.py in same folder
 
-packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "ggplot2", "stringdist", "DBI")
+
+# Note: Not sure if calculating string distance now works correctly
+ 
+
+
+packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "stringdist")
 lapply(packages, library, character.only = TRUE)
 
 datapath <- "/mnt/ssd/"
 db_file  <- paste0(datapath, "AcademicGraph/AcademicGraph.sqlite")
-sciscinet_path <- paste0(datapath,"sciscinet_data/")
+#sciscinet_path <- paste0(datapath,"sciscinet_data/")
 
 
 #filepath_nsf=paste0(sciscinet_path,"SciSciNet_Link_NSF.tsv")
@@ -21,7 +26,7 @@ src_dbi(con)
 NSF_to_Authors <- tbl(con, sql("
                   select a. PaperID, a.Type, a.GrantID, b.AuthorId, b.OriginalAuthor 
                         ,c.NormalizedName, Position, FirstName, LastName
-                                      from scinet as a
+                                      from scinet_links_nsf as a
                                       inner join (
                                         select PaperId AS PaperID, AuthorId, OriginalAuthor
                                         from PaperAuthorAffiliations 
@@ -41,18 +46,41 @@ NSF_to_Authors <- tbl(con, sql("
 
 nsf_to_authors <- collect(NSF_to_Authors)
 
-# Split the "NormalizedName" column into "nsf_firstname" and "nsf_lastname" columns
-nsf_to_authors <- nsf_to_authors %>%
-  separate(NormalizedName, into = c("nsf_firstname", "nsf_lastname"), sep = " ", extra = "merge")
+# Create a variable with the full name from mag 
+nsf_to_authors$mag_name <- paste(nsf_to_authors$FirstName, nsf_to_authors$LastName, sep = " ")
 
-nsf_author_links <- subset(nsf_to_authors, select = -c(OriginalAuthor, NormalizedName, Type, PaperID)) %>%
-  mutate(name_similarity = stringdist::stringdistmatrix(paste(nsf_firstname, nsf_lastname, sep = " "), paste(FirstName, LastName, sep = " ")))
+## Still running, not sure if running correctly from here
 
-# Set a threshold for similarity (e.g., 0.8 means 80% similarity)
+### Compare name similarity
+# Set a threshold for similarity
 threshold <- 0.8
 
-# Filter observations where the names are similar or above the threshold
-similar_names <- nsf_author_links %>%
+# Calculate string similarity for each row and add a new column
+name_similarity <- numeric(0)
+
+# Iterate through rows and calculate string distances
+for (i in 1:nrow(nsf_to_authors)) {
+  mag_name <- nsf_to_authors$mag_name[i]
+  NormalizedName <- nsf_to_authors$NormalizedName[i]
+  
+  # Calculate string distance for this row
+  row_similarity <- stringdistmatrix(
+    mag_name,
+    NormalizedName
+  )
+  
+  # Append the calculated distance to the results vector
+  name_similarity <- c(name_similarity, row_similarity)
+}
+
+# Assign the calculated distances to a new column in data frame
+nsf_to_authors$name_similarity <- name_similarity
+
+# Filter observations where the names are above the threshold
+similar_names <- nsf_to_authors %>%
   filter(name_similarity >= threshold)
 
+# To do: write to db (keep only necessary variables: GrantID, AuthorID, Position, Paper ID(?))
+
+# close connection to db
 DBI::dbDisconnect(con)

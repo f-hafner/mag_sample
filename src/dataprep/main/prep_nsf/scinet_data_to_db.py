@@ -9,14 +9,14 @@ link to Paper_Author_Affiliations, Authors, NSF_Investigator in R file: test_sci
 
 
 Create table in database:
-- SciSciNet_Link_NSF
+- scinet_links_nsf
 
 SciSciNet_Link_NSF schema is:
 
-GrantID INTEGER, PaperID INTEGER
+GrantID TEXT, PaperID INTEGER, Type TEXT
  
 
-unique index on Grantid and PaperID (multiple paperIDs per GrantID)
+unique index on Grantid and PaperID (multiple PaperIDs per GrantID)
 """
 
 import subprocess
@@ -55,12 +55,14 @@ print("Downloaded data")
 def load_scinet(filepath):
     df = pd.read_csv(filepath, 
                         sep="\t",
-                        names=["NSF_Award_Number", "PaperID", "Type", "Diff_ZScore"])
+                        names=["NSF_Award_Number", "PaperID", "Type", "Diff_ZScore"], 
+                        skiprows=1)
     df.drop_duplicates(inplace=True)
 
     # Create the GrantID column by removing non-numeric characters and formatting
     
     df['GrantID'] = df['NSF_Award_Number'].str.extract(r'-(\d+)') 
+    df = df.drop(columns=['NSF_Award_Number', 'Diff_ZScore'])
     
     return df
 
@@ -77,20 +79,18 @@ with con:
         else:
             if_exists_opt="append"
 
-        df.to_sql("scinet", 
+        df.to_sql("scinet_links_nsf", 
                         con=con, 
                         if_exists=if_exists_opt, 
                         index=False, 
-                        schema= """NSF_Award_Number TEXT
-                                    , PaperID INTEGER
+                        schema= """ PaperID INTEGER
                                     , Type TEXT
-                                    , Diff_ZScore NUMERIC
                                     , GrantID TEXT
                                 """ 
                     )
 
     # Make index and clean up
-    con.execute("CREATE UNIQUE INDEX idx_scinet ON scinet (GrantID ASC, PaperID ASC)")
+    con.execute("CREATE UNIQUE INDEX idx_scinet_grantpaper ON scinet_links_nsf (GrantID ASC, PaperID ASC)")
 
     analyze_db(con)
 
