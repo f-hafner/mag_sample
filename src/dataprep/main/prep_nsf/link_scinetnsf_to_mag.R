@@ -58,13 +58,14 @@ threshold <- 0.8
 # Calculate string similarity for each row and add a new column
 name_similarity <- numeric(0)
 
+
 # Iterate through rows and calculate string distances
 for (i in 1:nrow(nsf_to_authors)) {
   mag_name <- nsf_to_authors$mag_name[i]
   NormalizedName <- nsf_to_authors$NormalizedName[i]
   
   # Calculate string distance for this row
-  row_similarity <- stringdistmatrix(
+  row_similarity <- stringsim(
     mag_name,
     NormalizedName
   )
@@ -80,7 +81,13 @@ nsf_to_authors$name_similarity <- name_similarity
 similar_names <- nsf_to_authors %>%
   filter(name_similarity >= threshold)
 
-# To do: write to db (keep only necessary variables: GrantID, AuthorID, Position, Paper ID(?))
+# drop unnecessary variables
+df <- similar_names %>%
+  select(GrantID, AuthorId, Position) %>% 
+  distinct()
+
+# Write table to db: 
+dbWriteTable(con, name = "links_nsf_mag", value = df, overwrite = TRUE)
 
 # close connection to db
 DBI::dbDisconnect(con)
