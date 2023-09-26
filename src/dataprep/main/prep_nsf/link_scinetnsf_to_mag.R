@@ -1,36 +1,29 @@
 # Link SciSciNet_Links_NSF table with Paper_Author_Affiliations, Authors, and NSF_Investigator 
 # Keeps only those with link between NSF grant and author ID.
+# only those links with a similar name (similarity >=0.8) are loaded into db
 # Data downloaded and uploaded into db in: scinet_data_to_db.py in same folder
-
-
-# Note: Not sure if calculating string distance now works correctly
- 
-
 
 packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "stringdist")
 lapply(packages, library, character.only = TRUE)
 
 datapath <- "/mnt/ssd/"
 db_file  <- paste0(datapath, "AcademicGraph/AcademicGraph.sqlite")
-#sciscinet_path <- paste0(datapath,"sciscinet_data/")
 
-
-#filepath_nsf=paste0(sciscinet_path,"SciSciNet_Link_NSF.tsv")
 
 con <- DBI::dbConnect(RSQLite::SQLite(), db_file)
 cat("The database connection is: \n")
 src_dbi(con)
 
-# Create table with all links between NSF-grant and authors via papers 
+# Create table with all links between NSF-grant and authors via papers
 
 NSF_to_Authors <- tbl(con, sql("
-                  select a. PaperID, a.Type, a.GrantID, b.AuthorId, b.OriginalAuthor 
-                        ,c.NormalizedName, Position, FirstName, LastName
+                  select a. PaperID, a.Type, a.GrantID, b.AuthorId
+                        ,c.NormalizedName, d.Position, d.PIFullName
                                       from scinet_links_nsf as a
                                       inner join (
-                                        select PaperId AS PaperID, AuthorId, OriginalAuthor
-                                        from PaperAuthorAffiliations 
-                                      )b 
+                                        select PaperId AS PaperID, AuthorId
+                                        from PaperAuthorAffiliations
+                                      )b
                                       using (PaperID)
                                       inner join (
                                         select AuthorId, NormalizedName
@@ -38,55 +31,89 @@ NSF_to_Authors <- tbl(con, sql("
                                       ) c
                                       using (AuthorId)
                                       inner join (
-                                        select GrantID, Position, FirstName, LastName
+                                        select GrantID, Position, PIFullName
                                         from NSF_Investigator
-                               ) d 
+                               ) d
                                using (GrantID)
                                "))
 
 nsf_to_authors <- collect(NSF_to_Authors)
 
-# Create a variable with the full name from mag 
-nsf_to_authors$mag_name <- paste(nsf_to_authors$FirstName, nsf_to_authors$LastName, sep = " ")
+# Create separate variables for first and last name for both nsf and mag names
+nsf_to_authors <- nsf_to_authors %>%
+  mutate(
+    mag_firstname = word(NormalizedName, 1),
+    mag_lastname = word(NormalizedName, -1),
+    mag_middlename = ifelse(str_count(NormalizedName, "\\s+") >= 2 &
+                              word(NormalizedName, 2) != word(NormalizedName, -1),
+                            word(NormalizedName, 2), NA_character_)
+  )
 
-## Still running, not sure if running correctly from here
+
+nsf_to_authors <- nsf_to_authors %>%
+  mutate(
+    nsf_firstname = word(PIFullName, 1),
+    nsf_lastname = word(PIFullName, -1),
+    nsf_middlename = ifelse(str_count(PIFullName, "\\s+") >= 2 &
+                     word(PIFullName, 2) != word(PIFullName, -1),
+                     word(PIFullName, 2), NA_character_)
+  )
+
+
 
 ### Compare name similarity
 # Set a threshold for similarity
 threshold <- 0.8
 
-# Calculate string similarity for each row and add a new column
-name_similarity <- numeric(0)
 
+### Test several distances
 
-# Iterate through rows and calculate string distances
+# Calculate string similarity for first and last names by row and add a new column
+firstname_similarity <- numeric(0)
+lastname_similarity <- numeric(0)
+
+# Iterate through rows and calculate string distances for first and last names separately
 for (i in 1:nrow(nsf_to_authors)) {
-  mag_name <- nsf_to_authors$mag_name[i]
-  NormalizedName <- nsf_to_authors$NormalizedName[i]
+  mag_firstname <- nsf_to_authors$mag_firstname[i]
+  nsf_firstname <- nsf_to_authors$nsf_firstname[i]
   
-  # Calculate string distance for this row
-  row_similarity <- stringsim(
-    mag_name,
-    NormalizedName
+  # Calculate string distance for first name by row using Optimal String Alignment (default)
+  first_row_similarity <- stringsim(
+    mag_firstname,
+    nsf_firstname,
+    method="osa" )
+  
+  # Append the calculated distance to the results vector for first name
+ firstname_similarity <- c(firstname_similarity, first_row_similarity)
+
+ # Calculate string distance for last name by row
+    mag_lastname <- nsf_to_authors$mag_lastname[i]
+    nsf_lastname <- nsf_to_authors$nsf_lastname[i]
+  
+    last_row_similarity <- stringsim(
+     mag_lastname,
+     nsf_lastname,
+     method="osa"
   )
   
-  # Append the calculated distance to the results vector
-  name_similarity <- c(name_similarity, row_similarity)
+  # Append the calculated distance to the results vector for last name
+  lastname_similarity <- c(lastname_similarity, last_row_similarity)
 }
 
 # Assign the calculated distances to a new column in data frame
-nsf_to_authors$name_similarity <- name_similarity
+nsf_to_authors$firstname_similarity <- firstname_similarity
+nsf_to_authors$lastname_similarity <- lastname_similarity
 
-# Filter observations where the names are above the threshold
+# Filter observations where the names are above the threshold: threshold seemed reasonable as it allows for a single typo
 similar_names <- nsf_to_authors %>%
-  filter(name_similarity >= threshold)
+  filter(firstname_similarity >= threshold & lastname_similarity >= threshold)
 
-# drop unnecessary variables
+# drop unnecessary variables and drop duplicates
 df <- similar_names %>%
-  select(GrantID, AuthorId, Position) %>% 
+  select(GrantID, AuthorId, Position, firstname_similarity, lastname_similarity) %>%
   distinct()
 
-# Write table to db: 
+# Write table to db:
 dbWriteTable(con, name = "links_nsf_mag", value = df, overwrite = TRUE)
 
 # close connection to db
