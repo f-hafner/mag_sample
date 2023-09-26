@@ -13,7 +13,7 @@ Create table in database:
 
 SciSciNet_Link_NSF schema is:
 
-GrantID TEXT, PaperID INTEGER, Type TEXT
+GrantID TEXT, PaperID INTEGER, Type TEXT, Diff_ZScore NUMERIC
  
 
 unique index on Grantid and PaperID (multiple PaperIDs per GrantID)
@@ -28,10 +28,10 @@ from os.path import isfile, join
 import pandas as pd
 import numpy as np 
 import re 
-import sys
-import requests
+#import sys
+#import requests
 
-sys.path.append('/home/mona/mag_sample/src/dataprep/')  
+#sys.path.append('/home/mona/mag_sample/src/dataprep/')  
 
 from helpers.variables import db_file, datapath, databasepath
 from helpers.functions import analyze_db 
@@ -50,8 +50,8 @@ with open(filepath_nsf, "wb") as file:
 print("Downloaded data")   
 
 
-# ## Read files in loop and dump to db
-
+# ## Read file and dump to db
+# remove first row as it only contains column names that can't be overwritten
 def load_scinet(filepath):
     df = pd.read_csv(filepath, 
                         sep="\t",
@@ -59,14 +59,21 @@ def load_scinet(filepath):
                         skiprows=1)
     df.drop_duplicates(inplace=True)
 
-    # Create the GrantID column by removing non-numeric characters and formatting
+    # Create a GrantID variable in same format as previously used by removing non-numeric characters from NSF_Award_Number 
+    # drop NSF_Award_Number as we only need GrantID
     
     df['GrantID'] = df['NSF_Award_Number'].str.extract(r'-(\d+)') 
-    df = df.drop(columns=['NSF_Award_Number', 'Diff_ZScore'])
+    df = df.drop(columns=['NSF_Award_Number'])
+
+    #Check that all rows will be uploaded into db: in raw file 1309518 rows
+    num_observations = df.shape[0]
+    print(num_observations, "rows of 1309518 rows in the raw file will be loaded into the db")
     
     return df
 
 files = [f for f in listdir(scinet_path) if isfile(join(scinet_path, f))]
+
+    
 
 
 con = sqlite.connect(database = db_file, isolation_level= None)
@@ -86,10 +93,12 @@ with con:
                         schema= """ PaperID INTEGER
                                     , Type TEXT
                                     , GrantID TEXT
+                                    , Diff_ZScore NUMERIC
                                 """ 
                     )
 
-    # Make index and clean up
+    # Make index and clean up: 
+    # Serves as check that only unique observations part of the dataframe
     con.execute("CREATE UNIQUE INDEX idx_scinet_grantpaper ON scinet_links_nsf (GrantID ASC, PaperID ASC)")
 
     analyze_db(con)
