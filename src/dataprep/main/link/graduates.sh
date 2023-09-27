@@ -2,36 +2,33 @@
 
 logfile_path=$1
 RECALL=0.9
-train_name="${USER}_degree0"
+train_name="${USER}_with_protocol_magkeywords"
 keywords=True
 fieldofstudy_cat=False 
 fieldofstudy_str=False 
 institution=False 
 
-fields=("chemistry"
-        "sociology" 
-        "mathematics"
-        "biology" 
-        "computer science" 
-        "political science"
-        "engineering" 
-        "psychology" 
-        "environmental science"
-        "physics" 
-        "geology" 
-        "geography"
-        "economics")
-        
-fields=("art"
-        "business"
-        "history"
-        "materials science"
-        "medicine"
-        "philosophy"
-         )
- fields=("philosophy"
-         )
- 
+# "art"
+# "medicine"
+fields=("biology"
+    "business"
+    "chemistry"
+    "computer science" 
+    "economics"
+    "engineering"
+    "environmental science"
+    "geography"
+    "geology" 
+    "history"
+    "materials science"
+    "mathematics"
+    "philosophy"
+    "physics"
+    "political science"
+    "psychology" 
+    "sociology")
+
+
 
 for i in "${!fields[@]}"; do 
     field=${fields[$i]} 

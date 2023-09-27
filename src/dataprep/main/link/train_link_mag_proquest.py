@@ -58,10 +58,13 @@ if __name__ == "__main__":
 
 
     # transform the strings to hashable sequences
+    keyword_corpus = set()
     for data in [magdata, otherdata]:
         for key in data.keys():
             if data[key]["keywords"] is not None:
-                data[key]["keywords"] = frozenset(data[key]["keywords"].split(";"))
+                data[key]["keywords"] = frozenset([x for x in data[key]["keywords"].split(";") if x != ""]) 
+                keyword_corpus.add(data[key]["keywords"])
+                # the list comp above deals with cases "word1;word2;" (the last ; gives an empty last element in the output of split())
 
             features = ["institution", "coauthors", "year_range",
                         "main_us_institutions_year", "all_us_institutions_year",
@@ -121,10 +124,12 @@ if __name__ == "__main__":
                 {"field": "middlename", "variable name": "middlename", "type": "String", "has missing": True},
                 # {"field": "middle_lastname", "variable name": "same_name", "type": "Custom", "comparator": name_comparator},
                 {"field": "year", "variable name": "year", "type": "Price"},
+                {"field": "yeardiff_larger_than_0", "variable name": "yeardiff_larger_than_0", "type": "Custom", "comparator": cf.number_difference_larger_than_0},
                 # {"field": "year", "variable name": "no_advisor_info", "type": "Custom", "comparator": year_dummy_noadvisor},
                 # {"field": "year", "variable name": "yeardiff_sqrd", "type": "Custom", "comparator": squared_diff},
                 {"type": "Interaction", "interaction variables": ["year", "firstname"]},
                 {"type": "Interaction", "interaction variables": ["year", "lastname"]},
+                {"type": "Interaction", "interaction variables": ["year", "yeardiff_larger_than_0"]},
                 {"field": "year_papertitle", "variable name": "title_similarity", "type": "Custom", "comparator" : cf.year_title_comparator, "has missing": True},
                 {"type": "Interaction", "interaction variables": ["title_similarity", "firstname"]},
                 {"type": "Interaction", "interaction variables": ["title_similarity", "lastname"]},
@@ -198,8 +203,9 @@ if __name__ == "__main__":
         if args.fieldofstudy_str == "True": 
             fields.append({"field": "fieldofstudy", "variable name": "fieldofstudy", "type": "String", "has missing": False}) 
         if args.keywords == "True": 
-            fields.append({"field": "keywords", "variable name": "keywords", "type": "Custom", "comparator": cf.keyword_comparator ,"has missing": True})
-        
+            # fields.append({"field": "keywords", "variable name": "keywords", "type": "Custom", "comparator": cf.keyword_comparator ,"has missing": True})
+            fields.append({"field": "keywords", "variable name": "keywords", "type": "Set", "corpus": keyword_corpus, "has missing": True})
+
         linker = dedupe.RecordLink(fields, num_cores = n_cores)
 
         # Define data_1 and data_2 depending on linking input. This is important when making many-to-one links

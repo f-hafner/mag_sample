@@ -16,14 +16,13 @@ set.seed(1234)
 ```
 
 ```{r, echo = FALSE, include = FALSE}
-packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "ggplot2", "stringdist")
+packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "ggplot2", "stringdist", "magutils")
 
 lapply(packages, library, character.only = TRUE)
 
 datapath <- "/mnt/ssd/"
 db_file  <- paste0(datapath, "AcademicGraph/AcademicGraph.sqlite")
-select_fields <- c("art",
-                   "biology",
+select_fields <- c("biology",
                    "business",
                    "chemistry",
                    "computer science" ,
@@ -51,40 +50,9 @@ src_dbi(con)
 
 
 
-```{r}
-# parameters for selecting links 
-min_score_advisors <- 0.7 # minimum score from dedupe 
-
-```
-
-
 ## Overview
 
 ```{r, include = FALSE}
-
-linking_info <- tbl(con,
-                    sql("select iteration_id, field
-                          from (
-                              select *, max(iteration_id) OVER(partition by field) as max_iter
-                              from linking_info_advisors
-                              where recall = 0.9 
-                                  and testing = 0
-                                  and institution = 'True'
-                                  and fieldofstudy_cat = 'False'
-                                  and fieldofstudy_str = 'False' 
-                                  and keywords = 'False' 
-                                  and mergemode = 'm:1'
-                          )
-                          where iteration_id = max_iter "))
-linked_advisors <- tbl(con, sql("select * 
-                                from linked_ids_advisors
-                                ")) %>%
-  inner_join(linking_info %>% 
-               select(iteration_id),
-             by = "iteration_id")
-
-
-
 theses <- tbl(con, sql("
                        select * from pq_advisors 
                        inner join (
@@ -117,14 +85,19 @@ pq_fields_mag <- tbl(con,
                             ) ON (mag_field0 = FieldOfStudyId)
                          where position = 0"))
 
+linked_advisors <- get_links(conn = con, from = "advisors")
+
+pq_advisors = tbl(con, sql("select goid, relationship_id from pq_advisors"))
+
 ```
 
 
 ```{r}
 linked_advisors <- collect(linked_advisors)
 theses <- collect(theses)
-linking_info <- collect(linking_info)
+# linking_info <- collect(linking_info)
 pq_fields_mag <- collect(pq_fields_mag)
+pq_advisors <- collect(pq_advisors)
 
 ```
 
@@ -136,10 +109,12 @@ pq_fields_mag <- collect(pq_fields_mag)
 ```{r}
 
 linked_advisors %>%
-  left_join(linking_info, by = "iteration_id") %>%
+  left_join(theses |>
+              select(fieldname0_mag, relationship_id),
+            by = "relationship_id") |> 
   ggplot(aes(x = link_score)) +
   geom_histogram(bins = 100, aes( y = ..density..)) +
-  facet_wrap(~field)
+  facet_wrap(~fieldname0_mag)
 
 ```
 
@@ -153,10 +128,6 @@ linked_advisors %>%
 ```{r}
 
 keep_fields <- select_fields
-# c("biology", "chemistry", "computer science", 
-#                 "economics", "engineering", "environmental science", 
-#                 "geography", "geology", "mathetmatics", "physics",
-#                 "political science", "psychology", "sociology")
 
 score_by_year <- theses %>% 
   filter(degree_year >= 1985) %>%
@@ -165,16 +136,12 @@ score_by_year <- theses %>%
   left_join(pq_fields_mag, by = "goid") %>%
   filter(field %in% keep_fields)
 
-# %>%
-#   left_join(linking_info,
-#             by = "iteration_id")
 
 score_by_year %>%
   mutate(link_score_adj = ifelse(is.na(link_score), -1, link_score)) %>%
   group_by(degree_year, field) %>%
   summarise(mean_score = mean(link_score, na.rm = TRUE),
-            #p50_score = quantile(link_score, probs = 0.5),
-            share_linked = mean(link_score_adj > min_score_advisors),
+            share_linked = mean(link_score_adj > 0),
             .groups = "drop") %>%
   pivot_longer(cols = all_of(c("mean_score", "share_linked")),
                names_to = "stat") %>%
@@ -186,23 +153,6 @@ score_by_year %>%
 ```
 
 
-```{r}
-
-score_by_year %>%
-  filter(field == "biology") %>% 
-  filter(is.na(link_score)) %>% 
-  filter(degree_year < 2000) %>% 
-  group_by(firstname, lastname, uni_name, degree_year) %>%
-  summarise(nb = n(),
-            .groups = "drop") %>%
-  arrange(desc(nb)) %>%
-  head(10)
-
-# score_by_year %>% filter(lastname == "dasgupta" & firstname == "asim" & !is.na(iteration_id)) # never linked 
-# score_by_year %>% filter(lastname == "freeling" & firstname == "michael") # never linked 
-
-# scale this up? check all the main fields of the authors with such names? -- tedious 
-```
 
 ### Notes 
 
@@ -312,102 +262,12 @@ linker_cs.classifier.weights
 sf_biology = "/mnt/ssd/DedupeFiles/advisors/settings_biology_1985_2022_institutionTrue_fieldofstudy_catFalse_fieldofstudy_strFalse_keywordsFalsechristoph_degree0"
 
 
-## Number of linked advisors 
-
-- not sure this is still relevant?
-
-```{r}
-score_by_year %>%
-  filter(!is.na(link_score)
-          & field %in% keep_fields) %>%
-  group_by(degree_year, field) %>%
-  summarise(n_advisors = n(),
-            .groups = "drop") %>%
-  ggplot(aes(x = degree_year, y = n_advisors)) + 
-  geom_line() + 
-  facet_wrap(~field)
-
-```
-
-old comments
-
-- for instance, a student of michael j lambert (authorid 2120159045; relationship id 303670971_0 in proquest) from pre-1990 is link score of 0.02, but should be a clear link
-
-
-## Compare number of links across iterations within fields 
-
-```{r}
-fields_iter_compare <- c("economics", "chemistry")
-min_score <- 0.8
-
-keep_iter_ids <- tbl(con, "linking_info_advisors") %>%
-  filter(field %in% fields_iter_compare) %>%
-  filter(testing == 0) %>%
-  collect() %>%
-  group_by(field, train_name) %>%
-  arrange(iteration_id) %>%
-  mutate(nb = n(),
-         id = row_number()) %>%
-  ungroup() %>%
-  filter(id == nb) %>%
-  select(iteration_id, field, train_name)
-
-linked_ids_to_compare <- tbl(con, "linked_ids_advisors") %>%
-  inner_join(
-    tbl(con, "linking_info_advisors") %>%
-      filter(field %in% fields_iter_compare),
-    by = "iteration_id"
-  ) %>%
-  inner_join(
-    tbl(con, "pq_advisors") %>%
-      select(relationship_id, goid),
-    by = "relationship_id"
-  ) %>%
-  inner_join(
-    tbl(con, "pq_authors") %>%
-      select(goid, degree_year),
-    by = "goid"
-  ) %>%
-  collect() %>%
-  filter(iteration_id %in% keep_iter_ids$iteration_id) 
-
-```
-
-
-Number of graduates with at least 1 advisor
-
-```{r}
-
-d_sum <- linked_ids_to_compare %>%
-  filter(link_score >= min_score) %>%
-  group_by(train_name, field, degree_year) %>%
-  summarise(n_advisors = n(),
-            n_graduates = n_distinct(goid),
-            .groups = "drop") %>%
-  pivot_longer(cols = starts_with("n_"), names_to = "variable")
-
-plotvars <- c("n_graduates")
-
-map(.x = plotvars,
-    .f = ~d_sum %>%
-      filter(variable == .x) %>%
-      ggplot(aes(x = degree_year, y = value)) +
-      geom_line(aes(linetype = train_name)) + 
-      facet_wrap(~field) + 
-      theme(legend.position = "bottom") + 
-      labs(title = paste0("Count: ", .x))
-    )
-
-
-```
-
 ## Fraction of theses with at least 1 supervisor linked to MAG
 
 ```{r}
 s_thesis_advisor_link <- theses %>%
-  filter(degree_year %in% 1990:2015) %>%
+  filter(degree_year %in% 1990:2015 & fieldname0_mag %in% select_fields) %>%
   left_join(linked_advisors %>%
-              filter(link_score > min_score_advisors) %>%
               select(relationship_id) %>%
               mutate(linked = 1),
             by = "relationship_id") %>%
