@@ -74,8 +74,10 @@ if args.filter_trainname_advisors is not None:
     WHERE train_name like '%{args.filter_trainname_advisors}%'
     """
 
+
 print(f"{where_stmt_iterations_graduates=}", flush=True)
 print(f"{where_stmt_iterations_advisors=}", flush=True)
+
 
 # ## (1) Get linked ids for given specs.
     # NOTE: count(distinct authorid) not possible and not necessary: because each authorid is uniquely in one field0, any goid that has multiple links
