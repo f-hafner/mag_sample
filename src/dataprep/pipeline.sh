@@ -113,15 +113,6 @@ Rscript -e "rmarkdown::render('$script_path/reports/sample_size_linking.Rmd', ou
 # ## 1. Link graduates to MAG
 bash $script_path/link/graduates.sh $logfile_path
 
-# Christoph retrained with with the following options:
-# --train_name "christoph_degree0" --keepyears "19852015"
-# need to run the write_csv_links script with these options as well
-# to get all links into db
-python -m $script_path.link.write_csv_links --linking_type "graduates" \
-                                            --train_name "combined" \
-                                            --keepyears "19852015" \
-    &> $logfile_path/write_csv_links_graduates.log
-
 Rscript -e "rmarkdown::render('$script_path/reports/quality_linking.Rmd', output_dir = '$output_path')" \
     &> $logfile_path/quality_linking.log
 
@@ -131,6 +122,12 @@ Rscript -e "rmarkdown::render('$script_path/reports/quality_linking_graduates_ch
 # ## 2. Link thesis advisors to MAG
 bash $script_path/link/advisors.sh &> $logfile_path/link_advisors.log
 
+
+# ## 3. Postprocessing
+Rscript -e "rmarkdown::render('$script_path/reports/compare_linking.Rmd', output_dir = '$output_path')" \
+    &> $logfile_path/compare_linking.log
+
+# ### Select overlap sample from both labellers
 Rscript -e "rmarkdown::render('$script_path/link/combine_links.Rmd', output_dir = '$output_path')" \
     &> $logfile_path/combine_links.log
 
@@ -138,34 +135,31 @@ Rscript -e "rmarkdown::render('$script_path/link/combine_links.Rmd', output_dir 
 # bash $script_path/link/write_links_biology
 # python -m $script_path.link.merge_biology_csv
 
-python -m $script_path.link.write_csv_links --linking_type "advisors" --train_name "combined" \
+# ### Load into db
+python -m $script_path.link.write_csv_links \
+    --linking_type "graduates" \
+    --train_name "combined" \
+    --keepyears "19852015" \
+    &> $logfile_path/write_csv_links_graduates.log
+
+python -m $script_path.link.write_csv_links \
+    --linking_type "advisors" \
+    --train_name "combined" \
     &> $logfile_path/write_csv_links_advisors.log
     
 Rscript -e "rmarkdown::render('$script_path/reports/quality_linking_advisors.Rmd', output_dir = '$output_path')" \
-    &> $logfile_path/quality_linking_advisors.log
+    &> $logfile_path/quality_linking_advisors.log # TODO: should this come earlier?
 
+# ## 4. Create more variables for the linked sample
 
-# ## 3. Link NSF grants to MAG advisors
-bash $script_path/link/grants.sh $logfile_path
-
-# XXX adapt for grants - use mona train
-#python -m $script_path.link.write_csv_links --linking_type "advisors" --train_name "christoph_degree0" \
-#    &> $logfile_path/write_csv_links_advisors.log
-    
-Rscript -e "rmarkdown::render('$script_path/reports/quality_linking_grants.Rmd', output_dir = '$output_path')" \
-    &> $logfile_path/quality_linking_grants.log
-
-
-
-# # Generate panel data set etc. for the linked entities
+# ### Generate panel data set etc. for the linked entities
 python -m $script_path.link.prep_linked_data \
     --filter_trainname_graduates "combined" \
     --filter_trainname_advisors "combined" \
     &> $logfile_path/prep_linked_data.log
 
-# # Calculate topic overlap between linked graduates and 
+# ### Calculate topic overlap between linked graduates and 
     # possible new employers & colleagues
-
 python -m $script_path.link.topic_similarity \
     --top_n_authors 200 \
     --write_dir similarities_temp/ \
@@ -177,6 +171,16 @@ python -m  $script_path.link.read_topic_similarity \
     --read_dir similarities_temp/ \
     &> $logfile_path/read_topic_similarity.log
 
-Rscript -e "rmarkdown::render('$script_path/reports/compare_linking.Rmd', output_dir = '$output_path')" \
-    &> $logfile_path/compare_linking.log
+
+
+# ## 5. Link NSF grants to MAG advisors
+bash $script_path/link/grants.sh $logfile_path
+
+# XXX adapt for grants - use mona train
+#python -m $script_path.link.write_csv_links --linking_type "advisors" --train_name "christoph_degree0" \
+#    &> $logfile_path/write_csv_links_advisors.log
+    
+Rscript -e "rmarkdown::render('$script_path/reports/quality_linking_grants.Rmd', output_dir = '$output_path')" \
+    &> $logfile_path/quality_linking_grants.log
+
 
