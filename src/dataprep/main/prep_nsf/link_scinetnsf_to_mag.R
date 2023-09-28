@@ -153,7 +153,7 @@ df <- similar_names %>%
 
 # Write table to db:
 cat("Starting data upload to the database...\n")
-#dbWriteTable(con, name = "links_nsf_mag2", value = df, overwrite = TRUE)
+dbWriteTable(con, name = "links_nsf_mag2", value = df, overwrite = TRUE)
 cat("Data upload to the database is complete.\n")
 
 # Some info
