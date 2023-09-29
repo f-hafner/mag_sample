@@ -4,11 +4,10 @@
 # Data downloaded and uploaded into db in: scinet_data_to_db.py in same folder
 
 # Initialize variables for counting rows and timestamp
-row_count <- 0
 start_time <- Sys.time()
-cat(sprintf("Started at", start_time))
+cat(sprintf("Started at %s \n", start_time))
 
-packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "stringdist")
+packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "stringdist", "purrr", "furrr")
 lapply(packages, library, character.only = TRUE)
 
 datapath <- "/mnt/ssd/"
@@ -23,7 +22,7 @@ cat("Connected to db...\n")
 # Create table with all links between NSF-grant and authors via papers
 
 NSF_to_Authors <- tbl(con, sql("
-                  select a. PaperID, a.Type, a.GrantID, b.AuthorId
+                  select a. PaperID, a.GrantID, b.AuthorId
                         ,c.NormalizedName, d.Position, d.PIFullName
                                       from scinet_links_nsf as a
                                       inner join (
@@ -44,6 +43,9 @@ NSF_to_Authors <- tbl(con, sql("
                                "))
 
 nsf_to_authors <- collect(NSF_to_Authors)
+nsf_to_authors <- nsf_to_authors %>%
+  filter(!is.na(PIFullName) & !is.na(NormalizedName))
+cat("Loaded dataset. \n")
 
 # Create separate variables for first and last name for both nsf and mag names
 nsf_to_authors <- nsf_to_authors %>%
@@ -65,105 +67,118 @@ nsf_to_authors <- nsf_to_authors %>%
                      word(PIFullName, 2), NA_character_)
   )
 
-
-
 ### Compare name similarity
 # Set a threshold for similarity
-threshold <- 0.8
+threshold <- 0.7
 
+### Create function to calculate similarity and filter 
 
-### Test several distances
+fct_similarity <- function(row) {
+  mag_firstname <- row$mag_firstname
+  nsf_firstname <- row$nsf_firstname
 
-# Calculate string similarity for first and last names by row and add a new column
-firstname_similarity <- numeric(0)
-lastname_similarity <- numeric(0)
-
-# Iterate through rows and calculate string distances for first and last names separately
-cat("Start comparing names...\n")
-for (i in 1:nrow(nsf_to_authors)) {
-  mag_firstname <- nsf_to_authors$mag_firstname[i]
-  nsf_firstname <- nsf_to_authors$nsf_firstname[i]
-  
-  # Calculate string distance for first name by row using Optimal String Alignment (default)
+  # Calculate string distances by row using Optimal String Alignment (default)
   first_row_similarity <- stringsim(
     mag_firstname,
     nsf_firstname,
     method="osa" )
   
-
-
- # Calculate string distance for last name by row
-    mag_lastname <- nsf_to_authors$mag_lastname[i]
-    nsf_lastname <- nsf_to_authors$nsf_lastname[i]
   
-    last_row_similarity <- stringsim(
-     mag_lastname,
-     nsf_lastname,
-     method="osa"
+  mag_lastname <- row$mag_lastname
+  nsf_lastname <- row$nsf_lastname
+  
+  last_row_similarity <- stringsim(
+    mag_lastname,
+    nsf_lastname,
+    method = "osa"
   )
   
-  # Append the calculated distances to the results vector 
-  firstname_similarity <- c(firstname_similarity, first_row_similarity)
-  lastname_similarity <- c(lastname_similarity, last_row_similarity)
+    return(data.frame(firstname_similarity = first_row_similarity, lastname_similarity = last_row_similarity))
+}
 
-  # Increment row count
-  row_count <- row_count + 1
+# Split the data into chunks of 50,000 rows
+chunk_size <- 50000
+chunks <- split(nsf_to_authors, ceiling(seq_len(nrow(nsf_to_authors)) / chunk_size))
+
+# Load the furrr package for parallel processing
+plan(multisession)
+
+# Initialize variables for progress tracking
+total_chunks <- length(chunks)
+processed_chunks <- 0
+
+# Process and save each chunk as individual CSV files
+for (i in seq_along(chunks)) {
+  chunk <- chunks[[i]]
   
-  # Progress after each 500,000th row
-  if (row_count %% 50 == 0) {
-    # Calculate elapsed time
-    elapsed_time <- Sys.time() - start_time 
-    elapsed_time <- as.numeric(elapsed_time)
-    
-    # Calculate percentage of data processed
-    percent_processed <- (row_count / nrow(nsf_to_authors)) * 100
-    
-    # Some information
+  # Calculate similarity and filter rows row by row
+  row_similarities <- purrr::map_df(1:nrow(chunk), ~fct_similarity(chunk[.x, ])) %>%
+    mutate(id = row_number())
+  
+  # Filter rows that meet the threshold criteria
+  chunk <- chunk %>%
+    mutate(id = row_number()) %>%
+    left_join(row_similarities, by = "id") %>%
+    filter(firstname_similarity >= threshold & lastname_similarity >= threshold) %>%
+    select(GrantID, AuthorId, Position, mag_firstname, nsf_firstname, firstname_similarity, mag_lastname, nsf_lastname, lastname_similarity) %>%
+    distinct()
+  
+  
+  # Define the output file path
+  output_file <- file.path("/mnt/ssd/chunks_nsf_links", paste0("chunk_", i, ".csv"))
+  
+  # Write the chunk to a CSV file
+  write.csv(chunk, file = output_file, row.names = FALSE)
+  
+  # Update progress
+  processed_chunks <- processed_chunks + 1
+  percent_processed <- (processed_chunks / total_chunks) * 100
+  elapsed_time <- as.numeric(Sys.time() - start_time)
+
+  # Convert elapsed time to minutes and potentially hours
+  elapsed_minutes <- elapsed_time / 60
+  if (elapsed_minutes >= 60) {
+    elapsed_hours <- floor(elapsed_minutes / 60)
+    elapsed_minutes <- elapsed_minutes %% 60
+
+  # Display progress information
     cat(sprintf(
-      "Processed %d rows (%.2f%%) in %2.f minutes.\n",
-      row_count, 
-      percent_processed, 
-      elapsed_time
+      "Processed %d out of %d chunks (%.2f%%) in %d hours and %.2f minutes.\n",
+      processed_chunks, total_chunks, percent_processed, elapsed_hours, elapsed_minutes
+    ))
+  } else {
+    cat(sprintf(
+      "Processed %d out of %d chunks (%.2f%%) in %.2f minutes.\n",
+      processed_chunks, total_chunks, percent_processed, elapsed_minutes
     ))
   }
 }
 
-elapsed_time <- Sys.time() - start_time
-elapsed_time <- as.numeric(elapsed_time)
-
-percent_processed <- (row_count / nrow(nsf_to_authors)) * 100
-cat(sprintf(
-  "Processed all rows (%.2f%%) in %2.f minutes.\n",
-  percent_processed, 
-  elapsed_time
-))
-
-# Assign the calculated distances to a new column in data frame
-nsf_to_authors$firstname_similarity <- firstname_similarity
-nsf_to_authors$lastname_similarity <- lastname_similarity
-
-# Filter observations where the names are above the threshold: threshold seemed reasonable as it allows for a single typo
-similar_names <- nsf_to_authors %>%
-  filter(firstname_similarity >= threshold & lastname_similarity >= threshold)
-
-# drop unnecessary variables and drop duplicates
-df <- similar_names %>%
-  select(GrantID, AuthorId, Position, firstname_similarity, lastname_similarity) %>%
-  distinct()
-
-# Write table to db:
-cat("Starting data upload to the database...\n")
-dbWriteTable(con, name = "links_nsf_mag2", value = df, overwrite = TRUE)
-cat("Data upload to the database is complete.\n")
+# Clean up the furrr plan
+plan(NULL)
 
 # Some info
 final_elapsed_time <- Sys.time() - start_time
-elapsed_time <- as.numeric(elapsed_time)
+final_elapsed_time <- as.numeric(final_elapsed_time)
 
-cat(sprintf(
-  "Complete. Total time elapsed: %2.f minutes.\n",
-  elapsed_time
-))
+# Convert elapsed time to minutes and potentially hours
+final_elapsed_minutes <- final_elapsed_time / 60
+if (final_elapsed_minutes >= 60) {
+  final_elapsed_hours <- floor(final_elapsed_minutes / 60)
+  final_elapsed_minutes <- final_elapsed_minutes %% 60
+  
+  # Display progress information
+  cat(sprintf(
+    "Complete. Total elapsed time: %d hours and %.2f minutes.\n",
+    final_elapsed_hours, final_elapsed_minutes
+  ))
+} else {
+  cat(sprintf(
+    "Complete. Total elapsed time: %.2f minutes.\n",
+    elapsed_minutes
+  ))
+}
+
 
 # close connection to db
 DBI::dbDisconnect(con)
