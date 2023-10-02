@@ -43,6 +43,7 @@ NSF_to_Authors <- tbl(con, sql("
                                "))
 
 nsf_to_authors <- collect(NSF_to_Authors)
+
 nsf_to_authors <- nsf_to_authors %>%
   filter(!is.na(PIFullName) & !is.na(NormalizedName))
 cat("Loaded dataset. \n")
@@ -66,7 +67,7 @@ nsf_to_authors <- nsf_to_authors %>%
                      word(PIFullName, 2) != word(PIFullName, -1),
                      word(PIFullName, 2), NA_character_)
   )
-
+cat("Separated names in dataset. \n")
 ### Compare name similarity
 # Set a threshold for similarity
 threshold <- 0.7
@@ -101,13 +102,17 @@ chunk_size <- 50000
 chunks <- split(nsf_to_authors, ceiling(seq_len(nrow(nsf_to_authors)) / chunk_size))
 
 # Load the furrr package for parallel processing
-plan(multisession)
+plan(multisession, workers=16)
 
 # Initialize variables for progress tracking
 total_chunks <- length(chunks)
 processed_chunks <- 0
 
 # Process and save each chunk as individual CSV files
+ time <- Sys.time()
+ cat(sprintf(
+  "Start processing %d chunks at %s \n", total_chunks,	start_time))
+
 for (i in seq_along(chunks)) {
   chunk <- chunks[[i]]
   
@@ -119,13 +124,19 @@ for (i in seq_along(chunks)) {
   chunk <- chunk %>%
     mutate(id = row_number()) %>%
     left_join(row_similarities, by = "id") %>%
-    filter(firstname_similarity >= threshold & lastname_similarity >= threshold) %>%
+    filter(
+      (firstname_similarity >= threshold & lastname_similarity >= threshold) | (lastname_similarity == 1.0 & substr(mag_firstname, 1, 1) == substr(nsf_firstname, 1, 1)) ) %>%
     select(GrantID, AuthorId, Position, mag_firstname, nsf_firstname, firstname_similarity, mag_lastname, nsf_lastname, lastname_similarity) %>%
     distinct()
-  
+    
   
   # Define the output file path
   output_file <- file.path("/mnt/ssd/chunks_nsf_links", paste0("chunk_", i, ".csv"))
+
+# Remove the output file if it exists
+if (file.exists(output_file)) {
+  file.remove(output_file)
+}
   
   # Write the chunk to a CSV file
   write.csv(chunk, file = output_file, row.names = FALSE)
@@ -135,23 +146,12 @@ for (i in seq_along(chunks)) {
   percent_processed <- (processed_chunks / total_chunks) * 100
   elapsed_time <- as.numeric(Sys.time() - start_time)
 
-  # Convert elapsed time to minutes and potentially hours
-  elapsed_minutes <- elapsed_time / 60
-  if (elapsed_minutes >= 60) {
-    elapsed_hours <- floor(elapsed_minutes / 60)
-    elapsed_minutes <- elapsed_minutes %% 60
 
   # Display progress information
     cat(sprintf(
-      "Processed %d out of %d chunks (%.2f%%) in %d hours and %.2f minutes.\n",
-      processed_chunks, total_chunks, percent_processed, elapsed_hours, elapsed_minutes
+      "Processed %d out of %d chunks (%.2f%%) in %.2f.\n",
+      processed_chunks, total_chunks, percent_processed, elapsed_time
     ))
-  } else {
-    cat(sprintf(
-      "Processed %d out of %d chunks (%.2f%%) in %.2f minutes.\n",
-      processed_chunks, total_chunks, percent_processed, elapsed_minutes
-    ))
-  }
 }
 
 # Clean up the furrr plan
@@ -162,22 +162,12 @@ final_elapsed_time <- Sys.time() - start_time
 final_elapsed_time <- as.numeric(final_elapsed_time)
 
 # Convert elapsed time to minutes and potentially hours
-final_elapsed_minutes <- final_elapsed_time / 60
-if (final_elapsed_minutes >= 60) {
-  final_elapsed_hours <- floor(final_elapsed_minutes / 60)
-  final_elapsed_minutes <- final_elapsed_minutes %% 60
-  
+
   # Display progress information
   cat(sprintf(
-    "Complete. Total elapsed time: %d hours and %.2f minutes.\n",
-    final_elapsed_hours, final_elapsed_minutes
+    "Complete. Total elapsed time: %.2f.\n",
+    final_elapsed_time
   ))
-} else {
-  cat(sprintf(
-    "Complete. Total elapsed time: %.2f minutes.\n",
-    elapsed_minutes
-  ))
-}
 
 
 # close connection to db
