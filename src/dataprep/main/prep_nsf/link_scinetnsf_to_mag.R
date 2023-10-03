@@ -173,3 +173,23 @@ final_elapsed_time <- as.numeric(final_elapsed_time)
 # close connection to db
 DBI::dbDisconnect(con)
 cat("Disconnected from db.\n")
+
+# Apend tables together
+# Initialize an empty data frame to store the appended data
+links_nsf_mag <- data.frame()
+
+# Loop through the file names and append the data
+for (i in 1:1072) {
+  # Construct the file path for each chunk
+  
+  # Load the CSV file
+  chunk_data <- read.csv(output_file, header = TRUE)
+  
+  # Append the chunk data to the appended_data data frame
+  links_nsf_mag <- rbind(links_nsf_mag, chunk_data)
+}
+links_nsf_mag <- links_nsf_mag%>%
+  distinct()
+
+# Write the appended data to a single CSV file
+#write.csv(links_nsf_mag, "links_nsf_mag.csv", row.names = FALSE)
