@@ -170,9 +170,6 @@ final_elapsed_time <- as.numeric(final_elapsed_time)
   ))
 
 
-# close connection to db
-DBI::dbDisconnect(con)
-cat("Disconnected from db.\n")
 
 # Apend tables together
 # Initialize an empty data frame to store the appended data
@@ -183,13 +180,26 @@ for (i in 1:1072) {
   # Construct the file path for each chunk
   
   # Load the CSV file
-  chunk_data <- read.csv(output_file, header = TRUE)
+  chunk_data <- read.csv(paste0("/mnt/ssd/chunks_nsf_links/chunk_", i, ".csv"), header = TRUE, colClasses = c(GrantID = "character"))
   
   # Append the chunk data to the appended_data data frame
   links_nsf_mag <- rbind(links_nsf_mag, chunk_data)
 }
-links_nsf_mag <- links_nsf_mag%>%
+
+# drop unnecessary variables and drop duplicates
+links_nsf_mag <- links_nsf_mag %>%
+  select(GrantID, AuthorId, Position, firstname_similarity, lastname_similarity) %>%
   distinct()
+
 
 # Write the appended data to a single CSV file
 #write.csv(links_nsf_mag, "links_nsf_mag.csv", row.names = FALSE)
+
+
+# Write table to db:
+dbWriteTable(con, name = "links_nsf_mag", value = links_nsf_mag, overwrite = TRUE)
+cat("Uploaded to db.\n")
+
+# close connection to db
+DBI::dbDisconnect(con)
+cat("Disconnected from db.\n")
