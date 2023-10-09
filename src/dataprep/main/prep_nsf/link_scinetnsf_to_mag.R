@@ -1,6 +1,5 @@
 # Link SciSciNet_Links_NSF table with Paper_Author_Affiliations, Authors, and NSF_Investigator 
 # Keeps only those with link between NSF grant and author ID.
-# only those links with a similar name (similarity >=0.8) are loaded into db
 # Data downloaded and uploaded into db in: scinet_data_to_db.py in same folder
 
 # Initialize variables for counting rows and timestamp
