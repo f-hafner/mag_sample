@@ -7,7 +7,7 @@
 start_time <- Sys.time()
 cat(sprintf("Started at %s \n", start_time))
 
-packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "stringdist", "purrr", "furrr")
+packages <- c("tidyverse", "broom", "dbplyr", "RSQLite", "stringdist", "purrr", "furrr", "bit64")
 lapply(packages, library, character.only = TRUE)
 
 datapath <- "/mnt/ssd/"
@@ -171,17 +171,19 @@ final_elapsed_time <- as.numeric(final_elapsed_time)
 
 
 
-# Apend tables together
+# Append tables together
 # Initialize an empty data frame to store the appended data
 links_nsf_mag <- data.frame()
 
+chunks <- list.files("/mnt/ssd/chunks_nsf_links/", pattern = "*.csv", full.names = TRUE)
 # Loop through the file names and append the data
-for (i in 1:1072) {
-  # Construct the file path for each chunk
-  
+for (chunk in chunks) {
   # Load the CSV file
-  chunk_data <- read.csv(paste0("/mnt/ssd/chunks_nsf_links/chunk_", i, ".csv"), header = TRUE, colClasses = c(GrantID = "character"))
-  
+  chunk_data <- read.csv(chunk, 
+                         header = TRUE, 
+                         colClasses = c(GrantID = "character", AuthorId = "character")
+                         ) 
+  chunk_data <- chunk_data %>% mutate(AuthorId = as.integer64(AuthorId))
   # Append the chunk data to the appended_data data frame
   links_nsf_mag <- rbind(links_nsf_mag, chunk_data)
 }
