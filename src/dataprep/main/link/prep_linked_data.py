@@ -222,7 +222,7 @@ print_elapsed_time(start_time)
 
 
 # ## (4) author_citations
-print("Making author_citations... \n")
+print("Making author_citations... \n", flush = True)
 
 con.execute(f"""
 CREATE TABLE author_citations AS 
@@ -258,35 +258,86 @@ print_elapsed_time(start_time)
 
 
 # ## (5) author_output
-print("Making author_output... \n")
+print("Making author_output... \n", flush = True)
 
-con.execute(f"""CREATE TABLE author_output AS 
-                SELECT  a.AuthorId,
-                        d.Year,
-                        COUNT(a.PaperId) AS PaperCount,  -- ## DISTINCT not necessary when summarising a at the author level
-                        SUM(b.AuthorCount) AS TotalAuthorCount,
-                        SUM(b.CitationCount_y10) AS TotalForwardCitations -- ## this measures the impact of the paper at publication
-                FROM PaperAuthorUnique a
-                INNER JOIN (
-                    SELECT AuthorId
-                    FROM current_authors
-                ) USING(AuthorId)
-                INNER JOIN (
-                    SELECT PaperId, Year
-                    FROM Papers 
-                    WHERE 
-                        DocType IN ({insert_questionmark_doctypes}) 
-                        AND 
-                        DocType IS NOT NULL 
-                ) d USING (PaperId)
-                INNER JOIN paper_outcomes b USING(PaperId) 
-                GROUP BY a.AuthorId, d.Year
-            """,
-            keep_doctypes
-            )
+con.execute(f"""
+    CREATE TEMP TABLE author_output_total AS 
+    SELECT  a.AuthorId,
+            d.Year,
+            COUNT(a.PaperId) AS PaperCount,  -- ## DISTINCT not necessary when summarising a at the author level
+            SUM(b.AuthorCount) AS TotalAuthorCount,
+            SUM(b.CitationCount_y10) AS TotalForwardCitations -- ## this measures the impact of the paper at publication
+    FROM PaperAuthorUnique a
+    INNER JOIN (
+        SELECT AuthorId
+        FROM current_authors
+    ) USING(AuthorId)
+    INNER JOIN (
+        SELECT PaperId, Year
+        FROM Papers 
+        WHERE 
+            DocType IN ({insert_questionmark_doctypes}) 
+            AND 
+            DocType IS NOT NULL 
+    ) d USING (PaperId)
+    INNER JOIN paper_outcomes b USING(PaperId) 
+    GROUP BY a.AuthorId, d.Year
+""",
+keep_doctypes
+)
+
+con.execute("CREATE UNIQUE INDEX idx_aot_AuthorIdYear on author_output_total (AuthorId ASC, Year)")
+#con.execute("CREATE INDEX idx_ao_DocType on author_output (DocType) ")
+
+con.execute(f"""
+    CREATE TEMP TABLE author_output_firstauthor AS 
+    SELECT  a.AuthorId,
+            d.Year,
+            COUNT(a.PaperId) AS PaperCount,  -- ## DISTINCT not necessary when summarising a at the author level
+            SUM(b.AuthorCount) AS TotalAuthorCount,
+            SUM(b.CitationCount_y10) AS TotalForwardCitations -- ## this measures the impact of the paper at publication
+    FROM PaperAuthorUnique a
+    INNER JOIN (
+        SELECT AuthorId
+        FROM current_authors
+    ) USING(AuthorId)
+    INNER JOIN (
+        SELECT AuthorId, PaperId
+        FROM PaperAuthorAffiliations
+        WHERE AuthorSequenceNumber = 1
+    ) USING(AuthorId, PaperId)
+    INNER JOIN (
+        SELECT PaperId, Year
+        FROM Papers 
+        WHERE 
+            DocType IN ({insert_questionmark_doctypes}) 
+            AND 
+            DocType IS NOT NULL 
+    ) d USING (PaperId)
+    INNER JOIN paper_outcomes b USING(PaperId) 
+    GROUP BY a.AuthorId, d.Year
+""",
+keep_doctypes
+)
+
+con.execute("CREATE UNIQUE INDEX idx_aof_AuthorIdYear on author_output_firstauthor (AuthorId ASC, Year)")
+
+con.execute("""
+    CREATE TABLE author_output AS 
+    SELECT a.AuthorId, a.Year
+        , a.PaperCount 
+        , a.TotalAuthorCount
+        , a.TotalForwardCitations
+        , b.PaperCount AS PaperCount_firstauthor
+        , b.TotalAuthorCount AS TotalAuthorCount_firstauthor
+        , b.TotalForwardCitations AS TotalForwardCitations_firstauthor
+    FROM author_output_total AS a
+    INNER JOIN author_output_firstauthor as B
+    USING(AuthorId, Year)
+    """)
 
 con.execute("CREATE UNIQUE INDEX idx_ao_AuthorIdYear on author_output (AuthorId ASC, Year)")
-#con.execute("CREATE INDEX idx_ao_DocType on author_output (DocType) ")
+
 
 print_elapsed_time(start_time)
 
