@@ -332,9 +332,9 @@ con.execute("""
         , b.TotalAuthorCount AS TotalAuthorCount_firstauthor
         , b.TotalForwardCitations AS TotalForwardCitations_firstauthor
     FROM author_output_total AS a
-    INNER JOIN author_output_firstauthor as B
+    LEFT JOIN author_output_firstauthor as B
     USING(AuthorId, Year)
-    """)
+    """) # LEFT JOIN because there is years without first authorship, but any year with first authorship must be a year with any authorship.
 
 con.execute("CREATE UNIQUE INDEX idx_ao_AuthorIdYear on author_output (AuthorId ASC, Year)")
 
