@@ -266,7 +266,21 @@ con.execute(f"""
             d.Year,
             COUNT(a.PaperId) AS PaperCount,  -- ## DISTINCT not necessary when summarising a at the author level
             SUM(b.AuthorCount) AS TotalAuthorCount,
-            SUM(b.CitationCount_y10) AS TotalForwardCitations -- ## this measures the impact of the paper at publication
+            SUM(b.CitationCount_y10) AS TotalForwardCitations, -- ## this measures the impact of the paper at publication
+            SUM(c.new_word) AS new_word,
+            SUM(c.new_word_reuse) AS new_word_reuse,
+            SUM(c.new_bigram) AS new_bigram,
+            SUM(c.new_bigram_reuse) AS new_bigram_reuse,
+            SUM(c.new_trigram) AS new_trigram,
+            SUM(c.new_trigram_reuse) AS new_trigram_reuse,
+            SUM(c.new_word_comb) AS new_word_comb,
+            SUM(c.new_word_comb_reuse) AS new_word_comb_reuse,
+            MAX(c.cosine_max) AS cosine_max,
+            AVG(c.cosine_max) AS avg_cosine_max,
+            AVG(c.cosine_avg) AS avg_cosine_avg,
+            SUM(c.n_words) AS n_words,
+            SUM(c.n_bigrams) AS n_bigrams,
+            SUM(c.n_trigrams) AS n_trigrams    
     FROM PaperAuthorUnique a
     INNER JOIN (
         SELECT AuthorId
@@ -281,10 +295,12 @@ con.execute(f"""
             DocType IS NOT NULL 
     ) d USING (PaperId)
     INNER JOIN paper_outcomes b USING(PaperId) 
+    LEFT JOIN novelty_reuse c USING(PaperId)
     GROUP BY a.AuthorId, d.Year
 """,
 keep_doctypes
 )
+# join with novelty and reuse measure here. and add to author_output_total table and to author_first_author table
 
 con.execute("CREATE UNIQUE INDEX idx_aot_AuthorIdYear on author_output_total (AuthorId ASC, Year)")
 #con.execute("CREATE INDEX idx_ao_DocType on author_output (DocType) ")
@@ -295,7 +311,21 @@ con.execute(f"""
             d.Year,
             COUNT(a.PaperId) AS PaperCount,  -- ## DISTINCT not necessary when summarising a at the author level
             SUM(b.AuthorCount) AS TotalAuthorCount,
-            SUM(b.CitationCount_y10) AS TotalForwardCitations -- ## this measures the impact of the paper at publication
+            SUM(b.CitationCount_y10) AS TotalForwardCitations, -- ## this measures the impact of the paper at publication
+            SUM(c.new_word) AS new_word,
+            SUM(c.new_word_reuse) AS new_word_reuse,
+            SUM(c.new_bigram) AS new_bigram,
+            SUM(c.new_bigram_reuse) AS new_bigram_reuse,
+            SUM(c.new_trigram) AS new_trigram,
+            SUM(c.new_trigram_reuse) AS new_trigram_reuse,
+            SUM(c.new_word_comb) AS new_word_comb,
+            SUM(c.new_word_comb_reuse) AS new_word_comb_reuse,
+            MAX(c.cosine_max) AS cosine_max,
+            AVG(c.cosine_max) AS avg_cosine_max,
+            AVG(c.cosine_avg) AS avg_cosine_avg,
+            SUM(c.n_words) AS n_words,
+            SUM(c.n_bigrams) AS n_bigrams,
+            SUM(c.n_trigrams) AS n_trigrams 
     FROM PaperAuthorUnique a
     INNER JOIN (
         SELECT AuthorId
@@ -315,6 +345,7 @@ con.execute(f"""
             DocType IS NOT NULL 
     ) d USING (PaperId)
     INNER JOIN paper_outcomes b USING(PaperId) 
+    LEFT JOIN novelty_reuse c USING(PaperId)
     GROUP BY a.AuthorId, d.Year
 """,
 keep_doctypes
@@ -331,6 +362,34 @@ con.execute("""
         , b.PaperCount AS PaperCount_firstauthor
         , b.TotalAuthorCount AS TotalAuthorCount_firstauthor
         , b.TotalForwardCitations AS TotalForwardCitations_firstauthor
+        , a.new_word 
+        , a.new_word_reuse
+        , a.new_bigram
+        , a.new_bigram_reuse
+        , a.new_trigram
+        , a.new_trigram_reuse
+        , a.new_word_comb
+        , a.new_word_comb_reuse
+        , a.cosine_max
+        , a.avg_cosine_max
+        , a.avg_cosine_avg
+        , a.n_words
+        , a.n_bigrams
+        , a.n_trigrams
+        , b.new_word AS new_word_firstauthor 
+        , b.new_word_reuse AS new_word_reuse_firstauthor
+        , b.new_bigram AS new_bigram_firstauthor
+        , b.new_bigram_reuse AS new_bigram_reuse_firstauthor
+        , b.new_trigram AS new_trigram_firstauthor
+        , b.new_trigram_reuse AS new_trigram_reuse_firstauthor
+        , b.new_word_comb AS new_word_comb_firstauthor
+        , b.new_word_comb_reuse AS new_word_comb_reuse_firstauthor
+        , b.cosine_max AS cosine_max_firstauthor
+        , b.avg_cosine_max AS avg_cosine_max_firstauthor
+        , b.avg_cosine_avg AS avg_cosine_avg_firstauthor
+        , b.n_words AS n_words_firstauthor
+        , b.n_bigrams AS n_bigrams_firstauthor
+        , b.n_trigrams AS n_trigrams_firstauthor
     FROM author_output_total AS a
     LEFT JOIN author_output_firstauthor as B
     USING(AuthorId, Year)
