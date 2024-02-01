@@ -24,6 +24,11 @@ python3 $script_path/gender/genderize_unclear_names.py --outfile "gender_unclear
 python3 $script_path/gender/read_gendertable.py --from_file "gender_unclear_names.csv" \
     --to_table "UnclearNamesGender" --index "idx_ung_FirstName" &> $logfile_path/read_gendertable_unclearnames.log
 
+# ## Download and read in Novelty and Reuse data (from Zenodo)
+bash ./main/load_novelty_reuse/download.sh &> $logfile_path/download_novelty_reuse.log
+bash ./main/load_novelty_reuse/dump_db.sh &> $logfile_path/dump_db.log
+rm ~/novelty/papers_textual_metrics.csv # delete the downloaded file
+
 # ## Make some tables to speed up queries down the road 
 
 # ### General
