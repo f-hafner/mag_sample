@@ -1,8 +1,27 @@
 #!/bin/bash
 
+# Change to the directory containing this script
+cd "$(dirname "$0")"
+
 output_path="../../output"
 script_path="main"
 logfile_path="temp"
+rprofile_path="../../.Rprofile"
+
+## for conda 
+NECESSARYENV='science-career-tempenv'
+
+# ## 2. Activate the right conda environment for deduping
+eval "$(conda shell.bash hook)"
+conda activate $NECESSARYENV
+
+
+# Function to run Rscript with renv activation
+run_rscript() {
+    Rscript --vanilla -e "setwd('../../'); source('.Rprofile'); renv::load(); setwd('src/dataprep'); $1"
+}
+
+
 
 # ## Read in database
 python3 $script_path/load_mag/create_database.py &> $logfile_path/create_database.log
@@ -104,15 +123,15 @@ python -m $script_path.load_proquest.magfos_to_db &> \
     $logfile_path/pq_magfos_to_db.log
     
 # ## Make some summary stats on the data
-Rscript $script_path/reports/data_nces.R &> temp/data_nces.log  
+run_rscript "source('$script_path/reports/data_nces.R')" &> temp/data_nces.log  
 
-Rscript -e "rmarkdown::render('$script_path/reports/quality_mag.Rmd', output_dir = '$output_path')"  \
+run_rscript "rmarkdown::render('$script_path/reports/quality_mag.Rmd', output_dir = '$output_path')"  \
     &> $logfile_path/quality_mag.log
 
-Rscript -e "rmarkdown::render('$script_path/reports/quality_proquest.Rmd', output_dir = '$output_path')" \
+run_rscript "rmarkdown::render('$script_path/reports/quality_proquest.Rmd', output_dir = '$output_path')" \
     &> $logfile_path/quality_proquest.log
 
-Rscript -e "rmarkdown::render('$script_path/reports/sample_size_linking.Rmd', output_dir = '$output_path')" \
+run_rscript "rmarkdown::render('$script_path/reports/sample_size_linking.Rmd', output_dir = '$output_path')" \
     &> $logfile_path/sample_size_linking.log
 
 # # Link
@@ -120,10 +139,10 @@ Rscript -e "rmarkdown::render('$script_path/reports/sample_size_linking.Rmd', ou
 # ## 1. Link graduates to MAG
 bash $script_path/link/graduates.sh $logfile_path
 
-Rscript -e "rmarkdown::render('$script_path/reports/quality_linking.Rmd', output_dir = '$output_path')" \
+run_rscript "rmarkdown::render('$script_path/reports/quality_linking.Rmd', output_dir = '$output_path')" \
     &> $logfile_path/quality_linking.log
 
-Rscript -e "rmarkdown::render('$script_path/reports/quality_linking_graduates_chemistry.Rmd', output_dir = '$output_path')" \
+run_rscript "rmarkdown::render('$script_path/reports/quality_linking_graduates_chemistry.Rmd', output_dir = '$output_path')" \
     &> $logfile_path/quality_linking_graduates_chemistry.log
 
 # ## 2. Link thesis advisors to MAG
@@ -131,16 +150,12 @@ bash $script_path/link/advisors.sh &> $logfile_path/link_advisors.log
 
 
 # ## 3. Postprocessing
-Rscript -e "rmarkdown::render('$script_path/reports/compare_linking.Rmd', output_dir = '$output_path')" \
+run_rscript "rmarkdown::render('$script_path/reports/compare_linking.Rmd', output_dir = '$output_path')" \
     &> $logfile_path/compare_linking.log
 
 # ### Select overlap sample from both labellers
-Rscript -e "rmarkdown::render('$script_path/link/combine_links.Rmd', output_dir = '$output_path')" \
+run_rscript "rmarkdown::render('$script_path/link/combine_links.Rmd', output_dir = '$output_path')" \
     &> $logfile_path/combine_links.log
-
-# Manual split of biology! TODO: can we delete this?
-# bash $script_path/link/write_links_biology
-# python -m $script_path.link.merge_biology_csv
 
 # ### Load into db
 python -m $script_path.link.write_csv_links \
@@ -154,7 +169,7 @@ python -m $script_path.link.write_csv_links \
     --train_name "combined" \
     &> $logfile_path/write_csv_links_advisors.log
     
-Rscript -e "rmarkdown::render('$script_path/reports/quality_linking_advisors.Rmd', output_dir = '$output_path')" \
+run_rscript "rmarkdown::render('$script_path/reports/quality_linking_advisors.Rmd', output_dir = '$output_path')" \
     &> $logfile_path/quality_linking_advisors.log # TODO: should this come earlier?
 
 # ## 4. Create more variables for the linked sample
@@ -191,7 +206,7 @@ bash $script_path/link/grants.sh $logfile_path
 #python -m $script_path.link.write_csv_links --linking_type "advisors" --train_name "christoph_degree0" \
 #    &> $logfile_path/write_csv_links_advisors.log
     
-Rscript -e "rmarkdown::render('$script_path/reports/quality_linking_grants.Rmd', output_dir = '$output_path')" \
+run_rscript "rmarkdown::render('$script_path/reports/quality_linking_grants.Rmd', output_dir = '$output_path')" \
     &> $logfile_path/quality_linking_grants.log
 
 

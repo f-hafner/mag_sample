@@ -202,8 +202,8 @@ def main():
         print(f"Using max available, which is {mp.cpu_count()}.")
         args.n_cores = mp.cpu_count()
 
-    if os.path.isdir(write_url):
-        sys.exit("You specified an existing directory.")
+    if os.path.isdir(args.write_dir):
+        sys.exit("You specified an existing directory: " + args.write_dir)
 
     # ## Setup
     start_time = time.time()    
