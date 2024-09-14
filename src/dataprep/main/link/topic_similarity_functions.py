@@ -279,15 +279,15 @@ def complete_to_reference(
     ignore_column="Field0",
     fill_value=0
     ):
-    """Complete a dataframe df_in relative to a reference dataframe df_ref.
+    """Complete a dataframe `df_in` relative to a reference dataframe `df_ref`.
     
     Parameters:
     ----------
-    df_in, df_ref: dataframes
-    idx_cols: index columns to join the two dfs by. 
-    add_cols_to_complete: additional columns over which to complete the dataframe
-    ignore_column: ignore this column for the "complete" operation
-    fill_value: fill value passed as `fill_value` to `pd.MultiIndex.from_product()`
+    `df_in`, `df_ref: dataframes
+    `idx_cols`: index columns to join the two dfs by. 
+    `add_cols_to_complete`: additional columns over which to complete the dataframe
+    `ignore_column`: ignore this column for the "complete" operation
+    `fill_value`: fill value passed as `fill_value` to `pd.MultiIndex.from_product()`
     """
     cols_to_complete = idx_cols + add_cols_to_complete
     flds = df_ref[ignore_column].unique()
