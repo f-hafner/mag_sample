@@ -16,6 +16,7 @@ are considered for computing the topic similarities.
 
 import sqlite3 as sqlite
 import time 
+from pathlib import Path
 import pandas as pd
 from helpers.variables import db_file, insert_questionmark_doctypes, keep_doctypes
 from helpers.functions import enumerated_arguments
@@ -35,33 +36,39 @@ import main.link.topic_similarity_functions as tsf
 logging.basicConfig(level=logging.INFO)
 
 # ## Arguments
-parser = argparse.ArgumentParser(description = 'Inputs for topic_similarity')
-parser.add_argument("--ncores", 
-                    dest="n_cores", 
-                    default=int(mp.cpu_count() / 2),
-                    type=int, 
-                    help="Number of cores to use. Defaults to half of available CPUs.")
-parser.add_argument("--top_n_authors", 
-                    type=int,
-                    default=200,
-                    help="Keep as many authors for each institution to search for most similar faculty member.") 
-parser.add_argument("--window_size",
-                    type=int,
-                    default=5,
-                    help="Calculate topics based on as many papers before or after graduation year.")
-parser.add_argument("--write_dir", 
-                    dest="write_dir", 
-                    default="similarities_temp/")
-parser.add_argument("--limit",
-                    type=int,
-                    default=None,
-                    help="Limit number of field-degree year combinations to process. For quick testing.")
-parser.add_argument("--max_level",
-                    type=int,
-                    default=5,
-                    help="Use fields of study up to this level (included) for computing the conept vectors")
-parser.add_argument('--no-parallel', action=argparse.BooleanOptionalAction, dest="noparallel")
-args = parser.parse_args()
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description = 'Inputs for topic_similarity')
+    parser.add_argument("--ncores", 
+                        dest="n_cores", 
+                        default=int(mp.cpu_count() / 2),
+                        type=int, 
+                        help="Number of cores to use. Defaults to half of available CPUs.")
+    parser.add_argument("--top_n_authors", 
+                        type=int,
+                        default=200,
+                        help="Keep as many authors for each institution to search for most similar faculty member.") 
+    parser.add_argument("--window_size",
+                        type=int,
+                        default=5,
+                        help="Calculate topics based on as many papers before or after graduation year.")
+    parser.add_argument("--write_dir", 
+                        dest="write_dir", 
+                        default="similarities_temp/")
+    parser.add_argument("--limit",
+                        type=int,
+                        default=None,
+                        help="Limit number of field-degree year combinations to process. For quick testing.")
+    parser.add_argument("--max_level",
+                        type=int,
+                        default=5,
+                        help="Use fields of study up to this level (included) for computing the conept vectors")
+    parser.add_argument('--no-parallel', action=argparse.BooleanOptionalAction, dest="noparallel")
+    args = parser.parse_args()
+    return args
+
+
 
 def get_similarities(data):
     """Calculate similarities between graduates from `degree_year` in `field`
@@ -84,8 +91,11 @@ def get_similarities(data):
     keep_top_n_authors: int
         keep as many authors, ordered by number of publications,
         when calculating the most simlar author at a given institution-field.
+    max_level: int. Use fields of study up to this level for creating
+        the concept vector.
+    window_size: int
     """
-    chunk_id, dbfile, write_dir, degree_year, field, keep_top_n_authors = data 
+    chunk_id, dbfile, write_dir, degree_year, field, keep_top_n_authors, max_level, window_size = data 
 
     con = sqlite.connect(database = "file:" + dbfile + "?mode=ro", 
                          isolation_level=None, 
@@ -94,11 +104,11 @@ def get_similarities(data):
     logging.debug(f"{chunk_id=}, {degree_year=}, {field=}")
     sql_queries = tsf.QueryBuilder(
         degree_year_to_query=degree_year,
-        window_size=args.window_size,
+        window_size=window_size,
         field_to_query=field,
         qmarks_doctypes=insert_questionmark_doctypes,
         keep_doctypes=keep_doctypes,
-        max_level=args.max_level
+        max_level=max_level
     )
 
     with con as c:
@@ -174,8 +184,8 @@ def get_similarities(data):
     }
 
     for name, df in write_dict.items():
-        df["max_level"] = args.max_level
-        df.to_csv(f"{write_dir}/{name}-maxlevel-{args.max_level}-part-{chunk_id}.csv", index=False)
+        df["max_level"] = max_level
+        df.to_csv(f"{write_dir}/{name}-part-{chunk_id}.csv", index=False)
 
     logging.debug("Done with one chunk.")
 
@@ -184,18 +194,21 @@ def get_similarities(data):
 
 
 def main():
+    args = parse_args()
+    write_url = Path(args.write_dir, args.max_level) 
+
     if args.n_cores > mp.cpu_count():
         print("Specified too many cpu cores.")
         print(f"Using max available, which is {mp.cpu_count()}.")
         args.n_cores = mp.cpu_count()
 
-    if os.path.isdir(args.write_dir):
+    if os.path.isdir(write_url):
         sys.exit("You specified an existing directory.")
 
     # ## Setup
     start_time = time.time()    
-    
-    os.mkdir(args.write_dir)
+   
+    write_url.mkdir(parents=True)
 
     # ## Prepare inputs for mp 
     con = sqlite.connect(database = "file:" + db_file + "?mode=ro", 
@@ -225,14 +238,14 @@ def main():
     con.close()
 
     inputs = itertools.product(
-        [db_file], [args.write_dir], years, fields, [args.top_n_authors]
+        [db_file], write_url, years, fields, [args.top_n_authors], [args.max_level], [args.window_size]
         )
 
     enumerated_inputs = enumerated_arguments(inputs, limit=args.limit)
     ctx = mp.get_context("forkserver")
     logging.info("Running queries")
     if args.noparallel:
-        inputs = (0, db_file, args.write_dir, 2005, 162324750, args.top_n_authors)
+        inputs = (0, db_file, write_url, 2005, 162324750, args.top_n_authors, args.max_level, args.window_size)
         get_similarities(inputs)
     else:
         with ProcessPoolExecutor(max_workers=args.n_cores, mp_context=ctx) as executor:
@@ -242,7 +255,7 @@ def main():
 
     # check number of created files is as expected
     n_expected = len(years) * len(fields)
-    files_created = os.listdir(args.write_dir)
+    files_created = os.listdir(write_url)
     if n_expected * 3 != len(files_created):
         warnings.warn("The number of files created does not match the expected number. Check the output carefully.")
 
