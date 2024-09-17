@@ -45,7 +45,8 @@ file_map = {
             , AffiliationId INT 
             , period TEXT
             , similarity_faculty_overall REAL
-            , similarity_closest_collaborator REAL)""",
+            , similarity_closest_collaborator REAL
+            , max_level INT)""",
         "idx": [
             """CREATE UNIQUE INDEX idx_gsi_AuthorAffilPeriod
                 ON graduates_similarity_to_institutions (AuthorId, AffiliationId, period)"""
@@ -54,7 +55,7 @@ file_map = {
     "own": {
         "fn_full": "sim_own_full.csv",
         "tbl": "graduates_similarity_to_self",
-        "schema": "(AuthorId INTEGER, similarity REAL)",
+        "schema": "(AuthorId INTEGER, similarity REAL, max_level INT)",
         "idx": [
             "CREATE UNIQUE INDEX idx_gss_Author ON graduates_similarity_to_self (AuthorId ASC)"
         ]
@@ -66,7 +67,8 @@ file_map = {
             , AffiliationId INT
             , CoAuthorId INT
             , period TEXT
-            , similarity REAL)""",
+            , similarity REAL
+            , max_level INT)""",
         "idx": [
             """CREATE UNIQUE INDEX idx_gcc_AuthorAffilCoAuthorPeriod 
                 ON graduates_closest_collaborators(AuthorId ASC, AffiliationId ASC, CoAuthorId ASC, period)"""
@@ -78,10 +80,10 @@ file_map = {
 
 
 for id, params in file_map.items():
-    subprocess.run(f"tail -n +2 -q {args.read_dir}/{id}-part-*.csv >> {params['fn_full']}", shell=True)
+    subprocess.run(f"tail -n +2 -q {args.read_dir}/{id}-maxlevel-*-part-*.csv >> {params['fn_full']}", shell=True)
     with con as c:
-        c.execute(f"DROP TABLE IF EXISTS {params['tbl']}")
-        c.execute(f"CREATE TABLE {params['tbl']} {params['schema']}")
+         c.execute(f"DROP TABLE IF EXISTS {params['tbl']}")
+         c.execute(f"CREATE TABLE {params['tbl']} {params['schema']}")
     subprocess.run(
         ["sqlite3", db_file,
         ".mode csv",
