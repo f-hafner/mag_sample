@@ -56,6 +56,10 @@ parser.add_argument("--limit",
                     type=int,
                     default=None,
                     help="Limit number of field-degree year combinations to process. For quick testing.")
+parser.add_argument("--max_level",
+                    type=int,
+                    default=5,
+                    help="Use fields of study up to this level (included) for computing the conept vectors")
 parser.add_argument('--no-parallel', action=argparse.BooleanOptionalAction, dest="noparallel")
 args = parser.parse_args()
 
@@ -93,7 +97,8 @@ def get_similarities(data):
         window_size=args.window_size,
         field_to_query=field,
         qmarks_doctypes=insert_questionmark_doctypes,
-        keep_doctypes=keep_doctypes
+        keep_doctypes=keep_doctypes,
+        max_level=args.max_level
     )
 
     with con as c:
@@ -169,7 +174,8 @@ def get_similarities(data):
     }
 
     for name, df in write_dict.items():
-        df.to_csv(f"{write_dir}/{name}-part-{chunk_id}.csv", index=False)
+        df["max_level"] = args.max_level
+        df.to_csv(f"{write_dir}/{name}-maxlevel-{args.max_level}-part-{chunk_id}.csv", index=False)
 
     logging.debug("Done with one chunk.")
 
