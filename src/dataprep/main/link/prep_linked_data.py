@@ -353,6 +353,58 @@ keep_doctypes
 
 con.execute("CREATE UNIQUE INDEX idx_aof_AuthorIdYear on author_output_firstauthor (AuthorId ASC, Year)")
 
+con.execute(f"""
+    CREATE TEMP TABLE author_output_lastauthor AS 
+    SELECT  a.AuthorId,
+            d.Year,
+            COUNT(a.PaperId) AS PaperCount,
+            SUM(b.AuthorCount) AS TotalAuthorCount,
+            SUM(b.CitationCount_y10) AS TotalForwardCitations,
+            SUM(c.new_word) AS new_word,
+            SUM(c.new_word_reuse) AS new_word_reuse,
+            SUM(c.new_bigram) AS new_bigram,
+            SUM(c.new_bigram_reuse) AS new_bigram_reuse,
+            SUM(c.new_trigram) AS new_trigram,
+            SUM(c.new_trigram_reuse) AS new_trigram_reuse,
+            SUM(c.new_word_comb) AS new_word_comb,
+            SUM(c.new_word_comb_reuse) AS new_word_comb_reuse,
+            MAX(c.cosine_max) AS cosine_max,
+            AVG(c.cosine_max) AS avg_cosine_max,
+            AVG(c.cosine_avg) AS avg_cosine_avg,
+            SUM(c.n_words) AS n_words,
+            SUM(c.n_bigrams) AS n_bigrams,
+            SUM(c.n_trigrams) AS n_trigrams 
+    FROM PaperAuthorUnique a
+    INNER JOIN (
+        SELECT AuthorId
+        FROM current_authors
+    ) USING(AuthorId)
+    INNER JOIN (
+        SELECT PaperId, AuthorId
+        FROM (
+            SELECT PaperId, AuthorId, AuthorSequenceNumber,
+                   ROW_NUMBER() OVER (PARTITION BY PaperId ORDER BY AuthorSequenceNumber DESC) as rn
+            FROM PaperAuthorAffiliations
+        ) ranked
+        WHERE rn = 1
+    ) e USING(AuthorId, PaperId)
+    INNER JOIN (
+        SELECT PaperId, Year
+        FROM Papers 
+        WHERE 
+            DocType IN ({insert_questionmark_doctypes}) 
+            AND 
+            DocType IS NOT NULL 
+    ) d USING (PaperId)
+    INNER JOIN paper_outcomes b USING(PaperId) 
+    LEFT JOIN novelty_reuse c USING(PaperId)
+    GROUP BY a.AuthorId, d.Year
+""",
+keep_doctypes
+)
+
+con.execute("CREATE UNIQUE INDEX idx_aol_AuthorIdYear on author_output_lastauthor (AuthorId ASC, Year)")
+
 con.execute("""
     CREATE TABLE author_output AS 
     SELECT a.AuthorId, a.Year
@@ -362,6 +414,9 @@ con.execute("""
         , b.PaperCount AS PaperCount_firstauthor
         , b.TotalAuthorCount AS TotalAuthorCount_firstauthor
         , b.TotalForwardCitations AS TotalForwardCitations_firstauthor
+        , c.PaperCount AS PaperCount_lastauthor
+        , c.TotalAuthorCount AS TotalAuthorCount_lastauthor
+        , c.TotalForwardCitations AS TotalForwardCitations_lastauthor
         , a.new_word 
         , a.new_word_reuse
         , a.new_bigram
@@ -390,10 +445,24 @@ con.execute("""
         , b.n_words AS n_words_firstauthor
         , b.n_bigrams AS n_bigrams_firstauthor
         , b.n_trigrams AS n_trigrams_firstauthor
+        , c.new_word AS new_word_lastauthor 
+        , c.new_word_reuse AS new_word_reuse_lastauthor
+        , c.new_bigram AS new_bigram_lastauthor
+        , c.new_bigram_reuse AS new_bigram_reuse_lastauthor
+        , c.new_trigram AS new_trigram_lastauthor
+        , c.new_trigram_reuse AS new_trigram_reuse_lastauthor
+        , c.new_word_comb AS new_word_comb_lastauthor
+        , c.new_word_comb_reuse AS new_word_comb_reuse_lastauthor
+        , c.cosine_max AS cosine_max_lastauthor
+        , c.avg_cosine_max AS avg_cosine_max_lastauthor
+        , c.avg_cosine_avg AS avg_cosine_avg_lastauthor
+        , c.n_words AS n_words_lastauthor
+        , c.n_bigrams AS n_bigrams_lastauthor
+        , c.n_trigrams AS n_trigrams_lastauthor
     FROM author_output_total AS a
-    LEFT JOIN author_output_firstauthor as B
-    USING(AuthorId, Year)
-    """) # LEFT JOIN because there is years without first authorship, but any year with first authorship must be a year with any authorship.
+    LEFT JOIN author_output_firstauthor AS b USING(AuthorId, Year)
+    LEFT JOIN author_output_lastauthor AS c USING(AuthorId, Year)
+    """) # LEFT JOIN because there are years without first or last authorship, but any year with first or last authorship must be a year with any authorship.
 
 con.execute("CREATE UNIQUE INDEX idx_ao_AuthorIdYear on author_output (AuthorId ASC, Year)")
 

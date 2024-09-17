@@ -476,7 +476,7 @@ elif args.linking_type == "advisors" or args.linking_type == "grants":
         -- ## NOTE: use left join here as not all graduates have advisor (particularly pre-1980) and possibly also keywords
         LEFT JOIN (
             SELECT goid
-                , fields as keywords
+                , fields_lvl1 as keywords
             FROM pq_info_linking
         ) USING(goid) 
         INNER JOIN (

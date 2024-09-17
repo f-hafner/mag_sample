@@ -184,7 +184,7 @@ def main():
         args.n_cores = mp.cpu_count()
 
     if os.path.isdir(args.write_dir):
-        sys.exit("You specified an existing directory.")
+        sys.exit("You specified an existing directory: " + args.write_dir)
 
     # ## Setup
     start_time = time.time()    
