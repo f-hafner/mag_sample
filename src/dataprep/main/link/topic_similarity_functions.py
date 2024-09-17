@@ -6,14 +6,20 @@ import logging
 
 
 class QueryBuilder():
-    "Construct sql queries for similarity computations"
+    """Construct sql queries for similarity computations
+
+    Args:
+        max_level: maximum level for FieldsOfStudy for computing the concept
+        vectors
+    """
     def __init__(
         self, 
         degree_year_to_query,
         window_size, 
         field_to_query,
         qmarks_doctypes,
-        keep_doctypes):
+        keep_doctypes,
+        max_level):
 
         self.degree_year_to_query = degree_year_to_query
         self.window_size = window_size
@@ -24,7 +30,8 @@ class QueryBuilder():
             WHERE Year <= {degree_year_to_query} + {window_size}
             AND Year >= {degree_year_to_query} - {window_size}
         """
-    
+        self.max_level = max_level
+   
     def query_affiliations(self):
         q = """
             SELECT AffiliationId
@@ -38,6 +45,15 @@ class QueryBuilder():
         """
         return q 
     
+    def query_fields_up_to_max_level(self):
+        q = f"""
+            SELECT FieldOfStudyId
+            FROM FieldsOfStudy
+            WHERE Level <= {self.max_level}
+            """
+        return q
+
+
     def query_affiliation_size(self, affiliation_ids_to_query):
         affiliation_ids_to_query = ", ".join(str(i) for i in affiliation_ids_to_query)
         q = f"""
@@ -72,7 +88,7 @@ class QueryBuilder():
             ) USING(goid)
         """
         return q 
-    
+   
     def query_topics_dissertation(self):
         q = f"""
             SELECT AuthorId, FieldOfStudyId, score AS Score
@@ -80,6 +96,9 @@ class QueryBuilder():
             INNER JOIN (
                 {self.query_graduates()}
             ) USING(goid)
+            INNER JOIN (
+                {self.query_fields_up_to_max_level()}
+            ) USING(FieldOfStudyId) 
         """
         return q 
 
@@ -104,6 +123,9 @@ class QueryBuilder():
             INNER JOIN (
                 SELECT PaperId, FieldOfStudyId, Score
                 FROM PaperFieldsOfStudy
+                INNER JOIN (
+                    {self.query_fields_up_to_max_level()}
+                ) USING(FieldOfStudyId)
             ) d
             USING(PaperId)
             WHERE Year <= degree_year + {self.window_size}
@@ -158,7 +180,6 @@ class QueryBuilder():
         """
         return q 
     
-
     def query_collaborators_topics(self, author_ids_to_query):
         author_ids_to_query = ", ".join(str(i) for i in author_ids_to_query)
         q = f"""
@@ -175,6 +196,9 @@ class QueryBuilder():
             WHERE FieldClass = 'main'
         ) c
         USING(AuthorId)
+        INNER JOIN (
+            {self.query_fields_up_to_max_level()}
+        ) USING(FieldOfStudyId)
         {self.year_restriction}
         AND AuthorId IN ({author_ids_to_query})
         """
