@@ -195,7 +195,7 @@ def get_similarities(data):
 
 def main():
     args = parse_args()
-    write_url = Path(args.write_dir, args.max_level) 
+    write_url = Path(args.write_dir, f"maxlevel-{args.max_level}") 
 
     if args.n_cores > mp.cpu_count():
         print("Specified too many cpu cores.")
@@ -238,7 +238,7 @@ def main():
     con.close()
 
     inputs = itertools.product(
-        [db_file], write_url, years, fields, [args.top_n_authors], [args.max_level], [args.window_size]
+        [db_file], str(write_url), years, fields, [args.top_n_authors], [args.max_level], [args.window_size]
         )
 
     enumerated_inputs = enumerated_arguments(inputs, limit=args.limit)
