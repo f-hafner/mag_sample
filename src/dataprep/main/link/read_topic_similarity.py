@@ -79,8 +79,8 @@ file_map = {
 }
 
 
-for id, params in file_map.items():
-    subprocess.run(f"tail -n +2 -q {args.read_dir}/{id}-maxlevel-*-part-*.csv >> {params['fn_full']}", shell=True)
+for name, params in file_map.items():
+    subprocess.run(f"tail -n +2 -q {args.read_dir}/maxlevel-*/{name}-part-*.csv >> {params['fn_full']}", shell=True)
     with con as c:
          c.execute(f"DROP TABLE IF EXISTS {params['tbl']}")
          c.execute(f"CREATE TABLE {params['tbl']} {params['schema']}")
