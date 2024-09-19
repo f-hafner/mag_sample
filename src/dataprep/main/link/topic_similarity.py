@@ -33,7 +33,7 @@ import warnings
 import main.link.topic_similarity_functions as tsf
 
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 
 # ## Arguments
 
@@ -64,7 +64,7 @@ def parse_args():
                         type=int,
                         default=5,
                         help="Use fields of study up to this level (included) for computing the conept vectors")
-    parser.add_argument('--no-parallel', action=argparse.BooleanOptionalAction, dest="noparallel")
+    parser.add_argument('--parallel', action=argparse.BooleanOptionalAction, dest="parallel")
     args = parser.parse_args()
     return args
 
@@ -96,7 +96,6 @@ def get_similarities(data):
     window_size: int
     """
     chunk_id, dbfile, write_dir, degree_year, field, keep_top_n_authors, max_level, window_size = data 
-
     con = sqlite.connect(database = "file:" + dbfile + "?mode=ro", 
                          isolation_level=None, 
                          uri=True) # read-only connection 
@@ -196,6 +195,7 @@ def get_similarities(data):
 def main():
     args = parse_args()
     write_url = Path(args.write_dir, f"maxlevel-{args.max_level}") 
+    logging.debug(f"{write_url=}")
 
     if args.n_cores > mp.cpu_count():
         print("Specified too many cpu cores.")
@@ -236,15 +236,17 @@ def main():
     years = con.execute(q_years).fetchall()
     years = [y[0] for y in years]
     con.close()
+    
 
     inputs = itertools.product(
-        [db_file], str(write_url), years, fields, [args.top_n_authors], [args.max_level], [args.window_size]
+        [db_file], [f"{str(write_url)}/"], years, fields, [args.top_n_authors], [args.max_level], [args.window_size]
         )
 
     enumerated_inputs = enumerated_arguments(inputs, limit=args.limit)
+    #logging.debug(f"{list(enumerated_inputs)=}")
     ctx = mp.get_context("forkserver")
     logging.info("Running queries")
-    if args.noparallel:
+    if not args.parallel:
         inputs = (0, db_file, write_url, 2005, 162324750, args.top_n_authors, args.max_level, args.window_size)
         get_similarities(inputs)
     else:
