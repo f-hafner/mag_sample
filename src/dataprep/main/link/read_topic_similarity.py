@@ -19,6 +19,7 @@ import time
 import os 
 import shutil
 import logging 
+from tqdm import tqdm
 
 from helpers.functions import analyze_db
 from helpers.variables import db_file 
@@ -79,7 +80,7 @@ file_map = {
 }
 
 
-for name, params in file_map.items():
+for name, params in tqdm(file_map.items()):
     subprocess.run(f"tail -n +2 -q {args.read_dir}/maxlevel-*/{name}-part-*.csv >> {params['fn_full']}", shell=True)
     with con as c:
          c.execute(f"DROP TABLE IF EXISTS {params['tbl']}")
