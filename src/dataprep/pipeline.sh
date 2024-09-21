@@ -172,6 +172,7 @@ for max_level in {2..5}; do
         --window_size 5 \
         --ncores 12 \
         --max_level $max_level \
+	--parallel \
         &> "$logfile_path/topic_similarity_max_level_${max_level}.log"
 done
 
