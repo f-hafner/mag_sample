@@ -33,7 +33,7 @@ import warnings
 import main.link.topic_similarity_functions as tsf
 
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
 
 # ## Arguments
 
