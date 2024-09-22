@@ -206,10 +206,6 @@ class QueryBuilder():
     
     def query_affiliation_topics(self):
 
-        year_restriction = f"""
-            WHERE a.Year <= {self.degree_year_to_query} + {self.window_size}
-            AND a.Year >= {self.degree_year_to_query} - {self.window_size}
-        """
         q = f"""
             SELECT a.AffiliationId
                 , a.Field0
@@ -230,7 +226,7 @@ class QueryBuilder():
             ON a.AffiliationId = c.AffiliationId
                 AND a.Year = c.Year
                 AND a.Field0 = c.Field0
-                {year_restriction}
+                {self.year_restriction}
                 AND a.Field0 = {self.field_to_query}
         """
         return q 
