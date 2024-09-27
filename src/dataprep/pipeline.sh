@@ -185,9 +185,10 @@ python -m  $script_path.link.read_topic_similarity \
 # ## 5. Link NSF grants to MAG advisors
 bash $script_path/link/grants.sh $logfile_path
 
-# XXX adapt for grants - use mona train
-#python -m $script_path.link.write_csv_links --linking_type "advisors" --train_name "christoph_degree0" \
-#    &> $logfile_path/write_csv_links_advisors.log
+# XXX adapt for grants: links ScisciNet (nsf) to mag
+
+Rscript $script_path.prep_nsf.link_scinetnsf_to_mag.R &> \
+   &> $logfile_path/write_csv_links_grants.log
     
 Rscript -e "rmarkdown::render('$script_path/reports/quality_linking_grants.Rmd', output_dir = '$output_path')" \
     &> $logfile_path/quality_linking_grants.log
