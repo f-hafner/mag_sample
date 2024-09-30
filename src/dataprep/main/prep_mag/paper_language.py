@@ -1,3 +1,17 @@
+"""Detect the language of papers.
+
+Use fasttext language model to detect language. Process papers in parallel with
+multiprocessing. Each child queries the database for a set of of papers,
+loads them into memory and runs the language model on them.
+
+The `Manager` is used to shared state between child processes.
+This is necessary because we cannot have multiple processes writing to the 
+database simultaneously. So, instead of each child writing to the database, 
+they return the processed data to a queue. The main process
+reads from the queue and writes to the items from the queue to the database.
+"""
+
+
 import fasttext
 import os
 import sqlite3 as sqlite
@@ -43,6 +57,7 @@ def process_batch(papers):
     return results
 
 def db_worker(queue, db_file):
+    "Write from a queue into the database"
     con = sqlite.connect(database=db_file, isolation_level=None)
     cur = con.cursor()
     while True:
@@ -56,12 +71,17 @@ def db_worker(queue, db_file):
             continue
     con.close()
 
-def parse_args():
-    parser = argparse.ArgumentParser(description="Detect language of paper titles")
-    parser.add_argument("--test", action="store_true", help="Run in test mode with 10,000 papers")
-    return parser.parse_args()
-
 def process_chunk(start, end):
+    """Read a chunk of papers from the database and pass them to `process_batch`.
+
+    Args:
+        start: start row index to read from the database table.
+        end: end row index to read from the database table.
+
+    Returns:
+        results of `process_batch`
+
+    """
     con = sqlite.connect(database=db_file, isolation_level=None)
     cur = con.cursor()
     cur.execute(f"""
@@ -72,6 +92,11 @@ def process_chunk(start, end):
     papers = cur.fetchall()
     con.close()
     return process_batch(papers)
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Detect language of paper titles")
+    parser.add_argument("--test", action="store_true", help="Run in test mode with 10,000 papers")
+    return parser.parse_args()
 
 def main():
     args = parse_args()
@@ -181,7 +206,8 @@ def main():
         if missing_papers == 0:
             print("✓ All PaperIds in paper_language table exist in Papers table.")
         else:
-            print(f"⚠ Warning: Found {missing_papers} PaperIds in paper_language that don't exist in Papers table.")
+            msg= f"Found {missing_papers} PaperIds in paper_language that don't exist in Papers table."
+            raise RuntimeError(msg)
 
     # Create an index on PaperId for the paper_language table
     print("Creating index on PaperId for paper_language table...")
