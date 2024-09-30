@@ -23,26 +23,31 @@ from helpers.variables import db_file, insert_questionmark_doctypes, keep_doctyp
 from multiprocessing import Pool, cpu_count, Process, Queue
 from queue import Empty
 
+# Global variable for the FastText model
+model = None
+
 def get_project_root():
     """Return the path to the project root directory."""
     return os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
 
-# Set up the model path in the "data" directory
-data_dir = os.path.join(get_project_root(), 'data')
-model_path = os.path.join(data_dir, 'lid.176.ftz')
+def setup_fasttext_model():
+    """Set up the FastText model."""
+    global model
+    data_dir = os.path.join(get_project_root(), 'data')
+    model_path = os.path.join(data_dir, 'lid.176.ftz')
 
-# Create the data directory if it doesn't exist
-os.makedirs(data_dir, exist_ok=True)
+    # Create the data directory if it doesn't exist
+    os.makedirs(data_dir, exist_ok=True)
 
-print(f"Model path: {model_path}")
+    print(f"Model path: {model_path}")
 
-# Download the model if it doesn't exist
-if not os.path.exists(model_path):
-    print("Downloading FastText language identification model...")
-    os.system(f'wget https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.ftz -O {model_path}')
+    # Download the model if it doesn't exist
+    if not os.path.exists(model_path):
+        print("Downloading FastText language identification model...")
+        os.system(f'wget https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.ftz -O {model_path}')
 
-# Load the FastText model
-model = fasttext.load_model(model_path)
+    # Load the FastText model
+    model = fasttext.load_model(model_path)
 
 def detect_language(text):
     """
@@ -107,12 +112,15 @@ def process_chunk(paper_ids):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Detect language of paper titles")
-    parser.add_argument("--test", action="store_true", help="Run in test mode with 10,000 papers")
+    parser.add_argument("--test", action="store_true", help="Run in test mode with 100,000 papers")
     return parser.parse_args()
 
 def main():
     args = parse_args()
     
+    # Set up the FastText model
+    setup_fasttext_model()
+
     # Connect to MAG db
     con = sqlite.connect(database=db_file, isolation_level=None)
     cur = con.cursor()
@@ -129,7 +137,7 @@ def main():
 
     # Get total number of papers
     if args.test:
-        total_papers = 10000
+        total_papers = 100000
     else:
         cur.execute("SELECT COUNT(*) FROM Papers")
         total_papers = cur.fetchone()[0]
@@ -139,14 +147,14 @@ def main():
 
     # Load PaperIds
     if args.test:
-        cur.execute("SELECT PaperId FROM Papers LIMIT 10000")
+        cur.execute("SELECT PaperId FROM Papers LIMIT 100000")
     else:
         cur.execute("SELECT PaperId FROM Papers")
     all_paper_ids = [row[0] for row in cur.fetchall()]
 
     # Calculate chunk size and prepare chunks
     total_ids = len(all_paper_ids)
-    chunk_size = -(-total_ids // num_processes)  # Ceiling division
+    chunk_size = min(25000, -(-total_ids // num_processes))  # Ceiling division, limited to 25000
     chunks = [all_paper_ids[i:i + chunk_size] for i in range(0, total_ids, chunk_size)]
 
     start_time = time.time()
