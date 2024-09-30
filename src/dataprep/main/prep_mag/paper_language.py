@@ -185,7 +185,7 @@ def main():
 
     # Create an index on PaperId for the paper_language table
     print("Creating index on PaperId for paper_language table...")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_paper_language_paperid ON paper_language (PaperId)")
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_paper_language_paperid ON paper_language (PaperId)")
     print("Index created successfully.")
 
     con.close()
