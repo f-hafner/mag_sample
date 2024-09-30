@@ -20,14 +20,26 @@ import pandas as pd
 import argparse
 from helpers.functions import print_elapsed_time, analyze_db
 from helpers.variables import db_file, insert_questionmark_doctypes, keep_doctypes
-from multiprocessing import Pool, cpu_count, Manager, Process
+from multiprocessing import Pool, cpu_count, Process, Queue
 from queue import Empty
 
+def get_project_root():
+    """Return the path to the project root directory."""
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
+
+# Set up the model path in the "data" directory
+data_dir = os.path.join(get_project_root(), 'data')
+model_path = os.path.join(data_dir, 'lid.176.ftz')
+
+# Create the data directory if it doesn't exist
+os.makedirs(data_dir, exist_ok=True)
+
+print(f"Model path: {model_path}")
+
 # Download the model if it doesn't exist
-model_path = os.path.join(os.path.dirname(__file__), 'lid.176.ftz')
 if not os.path.exists(model_path):
     print("Downloading FastText language identification model...")
-    os.system('wget https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.ftz -O ' + model_path)
+    os.system(f'wget https://dl.fbaipublicfiles.com/fasttext/supervised-models/lid.176.ftz -O {model_path}')
 
 # Load the FastText model
 model = fasttext.load_model(model_path)
@@ -71,12 +83,11 @@ def db_worker(queue, db_file):
             continue
     con.close()
 
-def process_chunk(start, end):
-    """Read a chunk of papers from the database and pass them to `process_batch`.
+def process_chunk(paper_ids):
+    """Read titles for a chunk of papers from the database and pass them to `process_batch`.
 
     Args:
-        start: start row index to read from the database table.
-        end: end row index to read from the database table.
+        paper_ids: List of PaperIds to process.
 
     Returns:
         results of `process_batch`
@@ -84,11 +95,12 @@ def process_chunk(start, end):
     """
     con = sqlite.connect(database=db_file, isolation_level=None)
     cur = con.cursor()
+    placeholders = ','.join('?' for _ in paper_ids)
     cur.execute(f"""
         SELECT PaperId, OriginalTitle
         FROM Papers
-        LIMIT {end - start} OFFSET {start}
-    """)
+        WHERE PaperId IN ({placeholders})
+    """, paper_ids)
     papers = cur.fetchall()
     con.close()
     return process_batch(papers)
@@ -125,47 +137,46 @@ def main():
     # Determine the number of processes to use
     num_processes = cpu_count()
 
-    # Calculate chunk size based on total papers and number of processes
-    chunk_size = total_papers // num_processes
+    # Load PaperIds
     if args.test:
-        chunk_size = min(1000, chunk_size)
+        cur.execute("SELECT PaperId FROM Papers LIMIT 10000")
+    else:
+        cur.execute("SELECT PaperId FROM Papers")
+    all_paper_ids = [row[0] for row in cur.fetchall()]
+
+    # Calculate chunk size and prepare chunks
+    total_ids = len(all_paper_ids)
+    chunk_size = -(-total_ids // num_processes)  # Ceiling division
+    chunks = [all_paper_ids[i:i + chunk_size] for i in range(0, total_ids, chunk_size)]
 
     start_time = time.time()
 
-    # Create a manager for shared objects
-    with Manager() as manager:
-        # Create a queue for database operations
-        db_queue = manager.Queue()
+    # Create a queue for database operations
+    db_queue = Queue()
 
-        # Start the database worker process
-        db_process = Process(target=db_worker, args=(db_queue, db_file))
-        db_process.start()
+    # Start the database worker process
+    db_process = Process(target=db_worker, args=(db_queue, db_file))
+    db_process.start()
 
-        with Pool(processes=num_processes) as pool:
-            # Prepare arguments for each process
-            process_args = []
-            for i in range(num_processes):
-                start = i * chunk_size
-                end = start + chunk_size if i < num_processes - 1 else total_papers
-                process_args.append((start, end))
+    with Pool(processes=num_processes) as pool:
+        # Process papers in parallel
+        results = pool.imap_unordered(process_chunk, chunks)
 
-            # Process papers in parallel
-            results = pool.starmap(process_chunk, process_args)
-
-            # Put results in the queue
-            for batch_result in results:
-                db_queue.put(batch_result)
-
-            # Print progress
-            processed_papers = sum(len(batch) for batch in results)
+        # Put results in the queue and track progress
+        processed_papers = 0
+        for batch_result in results:
+            db_queue.put(batch_result)
+            processed_papers += len(batch_result)
             progress = processed_papers / total_papers * 100
             elapsed_time = time.time() - start_time
-            print(f"Progress: {progress:.2f}% ({processed_papers}/{total_papers}) - "
-                  f"Elapsed time: {elapsed_time:.2f} seconds")
+            print(f"\rProgress: {progress:.2f}% ({processed_papers}/{total_papers}) - "
+                  f"Elapsed time: {elapsed_time:.2f} seconds", end="", flush=True)
 
-        # Signal the database worker to finish
-        db_queue.put("DONE")
-        db_process.join()
+    print()  # New line after progress
+
+    # Signal the database worker to finish
+    db_queue.put("DONE")
+    db_process.join()
 
     print("Language detection completed.")
     print_elapsed_time(start_time)
