@@ -26,6 +26,9 @@ from queue import Empty
 # Global variable for the FastText model
 model = None
 
+# New queue for acknowledgments
+ack_queue = Queue()
+
 def get_project_root():
     """Return the path to the project root directory."""
     return os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..'))
@@ -73,7 +76,7 @@ def process_batch(papers):
             print(f"Error processing paper {paper_id}: {e}")
     return results
 
-def db_worker(queue, db_file):
+def db_worker(queue, db_file, ack_queue):
     "Write from a queue into the database"
     con = sqlite.connect(database=db_file, isolation_level=None)
     cur = con.cursor()
@@ -84,6 +87,7 @@ def db_worker(queue, db_file):
                 break
             cur.executemany("INSERT INTO paper_language (PaperId, language, score) VALUES (?, ?, ?)", results)
             con.commit()
+            ack_queue.put("ACK")  # Send acknowledgment
         except Empty:
             continue
     con.close()
@@ -163,7 +167,7 @@ def main():
     db_queue = Queue()
 
     # Start the database worker process
-    db_process = Process(target=db_worker, args=(db_queue, db_file))
+    db_process = Process(target=db_worker, args=(db_queue, db_file, ack_queue))
     db_process.start()
 
     with Pool(processes=num_processes) as pool:
@@ -174,6 +178,7 @@ def main():
         processed_papers = 0
         for batch_result in results:
             db_queue.put(batch_result)
+            ack_queue.get()  # Wait for acknowledgment
             processed_papers += len(batch_result)
             progress = processed_papers / total_papers * 100
             elapsed_time = time.time() - start_time
