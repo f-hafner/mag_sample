@@ -260,6 +260,14 @@ print_elapsed_time(start_time)
 # ## (5) author_output
 print("Making author_output... \n", flush = True)
 
+con.execute("""
+    CREATE TEMP TABLE main_family_papers AS
+    SELECT PaperId
+    FROM Papers
+    WHERE PaperId = FamilyId OR FamilyId IS NULL
+""")
+con.execute("CREATE UNIQUE INDEX idx_mfp_PaperId ON main_family_papers (PaperId)")
+
 con.execute(f"""
     CREATE TEMP TABLE author_output_total AS 
     SELECT  a.AuthorId,
@@ -296,6 +304,94 @@ con.execute(f"""
     ) d USING (PaperId)
     INNER JOIN paper_outcomes b USING(PaperId) 
     LEFT JOIN novelty_reuse c USING(PaperId)
+    GROUP BY a.AuthorId, d.Year
+""",
+keep_doctypes
+)
+
+con.execute(f"""
+    CREATE TEMP TABLE author_output_mainpaper AS 
+    SELECT  a.AuthorId,
+            d.Year,
+            COUNT(a.PaperId) AS PaperCount,
+            SUM(b.AuthorCount) AS TotalAuthorCount,
+            SUM(b.CitationCount_y10) AS TotalForwardCitations,
+            SUM(c.new_word) AS new_word,
+            SUM(c.new_word_reuse) AS new_word_reuse,
+            SUM(c.new_bigram) AS new_bigram,
+            SUM(c.new_bigram_reuse) AS new_bigram_reuse,
+            SUM(c.new_trigram) AS new_trigram,
+            SUM(c.new_trigram_reuse) AS new_trigram_reuse,
+            SUM(c.new_word_comb) AS new_word_comb,
+            SUM(c.new_word_comb_reuse) AS new_word_comb_reuse,
+            MAX(c.cosine_max) AS cosine_max,
+            AVG(c.cosine_max) AS avg_cosine_max,
+            AVG(c.cosine_avg) AS avg_cosine_avg,
+            SUM(c.n_words) AS n_words,
+            SUM(c.n_bigrams) AS n_bigrams,
+            SUM(c.n_trigrams) AS n_trigrams    
+    FROM PaperAuthorUnique a
+    INNER JOIN (
+        SELECT AuthorId
+        FROM current_authors
+    ) USING(AuthorId)
+    INNER JOIN (
+        SELECT PaperId, Year
+        FROM Papers 
+        WHERE 
+            DocType IN ({insert_questionmark_doctypes}) 
+            AND 
+            DocType IS NOT NULL 
+    ) d USING (PaperId)
+    INNER JOIN paper_outcomes b USING(PaperId) 
+    LEFT JOIN novelty_reuse c USING(PaperId)
+    INNER JOIN main_family_papers e USING(PaperId)
+    GROUP BY a.AuthorId, d.Year
+""",
+keep_doctypes
+)
+
+con.execute("CREATE UNIQUE INDEX idx_aomp_AuthorIdYear on author_output_mainpaper (AuthorId ASC, Year)")
+
+print("Making author_output for English papers... \n", flush = True)
+
+con.execute(f"""
+    CREATE TEMP TABLE author_output_total_english AS 
+    SELECT  a.AuthorId,
+            d.Year,
+            COUNT(a.PaperId) AS PaperCount_english,
+            SUM(b.AuthorCount) AS TotalAuthorCount_english,
+            SUM(b.CitationCount_y10) AS TotalForwardCitations_english,
+            SUM(c.new_word) AS new_word_english,
+            SUM(c.new_word_reuse) AS new_word_reuse_english,
+            SUM(c.new_bigram) AS new_bigram_english,
+            SUM(c.new_bigram_reuse) AS new_bigram_reuse_english,
+            SUM(c.new_trigram) AS new_trigram_english,
+            SUM(c.new_trigram_reuse) AS new_trigram_reuse_english,
+            SUM(c.new_word_comb) AS new_word_comb_english,
+            SUM(c.new_word_comb_reuse) AS new_word_comb_reuse_english,
+            MAX(c.cosine_max) AS cosine_max_english,
+            AVG(c.cosine_max) AS avg_cosine_max_english,
+            AVG(c.cosine_avg) AS avg_cosine_avg_english,
+            SUM(c.n_words) AS n_words_english,
+            SUM(c.n_bigrams) AS n_bigrams_english,
+            SUM(c.n_trigrams) AS n_trigrams_english    
+    FROM PaperAuthorUnique a
+    INNER JOIN (
+        SELECT AuthorId
+        FROM current_authors
+    ) USING(AuthorId)
+    INNER JOIN (
+        SELECT PaperId, Year
+        FROM Papers 
+        WHERE 
+            DocType IN ({insert_questionmark_doctypes}) 
+            AND 
+            DocType IS NOT NULL 
+    ) d USING (PaperId)
+    INNER JOIN paper_outcomes b USING(PaperId) 
+    LEFT JOIN novelty_reuse c USING(PaperId)
+    INNER JOIN paper_language e ON a.PaperId = e.PaperId AND e.language = 'en'
     GROUP BY a.AuthorId, d.Year
 """,
 keep_doctypes
@@ -390,8 +486,46 @@ con.execute("""
         , b.n_words AS n_words_firstauthor
         , b.n_bigrams AS n_bigrams_firstauthor
         , b.n_trigrams AS n_trigrams_firstauthor
+        , c.PaperCount_english
+        , c.TotalAuthorCount_english
+        , c.TotalForwardCitations_english
+        , c.new_word_english
+        , c.new_word_reuse_english
+        , c.new_bigram_english
+        , c.new_bigram_reuse_english
+        , c.new_trigram_english
+        , c.new_trigram_reuse_english
+        , c.new_word_comb_english
+        , c.new_word_comb_reuse_english
+        , c.cosine_max_english
+        , c.avg_cosine_max_english
+        , c.avg_cosine_avg_english
+        , c.n_words_english
+        , c.n_bigrams_english
+        , c.n_trigrams_english
+        , d.PaperCount AS PaperCount_mainpaper
+        , d.TotalAuthorCount AS TotalAuthorCount_mainpaper
+        , d.TotalForwardCitations AS TotalForwardCitations_mainpaper
+        , d.new_word AS new_word_mainpaper
+        , d.new_word_reuse AS new_word_reuse_mainpaper
+        , d.new_bigram AS new_bigram_mainpaper
+        , d.new_bigram_reuse AS new_bigram_reuse_mainpaper
+        , d.new_trigram AS new_trigram_mainpaper
+        , d.new_trigram_reuse AS new_trigram_reuse_mainpaper
+        , d.new_word_comb AS new_word_comb_mainpaper
+        , d.new_word_comb_reuse AS new_word_comb_reuse_mainpaper
+        , d.cosine_max AS cosine_max_mainpaper
+        , d.avg_cosine_max AS avg_cosine_max_mainpaper
+        , d.avg_cosine_avg AS avg_cosine_avg_mainpaper
+        , d.n_words AS n_words_mainpaper
+        , d.n_bigrams AS n_bigrams_mainpaper
+        , d.n_trigrams AS n_trigrams_mainpaper
     FROM author_output_total AS a
-    LEFT JOIN author_output_firstauthor as B
+    LEFT JOIN author_output_firstauthor AS b
+    USING(AuthorId, Year)
+    LEFT JOIN author_output_total_english AS c
+    USING(AuthorId, Year)
+    LEFT JOIN author_output_mainpaper AS d
     USING(AuthorId, Year)
     """) # LEFT JOIN because there is years without first authorship, but any year with first authorship must be a year with any authorship.
 

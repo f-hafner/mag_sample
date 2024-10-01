@@ -76,6 +76,8 @@ python -m $script_path.prep_mag.author_field0 \
 python3 -m $script_path.prep_mag.affiliation_outcomes --fos_max_level 0 \
     &> $logfile_path/affiliation_outcomes.log #note: script_path should omit the / at the end
 
+python -m $script_path.prep_mag.paper_language &> $logfile_path/paper_language.log
+
 
 # ## Consolidate gender per author in author_sample 
 python3 $script_path/prep_mag/author_gender.py &> $logfile_path/author_gender.log
