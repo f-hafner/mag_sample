@@ -1,4 +1,36 @@
-"""Prepare data and fit truncated SVD on subsample of papers"""
+"""Prepare data and fit truncated SVD on subsample of papers
+
+This script performs truncated SVD (Singular Value Decomposition) on a subsample of academic papers from a SQLite database.
+
+The script does the following:
+1. Prepares temporary tables in the database:
+   - 'fields_to_max_level': Contains FieldOfStudyIds up to a specified maximum level.
+   - 'valid_papers': Persistent table with papers matching specified criteria (year range and document types).
+   - 'selected_papers_svd': Temporary table with a random sample of papers for SVD analysis.
+
+2. Loads data for papers and their associated fields of study.
+3. Creates a sparse matrix representation of the paper-field relationships.
+4. Performs truncated SVD on this matrix.
+5. Saves the resulting SVD model to a file.
+
+Usage:
+python script_name.py [options]
+
+Options:
+--ndim INT           Number of dimensions for reduced concept vectors (default: 1024)
+--max-level INT      Maximum level of fields of study to use (default: 2)
+--start INT          Minimum publication year of papers to consider (default: 1980)
+--end INT            Maximum publication year of papers to consider (default: 2020)
+--dry-run            Run the script with a small subset of data for testing
+
+Constants:
+- SAMPLE_SIZE: number of papers to fit the SVD model on.  
+- MODEL_URL: location to save the model
+- RANDOM_SEED
+
+Note: The 'valid_papers' table is the only persistent table created by this script. 
+All other tables are temporary and will be deleted when the database connection is closed.
+"""
 
 import argparse
 import numpy as np 
