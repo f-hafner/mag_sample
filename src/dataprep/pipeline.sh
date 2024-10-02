@@ -182,6 +182,13 @@ python -m  $script_path.link.read_topic_similarity \
     --read_dir similarities_temp/ \
     &> $logfile_path/read_topic_similarity.log
 
+# ### Calculate reduced-dimension paper concepts
+python -m $sript_path.link.fit_svd_model \
+    --start 1980 \
+    --end 2020 \
+    --ndim 1024 \
+    --max-level 2 \
+    &> $logfile_path/fit_svd_model.log
 
 
 # ## 5. Link NSF grants to MAG advisors
