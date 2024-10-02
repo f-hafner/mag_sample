@@ -264,7 +264,7 @@ con.execute("""
     CREATE TEMP TABLE main_family_papers AS
     SELECT PaperId
     FROM Papers
-    WHERE PaperId = FamilyId OR FamilyId IS NULL
+    WHERE PaperId = FamilyId OR FamilyId IS NULL OR FamilyId=''
 """)
 con.execute("CREATE UNIQUE INDEX idx_mfp_PaperId ON main_family_papers (PaperId)")
 
@@ -343,9 +343,9 @@ con.execute(f"""
             AND 
             DocType IS NOT NULL 
     ) d USING (PaperId)
+    INNER JOIN main_family_papers e USING(PaperId)
     INNER JOIN paper_outcomes b USING(PaperId) 
     LEFT JOIN novelty_reuse c USING(PaperId)
-    INNER JOIN main_family_papers e USING(PaperId)
     GROUP BY a.AuthorId, d.Year
 """,
 keep_doctypes
@@ -389,9 +389,9 @@ con.execute(f"""
             AND 
             DocType IS NOT NULL 
     ) d USING (PaperId)
+    INNER JOIN paper_language e ON a.PaperId = e.PaperId AND e.language = 'en'
     INNER JOIN paper_outcomes b USING(PaperId) 
     LEFT JOIN novelty_reuse c USING(PaperId)
-    INNER JOIN paper_language e ON a.PaperId = e.PaperId AND e.language = 'en'
     GROUP BY a.AuthorId, d.Year
 """,
 keep_doctypes
