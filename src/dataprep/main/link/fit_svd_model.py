@@ -200,7 +200,7 @@ def load_data_for_svd(con):
     """
 
     papers_fields = pd.read_sql(sql_load_papers, con=con) 
-    fields_of_study = pd.read_sql("SELECT * FROM fields_to_max_level", con=con)
+    fields_of_study = pd.read_sql("SELECT * FROM fields_to_max_level ORDER BY FieldOfStudyId", con=con)
     
     return papers_fields, fields_of_study
 
