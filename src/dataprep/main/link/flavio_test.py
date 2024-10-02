@@ -18,6 +18,18 @@ pq_authors = con.table("pq_authors")
 pq_fields_mag = con.table("pq_fields_mag")
 pq_magfos = con.table("pq_magfos")
 
+author_affiliation = con.table("AuthorAffiliation")
+author_fields = con.table("author_fields")
+
+degree_year_to_query = 2001
+
+paper_author_unique = con.table("PaperAuthorUnique")
+papers = con.table("Papers")
+author_fields_detailed = con.table("author_fields_detailed")
+
+affiliation_fields = con.table("affiliation_fields")
+affiliation_outcomes = con.table("affiliation_outcomes")
+
 query_affiliations = (
     affiliations
     .join(
@@ -28,7 +40,7 @@ query_affiliations = (
         links_to_cng.from_dataset == "mag"
     )
     .select(
-        affiliations.AffiliationId
+        _.AffiliationId
     )
 )
 
@@ -50,7 +62,7 @@ query_graduates = (
         how="inner"
     )
     .filter(
-        pq_authors.degree_year == 2001
+        pq_authors.degree_year == degree_year_to_query
     )
     .join(
         pq_fields_mag
@@ -92,9 +104,143 @@ query_topics_dissertation = (
     )
 )
 
-topics_dissertation = query_topics_dissertation.execute() # this allows us to compute the first topic vector
+#topics_dissertation = query_topics_dissertation.execute() # this allows us to compute the first topic vector
 # need to extend it to "all" possible topics, and pivot_wide
 # in 2001, we have 686 concepts? 
+
+query_collaborators = (
+    author_affiliation
+    .join(
+        query_affiliations,
+        "AffiliationId",
+        how="inner"
+    )
+    .join(
+        author_fields
+        .filter(
+            [_.FieldClass == "main", _.FieldOfStudyId == field_to_query]
+        )
+        .select(
+            _.AuthorId
+        ),
+        "AuthorId",
+        how="inner"
+    ).
+    filter(
+        [_.Year <= degree_year_to_query + 5, # TODO: careful with years here!
+         _.Year >= degree_year_to_query - 5] 
+    )
+)
+
+query_author_papers = (
+    paper_author_unique
+    .join(
+        papers
+        .filter(
+            _.DocType == "Journal"
+        )
+        .select(
+            _.PaperId,
+            _.Year
+        ),
+        "PaperId",
+        how="inner"
+    )
+    .join(
+        query_collaborators
+        .select(_.AuthorId),
+        "AuthorId",
+        how="inner"
+    )
+    .filter(
+        [_.Year <= degree_year_to_query + 5,
+        _.Year >= degree_year_to_query - 5]
+    )
+    .select(
+        _.PaperId,
+        _.AuthorId,
+        _.Year
+    )
+)
+
+
+
+
+query_collaborators_topics = (
+    author_fields_detailed
+    .join(
+        author_fields
+        .filter(
+            _.FieldClass == "main"
+        )
+        .select(
+            _.AuthorId,
+            Field0 = _.FieldOfStudyId
+        ),
+        "AuthorId",
+        how="inner"
+    ).
+    join(
+        query_collaborators
+        .select(_.AuthorId),
+        "AuthorId",
+        how="inner"
+    )
+    .join(
+        query_fields_up_to_max_level,
+        "FieldOfStudyId",
+        how="inner"
+    )
+    .mutate(
+        Score = _.Score / _.PaperCount
+    )
+    .filter(
+        [_.Year <= degree_year_to_query + 5,
+         _.Year >= degree_year_to_query - 5]
+    )
+    .select(
+        _.AuthorId,
+        _.FieldOfStudyId,
+        _.Year,
+        _.Field0,
+        _.PaperCount,
+        _.Score
+    )
+)
+
+
+query_affiliation_topics = (
+        affiliation_fields
+        .join(
+            affiliation_outcomes
+            .select(
+                _.AffiliationId,
+                _.Field0,
+                _.Year,
+                _.PaperCount
+            ),
+            ["AffiliationId", "Year", "Field0",
+             affiliation_fields.Field0 == field_to_query,
+             affiliation_outcomes.Year <= degree_year_to_query + 5,
+             affiliation_outcomes.Year >= degree_year_to_query - 5],
+            how="inner"
+        )
+        .join(
+            query_affiliations,
+            "AffiliationId",
+            how="inner"
+        )
+        .select(
+            _.AffiliationId,
+            _.Field0,
+            _.Year,
+            _.FieldOfStudyId,
+            Score = _.Score / _.PaperCount
+        )
+)
+
+## need a reference: each FieldOfStudyId, each AffiliationId, each period (pre/post)
+# focus on pre for now?
 
 
 
