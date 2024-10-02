@@ -1,9 +1,8 @@
 """Prepare data and fit truncated SVD on subsample of papers"""
 
-
+import argparse
 import numpy as np 
 import sqlite3 as sqlite
-import numpy as np      
 import pandas as pd 
 from pickle import dump
 import logging
@@ -13,25 +12,14 @@ from sklearn.decomposition import TruncatedSVD
 from helpers.variables import db_file, insert_questionmark_doctypes, keep_doctypes
 
 
-# TODO: valid_papers: should be persistent? -> for running the model later on
+# TODO: double check hyperparams with Christoph
 
 logging.basicConfig(level=logging.INFO)
 
 
-N_DIM = 1024
 SAMPLE_SIZE = 1_000_000
-DRY_RUN = True
 MODEL_URL = "/mnt/ssd/AcademicGraph/svd_model"
-
-
 RANDOM_SEED = 583523592352
-sample_size = 1_000_000
-
-# TODO: is this correct? -- doublecheck with Christoph
-max_level = 2
-start_year = 1980
-end_year = 2020
-
 
 
 def make_sparse(long_df, field_to_index, rows="AffiliationId", cols="FieldOfStudyId", value_col="score"): 
@@ -71,18 +59,29 @@ def make_sparse(long_df, field_to_index, rows="AffiliationId", cols="FieldOfStud
     return out, row_to_index
 
 
-def run_svd(in_matrix, n_components=50):
+def run_svd(in_matrix, n_components=50, svd=None):
     """Compute truncated SVD on `in_matrix`
 
     Args:
         in_matrix: matrix where rows are samples and columns are features.
         n_components: dimension of the reduced feature space.
+        svd (optional): sklearn.decomposition.TruncatedSVD. 
+
+    If `svd` is not supplied, a new instance is created with the specified parameters.
+    If `svd` is supplied, only `transform` is called on the input data.
 
     Returns:
         tuple: (svd model, embeddings in subspace)
     """
-    svd = TruncatedSVD(n_components=n_components, random_state=42) 
-    embs = svd.fit_transform(in_matrix)
+    fit = False
+    if not svd:
+        fit = True
+        svd = TruncatedSVD(n_components=n_components, random_state=RANDOM_SEED)
+    
+    if fit: 
+        embs = svd.fit_transform(in_matrix)
+    else:
+        embs = svd.transform(in_matrix)
     
     print(f"Original matrix shape: {in_matrix.shape}")
     print(f"Reduced matrix shape: {embs.shape}")
@@ -92,8 +91,9 @@ def run_svd(in_matrix, n_components=50):
 
 
 
-def prepare_tables(con):
+def prepare_tables(con, start_year, end_year, max_level, dry_run=False):
     "Prepare temp tables for loading papers and fields"
+    
     logging.info("making fields_to_max_level")
     con.execute(
             """CREATE TEMP TABLE fields_to_max_level AS
@@ -115,7 +115,7 @@ def prepare_tables(con):
         AND Year <= (?)
         AND DocType IN ({insert_questionmark_doctypes})"""
     
-    if DRY_RUN:
+    if dry_run:
         sql_valid_papers += " LIMIT 1000"
 
 
@@ -124,19 +124,18 @@ def prepare_tables(con):
     con.execute(sql_valid_papers, (start_year, end_year, *keep_doctypes))
 
 
-def sample_papers(con):
+def sample_papers(con, dry_run=False):
     "Sample papers and write to database"
     
     generator = np.random.default_rng(RANDOM_SEED)
-    
     all_papers = pd.read_sql("SELECT PaperId FROM valid_papers", con=con) 
 
-    if DRY_RUN:
+    if dry_run:
         subsample = all_papers.sample(n=500, random_state=generator)
     else:
         subsample = all_papers.sample(n=SAMPLE_SIZE, random_state=generator)
 
-    logging.info("writing sampled papers")
+    logging.info("Writing sampled papers")
 
     cursor = con.cursor()
     data_to_insert = [(x,) for x in subsample["PaperId"].values]
@@ -149,7 +148,7 @@ def sample_papers(con):
     con.commit()
 
 
-def load_data(con):
+def load_data_for_svd(con):
     """Load data for SVD decomposition
         
     Returns:
@@ -168,26 +167,49 @@ def load_data(con):
     """
 
     papers_fields = pd.read_sql(sql_load_papers, con=con) 
-    fields_of_study = pd.read_sql("select * from fields_to_max_level", con=con)
+    fields_of_study = pd.read_sql("SELECT * FROM fields_to_max_level", con=con)
     
     return papers_fields, fields_of_study
 
 
-def main():
-    
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description = 'Run truncated SVD on subset of papers')
+    parser.add_argument("--ndim", type=int, default=1024,
+                        help="Number of dimension for reduced concept vectors")
+
+    parser.add_argument("--max-level", type=int, default=2, dest="max_level",
+                        help="Maximum level of fields of study and respective scores to use")
+
+    parser.add_argument("--start", type=int, default=1980,
+                        help="Minimum publication year of papers to consider.")
+
+    parser.add_argument("--end", type=int, default=2020,
+                        help="Maximum publication year of papers to consider.")
+
+    parser.add_argument('--dry-run', action=argparse.BooleanOptionalAction, dest="dry_run")
+   
+    args = parser.parse_args()
+    return args
+
+
+
+def main(args):
+
     model_url = MODEL_URL
     sqlite.register_adapter(np.int64, lambda val: int(val))
-    con = sqlite.connect(database = db_file, isolation_level= None)
+ 
+    con = sqlite.connect(database=db_file, isolation_level=None)
 
-
-    prepare_tables(con)
+    prepare_tables(con, args.start, args.end, args.max_level, args.dry_run)
 
     logging.info("loading valid papers")
-    sample_papers(con) 
+    sample_papers(con, args.dry_run)
     
     
     logging.info("loading sampled papers and fields")
-    papers_fields, fields_of_study = load_data(con) 
+    papers_fields, fields_of_study = load_data_for_svd(con) 
     
     field_to_index = {id: index for index, id in enumerate(fields_of_study['FieldOfStudyId'].unique())}
    
@@ -195,12 +217,12 @@ def main():
     papers_fields_sparse, _ = make_sparse(
         papers_fields, field_to_index, "PaperId", "FieldOfStudyId", "Score")
     
-    svd, _  = run_svd(papers_fields_sparse, N_DIM)
+    svd, _  = run_svd(papers_fields_sparse, args.ndim)
     
    
     logging.info("saving model")
 
-    if DRY_RUN:
+    if args.dry_run:
         model_url += "_dry"
     
     with open(model_url + ".pkl", "wb") as f:
@@ -210,6 +232,7 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    main(args)
 
 
