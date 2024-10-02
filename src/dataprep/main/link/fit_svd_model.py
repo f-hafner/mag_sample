@@ -44,9 +44,6 @@ from sklearn.decomposition import TruncatedSVD
 from helpers.variables import db_file, insert_questionmark_doctypes, keep_doctypes
 
 
-# TODO: double check hyperparams with Christoph
-# TODO: duplicated paper topics?
-
 logging.basicConfig(level=logging.INFO)
 
 
