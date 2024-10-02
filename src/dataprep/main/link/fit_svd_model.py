@@ -13,13 +13,14 @@ from helpers.variables import db_file, insert_questionmark_doctypes, keep_doctyp
 
 
 # TODO: double check hyperparams with Christoph
+# TODO: duplicated paper topics?
 
 logging.basicConfig(level=logging.INFO)
 
 
 SAMPLE_SIZE = 1_000_000
 MODEL_URL = "/mnt/ssd/AcademicGraph/svd_model"
-RANDOM_SEED = 583523592352
+RANDOM_SEED = 58352
 
 
 def make_sparse(long_df, field_to_index, rows="AffiliationId", cols="FieldOfStudyId", value_col="score"): 
