@@ -185,7 +185,7 @@ python -m  $script_path.link.read_topic_similarity \
 # ### Calculate reduced-dimension paper concepts
 python -m $sript_path.link.fit_svd_model \
     --start 1980 \
-    --end 2020 \
+    --end 2022 \
     --ndim 1024 \
     --max-level 2 \
     &> $logfile_path/fit_svd_model.log
