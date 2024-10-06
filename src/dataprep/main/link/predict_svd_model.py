@@ -11,8 +11,7 @@ Options:
 --model-path STR     Path to the saved SVD model (default: "/mnt/ssd/AcademicGraph/svd_model.pkl")
 --batch-size INT     Number of papers to process in each batch (default: 100000)
 --max-level INT      Maximum level of fields of study to use (default: 2)
---start INT          Minimum publication year of papers to consider (default: 1980)
---end INT            Maximum publication year of papers to consider (default: 2020)
+--dry-run            Run the script with only 1 batch for testing
 """
 
 import argparse
@@ -21,13 +20,15 @@ import sqlite3 as sqlite
 import pandas as pd
 from pickle import load
 import logging
+import time
+import os
+import shutil
 from scipy.sparse import csr_matrix
-from tqdm import tqdm
 
 from helpers.variables import db_file, insert_questionmark_doctypes, keep_doctypes
-from fit_svd_model import make_sparse
+from main.link.fit_svd_model import make_sparse
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Apply SVD model to all Papers in the database')
@@ -37,13 +38,13 @@ def parse_args():
                         help="Number of papers to process in each batch")
     parser.add_argument("--max-level", type=int, default=2,
                         help="Maximum level of fields of study to use")
-    parser.add_argument("--start", type=int, default=1980,
-                        help="Minimum publication year of papers to consider")
-    parser.add_argument("--end", type=int, default=2020,
-                        help="Maximum publication year of papers to consider")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Run the script with only 1 batch for testing")
+    parser.add_argument("--output-dir", type=str, default="svd_temp",
+                        help="Directory to store output CSV files")
     return parser.parse_args()
 
-def prepare_tables(con, start_year, end_year, max_level):
+def prepare_tables(con, max_level, dry_run=False):
     "Prepare tables for loading papers and fields"
     
     logging.info("Creating fields_to_max_level table")
@@ -55,17 +56,6 @@ def prepare_tables(con, start_year, end_year, max_level):
         """, (max_level,)
     )
     con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_temp1 ON fields_to_max_level(FieldOfStudyId ASC)")
-
-    logging.info("Creating valid_papers table")
-    sql_valid_papers = f"""CREATE TABLE IF NOT EXISTS valid_papers AS
-        SELECT PaperId
-        FROM Papers
-        WHERE Year >= (?)
-        AND Year <= (?)
-        AND DocType IN ({insert_questionmark_doctypes})"""
-    
-    con.execute(sql_valid_papers, (start_year, end_year, *keep_doctypes))
-    con.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_valid_papers ON valid_papers(PaperId)")
 
 def load_model(model_path):
     "Load the SVD model from file"
@@ -80,10 +70,10 @@ def get_field_to_index(con):
 
 def process_batch(con, svd_model, field_to_index, batch_size, offset):
     "Process a batch of papers and return their SVD embeddings"
-    
+        
     sql_load_papers = f"""
         SELECT p.PaperId, pf.FieldOfStudyId, pf.Score
-        FROM valid_papers p
+        FROM Papers p
         INNER JOIN PaperFieldsOfStudy pf ON p.PaperId = pf.PaperId
         INNER JOIN fields_to_max_level f ON pf.FieldOfStudyId = f.FieldOfStudyId
         LIMIT {batch_size} OFFSET {offset}
@@ -101,51 +91,63 @@ def process_batch(con, svd_model, field_to_index, batch_size, offset):
     
     return embeddings, list(row_to_index.keys())
 
-def create_embeddings_table(con, n_components):
-    "Create table to store paper embeddings"
-    columns = ", ".join([f"dim_{i} REAL" for i in range(n_components)])
-    con.execute(f"""
-    CREATE TABLE IF NOT EXISTS paper_embeddings (
-        PaperId INTEGER PRIMARY KEY,
-        {columns}
-    )
-    """)
+def create_output_directory(output_dir):
+    "Create output directory, deleting it first if it already exists"
+    if os.path.exists(output_dir):
+        shutil.rmtree(output_dir)
+        logging.info(f"Deleted existing output directory: {output_dir}")
+    os.makedirs(output_dir)
+    logging.info(f"Created new output directory: {output_dir}")
 
-def insert_embeddings(con, paper_ids, embeddings):
-    "Insert embeddings into the database"
+def write_embeddings_to_csv(paper_ids, embeddings, output_dir, batch_num):
+    "Write embeddings to a CSV file"
     n_components = embeddings.shape[1]
-    placeholders = ", ".join(["?" for _ in range(n_components + 1)])
-    sql = f"INSERT OR REPLACE INTO paper_embeddings VALUES ({placeholders})"
+    columns = ["PaperId"] + [f"dim_{i}" for i in range(n_components)]
     
-    data = [tuple([paper_id] + embedding.tolist()) for paper_id, embedding in zip(paper_ids, embeddings)]
-    con.executemany(sql, data)
+    df = pd.DataFrame(np.column_stack([paper_ids, embeddings]), columns=columns)
+    output_file = os.path.join(output_dir, f"embeddings_batch_{batch_num}.csv")
+    df.to_csv(output_file, index=False)
+    logging.info(f"Wrote embeddings to {output_file}")
 
 def main(args):
     sqlite.register_adapter(np.int64, lambda val: int(val))
     con = sqlite.connect(database=db_file, isolation_level=None)
     
-    prepare_tables(con, args.start, args.end, args.max_level)
+    start_time = time.time()
+    
+    prepare_tables(con, args.max_level, args.dry_run)
     svd_model = load_model(args.model_path)
     field_to_index = get_field_to_index(con)
     
-    create_embeddings_table(con, svd_model.n_components_)
+    create_output_directory(args.output_dir)
     
     offset = 0
-    total_papers = con.execute("SELECT COUNT(*) FROM valid_papers").fetchone()[0]
+    total_papers = con.execute(f"SELECT COUNT(*) FROM Papers").fetchone()[0]
     
-    with tqdm(total=total_papers, desc="Processing papers") as pbar:
+    processed_papers = 0
+    batch_num = 0
+    if args.dry_run: # run only 1 batch
+        embeddings, paper_ids = process_batch(con, svd_model, field_to_index, args.batch_size, offset)        
+        write_embeddings_to_csv(paper_ids, embeddings, args.output_dir, batch_num)
+        processed_papers += len(paper_ids)  
+    else: # run for all papers
         while True:
             embeddings, paper_ids = process_batch(con, svd_model, field_to_index, args.batch_size, offset)
             
             if embeddings is None:
                 break
             
-            insert_embeddings(con, paper_ids, embeddings)
+            write_embeddings_to_csv(paper_ids, embeddings, args.output_dir, batch_num)
             
             offset += args.batch_size
-            pbar.update(len(paper_ids))
-    
-    logging.info("Finished processing all papers")
+            processed_papers += len(paper_ids)
+            batch_num += 1
+            elapsed_time = time.time() - start_time
+            logging.info(f"Processed {processed_papers}/{total_papers} papers. Elapsed time: {elapsed_time:.2f} seconds")
+        
+    total_time = time.time() - start_time
+    logging.info(f"Finished processing all {processed_papers} papers in {total_time:.2f} seconds")
+
     con.close()
 
 if __name__ == "__main__":

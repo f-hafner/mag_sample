@@ -190,6 +190,10 @@ python -m $script_path.link.fit_svd_model \
     --max-level 2 \
     &> $logfile_path/fit_svd_model.log
 
+python -m $script_path.link.predict_svd_model \
+    --max-level 2 \
+    --dry-run \
+    &> $logfile_path/predict_svd_model.log
 
 # ## 5. Link NSF grants to MAG advisors
 bash $script_path/link/grants.sh $logfile_path
