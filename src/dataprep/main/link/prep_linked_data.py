@@ -541,7 +541,6 @@ con.execute("""
         , b.n_words AS n_words_firstauthor
         , b.n_bigrams AS n_bigrams_firstauthor
         , b.n_trigrams AS n_trigrams_firstauthor
-<<<<<<< HEAD
         , c.PaperCount_english
         , c.TotalAuthorCount_english
         , c.TotalForwardCitations_english
