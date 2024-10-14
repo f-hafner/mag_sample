@@ -230,7 +230,7 @@ def get_svd_similarities(data):
     )
 
     logging.info("similarity to closest collaborator")
-    d_most_similar_collaborator, highest_similarity_by_institution = tsf.similarity_to_closest_collaborator(
+    d_most_similar_collaborator, highest_similarity_by_institution = similarity_to_closest_collaborator_svd(
         con=con,
         queries=sql_queries,
         student_topics=student_topics,
