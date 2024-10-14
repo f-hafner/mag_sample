@@ -321,3 +321,183 @@ def main():
 
 if __name__ == "__main__":
     main()
+def similarity_to_closest_collaborator_svd(
+        con,
+        queries,
+        student_topics,
+        d_affiliations,
+        d_graduates,
+        field_to_index,
+        svd_model,
+        top_n_authors=200,
+        max_nrow_input_similarity=10_000_000
+    ):
+    """Calculate highest similarity between students and potential coauthors using SVD embeddings.
+
+    Parameters:
+    -----------
+    con: sqlite connection
+    queries: QueryBuilder instance
+    student_topics: dataframe with scores by AuthorId, FieldOfStudyId, period, Field0
+    d_affiliations, d_graduates: dataframes with affiliations and graduates
+    field_to_index: Mapping of field IDs to matrix indices
+    svd_model: Trained SVD model
+    top_n_authors: For each institution, only consider top_n_authors by number of papers
+        in a given time period (defined in queries.year_restriction.)
+    max_nrow_input_similarity: Maximum number of rows to be processed by compute_similarity.
+        Chunks of affiliation ids are processed sequentially to reduce
+        memory of each operation.
+    """
+
+    # 1. Get data 
+    with con as c:
+        collaborators_affiliations = pd.read_sql(
+            con=c, 
+            sql=queries.query_collaborators())
+        collaborators_papers = pd.read_sql(
+            con=c,
+            sql=queries.query_author_papers(),
+            params=queries.keep_doctypes
+        )
+
+    collaborators_affiliations = sim_helpers.split_year_pre_post(
+        df=collaborators_affiliations, 
+        ref_year=queries.degree_year_to_query
+    )
+    collaborators_papers = sim_helpers.split_year_pre_post(
+        df=collaborators_papers, 
+        ref_year=queries.degree_year_to_query
+    )
+
+    # 2. a. Find first and last affiliation relative to the PhD year of the graduates
+    collaborators_affiliations["diff"] = np.abs(
+        collaborators_affiliations["Year"] - queries.degree_year_to_query
+    )
+    collaborators_affiliations["min_diff"] = (collaborators_affiliations
+        .groupby(["AuthorId", "period"])["diff"]
+        .transform("min")
+    )
+    collaborators_affiliations = collaborators_affiliations.loc[
+        collaborators_affiliations["min_diff"] == collaborators_affiliations["diff"],
+        ["AuthorId", "AffiliationId", "period"]
+    ]
+    collaborators_affiliations = (collaborators_affiliations
+        .drop_duplicates()
+        )
+
+    # 2.b. Find top n authors by papercount for each affiliation
+    collaborators_papercount = (
+        collaborators_papers
+            .groupby(["AuthorId", "period"])
+            .agg({"PaperId": pd.Series.nunique})
+            .rename(columns={"PaperId": "PaperCount"})
+    )
+
+    logging.debug(f"top_n_authors is {top_n_authors}")
+    d_top_collaborators = (
+        collaborators_affiliations
+            .set_index(list(collaborators_papercount.index.names))
+            .join(collaborators_papercount)
+            .reset_index()
+            .set_index(["AuthorId"])
+            .groupby(["period", "AffiliationId"])
+            ["PaperCount"]
+            .nlargest(top_n_authors)
+            .reset_index()
+            .rename(columns={"AuthorId": "CoAuthorId"})
+            .drop(columns=["PaperCount"])
+    )
+
+    collaborators_to_query = list(d_top_collaborators["CoAuthorId"].unique())
+
+    # 3. query the topics of these authors. 
+    with con as c:
+        topics_collaborators = pd.read_sql(
+            con=c, 
+            sql=queries.query_collaborators_topics(author_ids_to_query=collaborators_to_query)
+        )
+
+    # 4. aggregate pre/post, by field 
+    topics_collaborators = sim_helpers.split_year_pre_post(
+        df=topics_collaborators, 
+        ref_year=queries.degree_year_to_query
+    )
+    topics_collaborators = (topics_collaborators
+        .groupby(["AuthorId", "Field0", "period", "FieldOfStudyId"])
+        .agg({"Score": np.sum})
+        .reset_index()
+        .rename(columns={"AuthorId": "CoAuthorId"})
+        )
+
+    topics_collaborators_affiliations = (d_top_collaborators
+        .set_index(["CoAuthorId", "period"])
+        .join(topics_collaborators
+            .set_index(["CoAuthorId", "period"]),
+            how="left")
+        .reset_index()
+        )
+    
+    size_graduates = student_topics.shape[0] 
+    topics_collaborators_affiliations = tsf.make_itergroups(
+        df=topics_collaborators_affiliations,
+        groupcol=["AffiliationId"],
+        max_size=int(max_nrow_input_similarity / size_graduates),
+        new_colname="itergroup"
+    )
+
+    compare_groups = (
+        f"""Have {topics_collaborators_affiliations['itergroup'].nunique()} itergroups """
+        f"""and {topics_collaborators_affiliations['AffiliationId'].nunique()} affiliation ids"""
+    )
+    logging.debug(compare_groups)
+
+    logging.debug(f"computing similarity between graduates and collaborators")
+    d_sim = []
+    for n, g in topics_collaborators_affiliations.groupby("itergroup"):
+        dtemp = compute_svd_similarity(
+                df_A=student_topics,
+                df_B=g,
+                unit_A=["AuthorId"],
+                unit_B=["CoAuthorId", "AffiliationId"],
+                groupvars=["Field0", "period"],
+                field_to_index=field_to_index,
+                svd_model=svd_model
+                )
+        d_sim.append(dtemp)
+    
+    d_sim = pd.concat(d_sim)
+        
+    
+    # 5. calculate individual similarity, keep most similar 
+    d_sim["max_sim"] = (
+        d_sim
+            .groupby(["AuthorId", "Field0", "period", "AffiliationId"])["sim"]
+            .transform("max")
+    )
+
+    d_most_similar_collaborator = (
+        d_sim.loc[
+            d_sim["sim"] == d_sim["max_sim"], 
+            ["AuthorId", "AffiliationId", "CoAuthorId", "period", "Field0", "sim"]
+        ]
+    ) # can have multiple at same institution if the similarity is the same 
+
+    # 6. Separate most similar collaborator IDs from max distance 
+    idx_vars = ["AuthorId", "Field0", "AffiliationId", "period"]
+    sim_most_similar_collaborator_by_affiliation = (
+        d_most_similar_collaborator
+            .loc[:, idx_vars + ["sim"]]
+            .drop_duplicates()
+    )
+    d_graduates_affiliations = tsf.make_student_affiliation_table(
+        d_affiliations=d_affiliations,
+        d_graduates=d_graduates
+    )
+    sim_most_similar_collaborator_by_affiliation = tsf.complete_to_reference(
+        df_in=sim_most_similar_collaborator_by_affiliation,
+        df_ref=d_graduates_affiliations,
+        idx_cols=["AuthorId", "AffiliationId"], 
+        add_cols_to_complete=["period"]
+    )
+
+    return d_most_similar_collaborator, sim_most_similar_collaborator_by_affiliation
