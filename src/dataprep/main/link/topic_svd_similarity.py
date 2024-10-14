@@ -31,6 +31,7 @@ import warnings
 from pickle import load
 
 import main.link.topic_similarity_functions as tsf
+import main.link.similarity_helpers as sim_helpers
 import main.link.fit_svd_model as fit_svd
 
 logging.basicConfig(level=logging.INFO)
@@ -87,21 +88,82 @@ def transform_topics(topics_df, field_to_index, svd_model):
     sparse_matrix, _ = fit_svd.make_sparse(topics_df, field_to_index, "AuthorId", "FieldOfStudyId", "Score")
     return svd_model.transform(sparse_matrix)
 
-"""
-Compute similarity between two sets of topic vectors using SVD embeddings.
-Args:
-    df_A (pd.DataFrame): First set of topic vectors
-    df_B (pd.DataFrame): Second set of topic vectors
-    unit_A (list): Columns identifying units in df_A
-    unit_B (list): Columns identifying units in df_B
-    groupvars (list): Additional grouping variables
-    field_to_index (dict): Mapping of field IDs to matrix indices
-    svd_model (object): Trained SVD model
-    fill_A_units (bool): Whether to fill missing units in df_A with zero similarity
-Returns:
-    pd.DataFrame: Computed similarities
-"""
+def similarity_to_faculty_svd(
+        d_affiliations, 
+        d_graduates,
+        student_topics,
+        queries,
+        con,
+        field_to_index,
+        svd_model
+    ):
+    """Calculate similarity between student SVD embeddings and overall faculty SVD embeddings.
+
+    Parameters:
+    -----------
+    d_affiliations: dataframe with hiring AffiliationIds 
+    d_graduates: dataframe with goid, AuthorId, degree year and Field0
+    student_topics: dataframe with scores by AuthorId, FieldOfStudyId, period and Field0
+    queries: QueryBuilder instance
+    con: sqlite connection
+    field_to_index: Mapping of field IDs to matrix indices
+    svd_model: Trained SVD model
+    """
+
+    # Get affiliation topics 
+    with con as c:
+        df_fields = pd.read_sql(con=c, sql=queries.query_affiliation_topics())
+    
+    df_fields = sim_helpers.split_year_pre_post(df=df_fields, ref_year=queries.degree_year_to_query)
+
+    affiliation_topics = (df_fields
+        .groupby(["AffiliationId", "Field0", "FieldOfStudyId", "period"])
+        .agg({"Score": np.sum})
+        .reset_index()
+        )
+
+
+    # Calculate similarity 
+    d_sim = compute_svd_similarity(
+        df_A=student_topics, 
+        df_B=affiliation_topics,
+        unit_A=["AuthorId"],
+        unit_B=["AffiliationId"], 
+        groupvars=["period", "Field0"],
+        field_to_index=field_to_index,
+        svd_model=svd_model)
+
+    # "reference" table 
+    d_graduates_affiliations = tsf.make_student_affiliation_table(
+        d_affiliations=d_affiliations,
+        d_graduates=d_graduates
+    )
+    d_sim = tsf.complete_to_reference(
+        df_in=d_sim, 
+        df_ref=d_graduates_affiliations,
+        idx_cols=["AuthorId", "AffiliationId"], 
+        add_cols_to_complete=["period"]
+    )
+
+    return d_sim
+
+
 def compute_svd_similarity(df_A, df_B, unit_A, unit_B, groupvars, field_to_index, svd_model, fill_A_units=False):
+    """
+    Compute similarity between two sets of topic vectors using SVD embeddings.
+    
+    Args:
+        df_A (pd.DataFrame): First set of topic vectors
+        df_B (pd.DataFrame): Second set of topic vectors
+        unit_A (list): Columns identifying units in df_A
+        unit_B (list): Columns identifying units in df_B
+        groupvars (list): Additional grouping variables
+        field_to_index (dict): Mapping of field IDs to matrix indices
+        svd_model (object): Trained SVD model
+        fill_A_units (bool): Whether to fill missing units in df_A with zero similarity
+    Returns:
+        pd.DataFrame: Computed similarities
+    """
     A_transformed = transform_topics(df_A, field_to_index, svd_model)
     B_transformed = transform_topics(df_B, field_to_index, svd_model)
 
@@ -122,13 +184,6 @@ def compute_svd_similarity(df_A, df_B, unit_A, unit_B, groupvars, field_to_index
 
     return d_sim
 
-"""
-Calculate SVD-based similarities for a chunk of data.
-Args:
-    data (tuple): Contains various parameters needed for processing
-Returns:
-    None
-"""
 def get_svd_similarities(data):
     chunk_id, dbfile, write_dir, degree_year, field, keep_top_n_authors, max_level, window_size, model_path = data
     con = sqlite.connect(database = "file:" + dbfile + "?mode=ro", isolation_level=None, uri=True)
@@ -164,12 +219,14 @@ def get_svd_similarities(data):
     )
 
     logging.info("similarity to faculty")
-    d_similarity_to_faculty = tsf.similarity_to_faculty(
+    d_similarity_to_faculty = similarity_to_faculty_svd(
         d_affiliations=d_affiliations,
         d_graduates=d_graduates,
         student_topics=student_topics,
         queries=sql_queries,
-        con=con
+        con=con,
+        field_to_index=field_to_index,
+        svd_model=svd_model
     )
 
     logging.info("similarity to closest collaborator")
