@@ -255,7 +255,7 @@ def main(args):
     if args.dry_run:
         model_url += "_dry"
     
-    with open(model_url + ".pkl", "wb") as f:
+    with open(model_url + "_" + str(args.ndim) + ".pkl", "wb") as f:
         dump(svd, f, protocol=5)
     
     logging.info("Done.")
