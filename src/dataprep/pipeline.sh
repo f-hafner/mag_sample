@@ -174,7 +174,7 @@ for max_level in {2..5}; do
         --window_size 5 \
         --ncores 12 \
         --max_level $max_level \
-	--parallel \
+	    --parallel \
         &> "$logfile_path/topic_similarity_max_level_${max_level}.log"
 done
 
@@ -190,13 +190,16 @@ do
                 --end 2022 \
                 --ndim "$ndim" \
                 --max-level 2 \
-                &> $logfile_path/fit_svd_model_ndim_"$ndim".log
+      &> $logfile_path/fit_svd_model_ndim_"$ndim".log
 done
 
-python -m $script_path.link.predict_svd_model \
-    --max-level 2 \
-    --dry-run \
-    &> $logfile_path/predict_svd_model.log
+
+python -m $script_path.link.topic_svd_similarity \
+                --max-level 2 \
+                --model-path "/mnt/ssd/AcademicGraph/svd_model_512.pkl" \
+                --top_n_authors 200 \
+                --window_size 5 \
+&> $logfile_path/topic_svd_similarity.log
 
 # ## 5. Link NSF grants to MAG advisors
 bash $script_path/link/grants.sh $logfile_path

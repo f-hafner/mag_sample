@@ -39,7 +39,7 @@ import pandas as pd
 from pickle import dump
 import logging
 
-from scipy.sparse import csr_matrix                                                                                                                                                         
+from scipy.sparse import csr_matrix  
 from sklearn.decomposition import TruncatedSVD  
 from helpers.variables import db_file, insert_questionmark_doctypes, keep_doctypes
 
@@ -47,12 +47,12 @@ from helpers.variables import db_file, insert_questionmark_doctypes, keep_doctyp
 logging.basicConfig(level=logging.INFO)
 
 
-SAMPLE_SIZE = 1_000_000
+SAMPLE_SIZE = 5_000_000
 MODEL_URL = "/mnt/ssd/AcademicGraph/svd_model"
 RANDOM_SEED = 58352
 
 
-def make_sparse(long_df, field_to_index, rows="AffiliationId", cols="FieldOfStudyId", value_col="score"): 
+def make_sparse(long_df, field_to_index, rows="AffiliationId", cols="FieldOfStudyId", value_col="score"):
     """Create sparse matrix from a dataframe.
 
     Args:
@@ -74,18 +74,17 @@ def make_sparse(long_df, field_to_index, rows="AffiliationId", cols="FieldOfStud
 
     row_to_index = {id: index for index, id in enumerate(np.unique(row_values))}
     row_to_index_map = np.vectorize(row_to_index.get)
-
     field_to_index_map = np.vectorize(field_to_index.get)
 
     cols = field_to_index_map(col_values)
-    rows = row_to_index_map(row_values)
+    rows = row_to_index_map(row_values) 
 
     out = csr_matrix((data, (rows, cols)),
                      shape=(len(row_to_index), len(field_to_index))
                     )
-
     print(data.shape)
     print(out.__repr__())
+
     return out, row_to_index
 
 
