@@ -815,44 +815,39 @@ def compute_svd_similarity(df_A, df_B, unit_A, unit_B, groupvars, field_to_index
     Returns:
         pd.DataFrame: Computed similarities
     """
+    # Check if columns exist in df_A and df_B
+    for col in unit_A + groupvars:
+        if col not in df_A.columns:
+            raise ValueError(f"Column {col} not found in df_A")
+    for col in unit_B + groupvars:
+        if col not in df_B.columns:
+            raise ValueError(f"Column {col} not found in df_B")
+
+    # Transform topics
     A_transformed = transform_topics(df_A, field_to_index, svd_model, rows=unit_A)
     B_transformed = transform_topics(df_B, field_to_index, svd_model, rows=unit_B)
 
-    print("A_transformed shape:", A_transformed.shape)
-    print("B_transformed shape:", B_transformed.shape)
-
-    # Create unique index columns for A and B
-    index_cols_A = list(dict.fromkeys(unit_A + groupvars))
-    index_cols_B = list(dict.fromkeys(unit_B + groupvars))
-
-    print("index_cols_A:", index_cols_A)
-    print("index_cols_B:", index_cols_B)
-
     # Create DataFrames with the transformed data
-    A_df = pd.DataFrame(A_transformed, index=df_A[index_cols_A].drop_duplicates())
-    B_df = pd.DataFrame(B_transformed, index=df_B[index_cols_B].drop_duplicates())
+    A_df = pd.DataFrame(A_transformed, index=df_A[unit_A + groupvars].drop_duplicates())
+    B_df = pd.DataFrame(B_transformed, index=df_B[unit_B + groupvars].drop_duplicates())
 
-    print("A_df shape:", A_df.shape)
-    print("B_df shape:", B_df.shape)
+    # Compute similarity within each group
+    d_sim = []
+    for group, A_group in A_df.groupby(groupvars):
+        if group in B_df.groupby(groupvars).groups:
+            B_group = B_df.groupby(groupvars).get_group(group)
+            sim_matrix = cosine_similarity(A_group, B_group)
+            sim_df = pd.DataFrame(sim_matrix, index=A_group.index, columns=B_group.index)
+            sim_df = sim_df.reset_index().melt(id_vars=unit_A + groupvars, var_name='B_index', value_name='sim')
+            sim_df = sim_df.merge(B_group.reset_index(), left_on='B_index', right_index=True, suffixes=('_A', '_B'))
+            sim_df = sim_df.drop('B_index', axis=1)
+            d_sim.append(sim_df)
 
-    sim_matrix = cosine_similarity(A_df, B_df)
-
-    # Create similarity DataFrame
-    d_sim = pd.DataFrame(sim_matrix, index=A_df.index, columns=B_df.index)
-    d_sim = d_sim.reset_index()
-
-    # Melt the DataFrame
-    id_vars = index_cols_A
-    d_sim = d_sim.melt(id_vars=id_vars, var_name='B_index', value_name='sim')
-
-    # Merge with B index
-    d_sim = d_sim.merge(B_df.reset_index(), left_on='B_index',
-right_index=True, suffixes=('_A', '_B'))
-    d_sim = d_sim.drop('B_index', axis=1)
+    d_sim = pd.concat(d_sim, ignore_index=True)
 
     if fill_A_units:
-        required_ids = df_A[unit_A].drop_duplicates()
-        d_sim = required_ids.merge(d_sim, on=unit_A, how='left')
+        required_ids = df_A[unit_A + groupvars].drop_duplicates()
+        d_sim = required_ids.merge(d_sim, on=unit_A + groupvars, how='left')
         d_sim['sim'] = d_sim['sim'].fillna(0)
 
     return d_sim
