@@ -11,6 +11,9 @@ Calculate topic similarity for linked graduates using SVD embeddings
 This script uses the SVD model to transform the topic vectors before computing similarities.
 """
 
+import logging
+logging.basicConfig(level=logging.INFO)
+
 import sqlite3 as sqlite
 import time
 from pathlib import Path
@@ -19,7 +22,7 @@ import pandas as pd
 from helpers.variables import db_file, insert_questionmark_doctypes, keep_doctypes
 from helpers.functions import enumerated_arguments
 import argparse
-import logging
+
 import os
 import sys
 import multiprocessing as mp
@@ -30,7 +33,6 @@ from pickle import load
 
 import main.link.topic_similarity_functions as tsf
 
-logging.basicConfig(level=logging.INFO)
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Inputs for topic_svd_similarity')
@@ -118,6 +120,8 @@ def get_svd_similarities(data):
         fill_A_units=True
     )
 
+    print(d_similarity_prepost.head())
+
     logging.info("similarity to faculty")
     d_similarity_to_faculty = tsf.similarity_to_faculty_svd(
         d_affiliations=d_affiliations,
@@ -129,15 +133,22 @@ def get_svd_similarities(data):
         svd_model=svd_model
     )
 
+    print(d_similarity_to_faculty.head())
+
     logging.info("similarity to closest collaborator")
     d_most_similar_collaborator, highest_similarity_by_institution = tsf.similarity_to_closest_collaborator_svd(
         con=con,
         queries=sql_queries,
         student_topics=student_topics,
         d_affiliations=d_affiliations,
-        d_graduates=d_graduates,
+        d_graduates=d_graduates, 
+        field_to_index=field_to_index,
+        svd_model=svd_model,
         top_n_authors=keep_top_n_authors
     )
+
+    print(d_most_similar_collaborator.head())
+    print(highest_similarity_by_institution.head())
 
     logging.info("making d_similarity_institutions")
     idx_vars = ["AuthorId", "AffiliationId", "period", "Field0"]

@@ -47,7 +47,7 @@ from helpers.variables import db_file, insert_questionmark_doctypes, keep_doctyp
 logging.basicConfig(level=logging.INFO)
 
 
-SAMPLE_SIZE = 5_000_000
+SAMPLE_SIZE = 2_500_000
 MODEL_URL = "/mnt/ssd/AcademicGraph/svd_model"
 RANDOM_SEED = 58352
 
@@ -82,8 +82,8 @@ def make_sparse(long_df, field_to_index, rows="AffiliationId", cols="FieldOfStud
     out = csr_matrix((data, (rows, cols)),
                      shape=(len(row_to_index), len(field_to_index))
                     )
-    print(data.shape)
-    print(out.__repr__())
+    logging.debug(str(data.shape))
+    logging.debug(str(out.__repr__()))
 
     return out, row_to_index
 
@@ -128,7 +128,7 @@ def prepare_tables(con, start_year, end_year, max_level, dry_run=False):
             """CREATE TEMP TABLE fields_to_max_level AS
             SELECT FieldOfStudyId
             FROM FieldsOfStudy
-            WHERE Level > 0 AND Level <= (?)
+            WHERE Level <= (?)
             """
             , (max_level,)
             )

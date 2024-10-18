@@ -212,15 +212,10 @@ class QueryBuilder():
                 {self.query_affiliations()}
             ) b USING(AffiliationId)
             INNER JOIN (
-                SELECT AffiliationId
-                    , Field0
-                    , Year
-                    , PaperCount
-                FROM affiliation_outcomes
-            ) c
-            ON a.AffiliationId = c.AffiliationId
-                AND a.Year = c.Year
-                AND a.Field0 = c.Field0
+                {self.query_fields_up_to_max_level()}
+            ) USING(FieldOfStudyId)
+            INNER JOIN affiliation_outcomes c
+            USING(AffiliationId, Field0, Year)
                 {self.year_restriction}
                 AND a.Field0 = {self.field_to_query}
         """
@@ -735,9 +730,17 @@ Returns:
     np.array: Transformed topic vectors
 """
 def transform_topics(topics_df, field_to_index, svd_model, rows="AuthorId", cols="FieldOfStudyId", value_col="Score"):
-
-    sparse_matrix, _ = fit_svd.make_sparse(topics_df, field_to_index, rows, cols, value_col)
-    return svd_model.transform(sparse_matrix)
+    sparse_matrix, row_to_index = fit_svd.make_sparse(topics_df, field_to_index, rows, cols, value_col)
+    transformed = svd_model.transform(sparse_matrix)
+    # Create a DataFrame with the transformed data
+    result_df = pd.DataFrame(transformed)
+    # Create a reverse mapping from index to row value
+    index_to_row = {index: id for id, index in row_to_index.items()}
+    index_to_row_map = np.vectorize(index_to_row.get)
+    # Set the index of result_df to the original row values
+    result_df[rows] = index_to_row_map(range(len(result_df)))
+    result_df.set_index(rows, inplace=True)
+    return result_df
 
 def similarity_to_faculty_svd(
         d_affiliations,
@@ -773,7 +776,6 @@ def similarity_to_faculty_svd(
         .reset_index()
         )
 
-
     # Calculate similarity
     d_sim = compute_svd_similarity(
         df_A=student_topics,
@@ -789,6 +791,7 @@ def similarity_to_faculty_svd(
         d_affiliations=d_affiliations,
         d_graduates=d_graduates
     )
+
     d_sim = complete_to_reference(
         df_in=d_sim,
         df_ref=d_graduates_affiliations,
@@ -798,6 +801,34 @@ def similarity_to_faculty_svd(
 
     return d_sim
 
+def get_extended_units(df, unit, groupvars):
+    extended_unit = unit.copy()
+    for var in groupvars:
+        if var in df.columns and (var not in unit):
+            extended_unit.append(var)
+    return extended_unit
+
+def get_common_groupvars(df_A, df_B, groupvars):
+    return [var for var in groupvars if var in df_A.columns and var in df_B.columns]
+
+def get_value(df_or_series, col):
+    if isinstance(df_or_series, pd.Series):
+        # If the col is part of the Series index (MultiIndex), access the correct level
+        if col in df_or_series.index.names:
+            # Extract the value associated with that specific index level (not the full tuple)
+            return df_or_series.index.get_level_values(col)[df_or_series.name]
+        else:
+            # Otherwise, just return the value associated with the column
+            return df_or_series[col]
+    elif isinstance(df_or_series, pd.DataFrame):
+        if col in df_or_series.columns:
+            return df_or_series[col]
+        elif col in df_or_series.index.names:
+            return df_or_series.index.get_level_values(col)
+        else:
+            raise KeyError(f"Column {col} not found in DataFrame or index.")
+    else:
+        raise TypeError("Input must be a pandas Series or DataFrame")
 
 def compute_svd_similarity(df_A, df_B, unit_A, unit_B, groupvars, field_to_index, svd_model, fill_A_units=False):
     """
@@ -815,42 +846,100 @@ def compute_svd_similarity(df_A, df_B, unit_A, unit_B, groupvars, field_to_index
     Returns:
         pd.DataFrame: Computed similarities
     """
-    # Check if columns exist in df_A and df_B
-    for col in unit_A + groupvars:
-        if col not in df_A.columns:
-            raise ValueError(f"Column {col} not found in df_A")
-    for col in unit_B + groupvars:
-        if col not in df_B.columns:
-            raise ValueError(f"Column {col} not found in df_B")
+    unit_A_extended = get_extended_units(df_A, unit_A, groupvars)
+    unit_B_extended = get_extended_units(df_B, unit_B, groupvars)
+
+    # Create flattened IDs for A and B
+    df_A['A_id'] = df_A[unit_A_extended].apply(tuple, axis=1).astype('category').cat.codes
+    df_B['B_id'] = df_B[unit_B_extended].apply(tuple, axis=1).astype('category').cat.codes
 
     # Transform topics
-    A_transformed = transform_topics(df_A, field_to_index, svd_model, rows=unit_A)
-    B_transformed = transform_topics(df_B, field_to_index, svd_model, rows=unit_B)
+    A_transformed = transform_topics(df_A,
+                                     field_to_index,
+                                     svd_model,
+                                     rows='A_id')
 
-    # Create DataFrames with the transformed data
-    A_df = pd.DataFrame(A_transformed, index=df_A[unit_A + groupvars].drop_duplicates())
-    B_df = pd.DataFrame(B_transformed, index=df_B[unit_B + groupvars].drop_duplicates())
+    B_transformed = transform_topics(df_B,
+                                     field_to_index,
+                                     svd_model,
+                                     rows='B_id')
 
-    # Compute similarity within each group
-    d_sim = []
-    for group, A_group in A_df.groupby(groupvars):
-        if group in B_df.groupby(groupvars).groups:
-            B_group = B_df.groupby(groupvars).get_group(group)
-            sim_matrix = cosine_similarity(A_group, B_group)
-            sim_df = pd.DataFrame(sim_matrix, index=A_group.index, columns=B_group.index)
-            sim_df = sim_df.reset_index().melt(id_vars=unit_A + groupvars, var_name='B_index', value_name='sim')
-            sim_df = sim_df.merge(B_group.reset_index(), left_on='B_index', right_index=True, suffixes=('_A', '_B'))
-            sim_df = sim_df.drop('B_index', axis=1)
-            d_sim.append(sim_df)
+    # Merge back original index columns
+    A_index = df_A[unit_A_extended + ['A_id']].drop_duplicates()
+    A_transformed = A_transformed.merge(A_index,
+                                    on='A_id',
+                                    how='left')
+    A_transformed.set_index(unit_A_extended, inplace=True)
 
-    d_sim = pd.concat(d_sim, ignore_index=True)
+    B_index = df_B[unit_B_extended + ['B_id']].drop_duplicates()
+    B_transformed = B_transformed.merge(B_index,
+                                    on='B_id',
+                                    how='left')
+    B_transformed.set_index(unit_B_extended, inplace=True)
+
+    # Drop the temporary 'A_id' and 'B_id' columns
+    A_transformed = A_transformed.drop('A_id', axis=1)
+    B_transformed = B_transformed.drop('B_id', axis=1)
+    B_reset = B_transformed.reset_index()
+    for col in groupvars:
+        B_reset[col] = B_reset[col].astype(B_transformed.index.get_level_values(col).dtype)
+    # Compute similarity
+    cols = list(set(unit_A + unit_B + groupvars + ['sim']))
+    sim_df = pd.DataFrame(columns=cols)
+
+    # # Check uniqueness in A_transformed based on unit_A_extended
+    # is_A_unique = A_transformed.reset_index().duplicated(subset=unit_A_extended).sum() == 0
+    # # Check uniqueness in B_transformed based on unit_B_extended
+    # is_B_unique = B_transformed.reset_index().duplicated(subset=unit_B_extended).sum() == 0
+    # print(f"B_transformed is unique on {unit_B_extended}: {is_B_unique}")
+    # print(A_transformed.head())
+    # print(B_transformed.head())
+
+    # fill sim_df with rows that are a combination of unit_A, unit_B, groupvars
+    # for each unit in A, for each groupvar value within the unit (if exists)
+    # compare to each unit in B, with same groupvar value
+    rows_list = []
+    for a_idx, a_row in A_transformed.iterrows():
+        if isinstance(a_idx, tuple):
+            # Multi-index case: assign each component to a variable
+            a_row_values = {name: value for name, value in zip(unit_A_extended, a_idx)}
+        else:
+            # Single index case
+            a_row_values = {unit_A_extended[0]: a_idx}
+
+        # Now a_row_values contains the split components of the index, mapped to the unit_A_extended variables
+
+        # Convert a_row into a DataFrame to allow merging
+        a_row_df = pd.DataFrame([a_row_values])
+        # subsect to groupvars
+        # Merge a_row with B_transformed on groupvars
+        B_filtered = a_row_df[groupvars].merge(B_reset, how='inner', on=groupvars)
+        B_filtered.set_index(unit_B_extended, inplace=True)
+        # Compute cosine similarity for each row in B_filtered
+        for b_idx, b_row in B_filtered.iterrows():
+            sim = cosine_similarity([a_row], [b_row])[0][0]
+            if isinstance(b_idx, tuple):
+                # Multi-index case: assign each component to a variable
+                b_row_values = {name: value for name, value in zip(unit_B_extended, b_idx)}
+            else:
+                # Single index case
+                b_row_values = {unit_B_extended[0]: b_idx}
+
+            # Create a new row combining a_row and b_row
+            combined_row = a_row_values.copy()
+            combined_row.update(b_row_values)
+            combined_row['sim'] = sim
+            # Append the combined row to the list
+            rows_list.append(combined_row)
+
+    sim_df = pd.DataFrame(rows_list)
 
     if fill_A_units:
-        required_ids = df_A[unit_A + groupvars].drop_duplicates()
-        d_sim = required_ids.merge(d_sim, on=unit_A + groupvars, how='left')
-        d_sim['sim'] = d_sim['sim'].fillna(0)
+        required_ids = df_A[unit_A_extended].drop_duplicates()
+        sim_df = required_ids.merge(sim_df, on=unit_A_extended, how='left')
+        sim_df['sim'] = sim_df['sim'].fillna(0)
 
-    return d_sim
+    return sim_df
 
 def similarity_to_closest_collaborator_svd(
         con,
@@ -968,6 +1057,14 @@ def similarity_to_closest_collaborator_svd(
         .reset_index()
         )
 
+    # Count rows before deletion
+    rows_before = len(topics_collaborators_affiliations)
+    # Remove rows with missing FieldOfStudyId
+    topics_collaborators_affiliations = topics_collaborators_affiliations.dropna(subset=['FieldOfStudyId'])
+    # Print the number of rows removed
+    rows_removed = rows_before - len(topics_collaborators_affiliations)
+    logging.info(f"Removed {rows_removed} rows from topics_collaborators_affiliations with missing FieldOfStudyId values.")
+
     size_graduates = student_topics.shape[0]
     topics_collaborators_affiliations = make_itergroups(
         df=topics_collaborators_affiliations,
@@ -984,6 +1081,7 @@ def similarity_to_closest_collaborator_svd(
 
     logging.debug(f"computing similarity between graduates and collaborators")
     d_sim = []
+
     for n, g in topics_collaborators_affiliations.groupby("itergroup"):
         dtemp = compute_svd_similarity(
                 df_A=student_topics,
@@ -1020,10 +1118,45 @@ def similarity_to_closest_collaborator_svd(
             .loc[:, idx_vars + ["sim"]]
             .drop_duplicates()
     )
+    # Check for missing values in d_affiliations
+    missing_affiliations = d_affiliations.isnull().sum()
+    columns_with_missing = missing_affiliations[missing_affiliations > 0]
+
+    if columns_with_missing.sum() > 0:
+        logging.info("Columns with missing values in d_affiliations:")
+        for column, count in columns_with_missing.items():
+            logging.info(f"  {column}: {count} missing values")
+
+        total_missing = columns_with_missing.sum()
+        logging.info(f"Total missing values: {total_missing}")
+
+        d_affiliations = d_affiliations.dropna()
+        logging.debug(f"Removed rows with missing values. New shape: {d_affiliations.shape}")
+    else:
+        logging.info("No missing values found in d_affiliations.")
+
+    # Check for missing values in d_graduates
+    missing_graduates = d_graduates.isnull().sum()
+    columns_with_missing = missing_graduates[missing_graduates > 0]
+
+    if columns_with_missing.sum() > 0:
+        logging.info("Columns with missing values in d_graduates:")
+        for column, count in columns_with_missing.items():
+            logging.info(f"  {column}: {count} missing values")
+
+        total_missing = columns_with_missing.sum()
+        logging.info(f"Total missing values: {total_missing}")
+
+        d_graduates = d_graduates.dropna()
+        logging.debug(f"Removed rows with missing values. New shape: {d_graduates.shape}")
+    else:
+        logging.info("No missing values found in d_graduates.")
+
     d_graduates_affiliations = make_student_affiliation_table(
         d_affiliations=d_affiliations,
         d_graduates=d_graduates
     )
+
     sim_most_similar_collaborator_by_affiliation = complete_to_reference(
         df_in=sim_most_similar_collaborator_by_affiliation,
         df_ref=d_graduates_affiliations,
