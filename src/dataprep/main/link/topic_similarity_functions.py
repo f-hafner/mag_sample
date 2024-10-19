@@ -717,19 +717,21 @@ def df_to_iter(df):
 
 
 
-"""
-Transform topic vectors using the SVD model.
-Args:
-    topics_df (pd.DataFrame): DataFrame containing topic vectors
-    field_to_index (dict): Mapping of field IDs to matrix indices
-    svd_model (object): Trained SVD model
-    rows="AuthorId"
-    cols="FieldOfStudyId"
-    value_col="Score"
-Returns:
-    np.array: Transformed topic vectors
-"""
 def transform_topics(topics_df, field_to_index, svd_model, rows="AuthorId", cols="FieldOfStudyId", value_col="Score"):
+    """
+    Transform topic vectors using the SVD model.
+    
+    Args:
+        topics_df (pd.DataFrame): DataFrame containing topic vectors
+        field_to_index (dict): Mapping of field IDs to matrix indices
+        svd_model (object): Trained SVD model
+        rows="AuthorId"
+        cols="FieldOfStudyId"
+        value_col="Score"
+    
+    Returns:
+        np.array: Transformed topic vectors
+    """
     sparse_matrix, row_to_index = fit_svd.make_sparse(topics_df, field_to_index, rows, cols, value_col)
     transformed = svd_model.transform(sparse_matrix)
     # Create a DataFrame with the transformed data
