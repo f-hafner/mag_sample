@@ -755,15 +755,14 @@ def similarity_to_faculty_svd(
     ):
     """Calculate similarity between student SVD embeddings and overall faculty SVD embeddings.
 
-    Parameters:
-    -----------
-    d_affiliations: dataframe with hiring AffiliationIds
-    d_graduates: dataframe with goid, AuthorId, degree year and Field0
-    student_topics: dataframe with scores by AuthorId, FieldOfStudyId, period and Field0
-    queries: QueryBuilder instance
-    con: sqlite connection
-    field_to_index: Mapping of field IDs to matrix indices
-    svd_model: Trained SVD model
+    Args:
+        d_affiliations: dataframe with hiring AffiliationIds
+        d_graduates: dataframe with goid, AuthorId, degree year and Field0
+        student_topics: dataframe with scores by AuthorId, FieldOfStudyId, period and Field0
+        queries: QueryBuilder instance
+        con: sqlite connection
+        field_to_index: Mapping of field IDs to matrix indices
+        svd_model: Trained SVD model
     """
 
     # Get affiliation topics
@@ -956,19 +955,18 @@ def similarity_to_closest_collaborator_svd(
     ):
     """Calculate highest similarity between students and potential coauthors using SVD embeddings.
 
-    Parameters:
-    -----------
-    con: sqlite connection
-    queries: QueryBuilder instance
-    student_topics: dataframe with scores by AuthorId, FieldOfStudyId, period, Field0
-    d_affiliations, d_graduates: dataframes with affiliations and graduates
-    field_to_index: Mapping of field IDs to matrix indices
-    svd_model: Trained SVD model
-    top_n_authors: For each institution, only consider top_n_authors by number of papers
-        in a given time period (defined in queries.year_restriction.)
-    max_nrow_input_similarity: Maximum number of rows to be processed by compute_similarity.
-        Chunks of affiliation ids are processed sequentially to reduce
-        memory of each operation.
+    Args:
+        con: sqlite connection
+        queries: QueryBuilder instance
+        student_topics: dataframe with scores by AuthorId, FieldOfStudyId, period, Field0
+        d_affiliations, d_graduates: dataframes with affiliations and graduates
+        field_to_index: Mapping of field IDs to matrix indices
+        svd_model: Trained SVD model
+        top_n_authors: For each institution, only consider top_n_authors by number of papers
+            in a given time period (defined in queries.year_restriction.)
+        max_nrow_input_similarity: Maximum number of rows to be processed by compute_similarity.
+            Chunks of affiliation ids are processed sequentially to reduce
+            memory of each operation.
     """
 
     # 1. Get data
