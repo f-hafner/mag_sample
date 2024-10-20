@@ -38,6 +38,7 @@ import sqlite3 as sqlite
 import pandas as pd 
 from pickle import dump
 import logging
+from tqdm import tqdm
 
 from scipy.sparse import csr_matrix  
 from sklearn.decomposition import TruncatedSVD  
@@ -205,8 +206,9 @@ def load_data_for_svd(con):
 
 def parse_args():
     parser = argparse.ArgumentParser(description = 'Run truncated SVD on subset of papers')
-    parser.add_argument("--ndim", type=int, default=1024,
-                        help="Number of dimension for reduced concept vectors")
+    parser.add_argument("--ndim", nargs="+", required=True, type=int,
+                        help="""Number of dimension for reduced concept vectors. 
+                        You can provide multiple options, ie `--ndim 16 32 `""")
 
     parser.add_argument("--max-level", type=int, default=2, dest="max_level",
                         help="Maximum level of fields of study and respective scores to use")
@@ -220,6 +222,11 @@ def parse_args():
     parser.add_argument('--dry-run', action=argparse.BooleanOptionalAction, dest="dry_run")
    
     args = parser.parse_args()
+
+    if not all([isinstance(x, int) for x in args.ndim]):
+        msg = "`ndim` only accepts integer arguments" 
+        raise ValueError(msg)
+    
     return args
 
 
@@ -245,17 +252,18 @@ def main(args):
     logging.info("making sparse matrix and running SVD")
     papers_fields_sparse, _ = make_sparse(
         papers_fields, field_to_index, "PaperId", "FieldOfStudyId", "Score")
-    
-    svd, _  = run_svd(papers_fields_sparse, args.ndim)
-    
    
-    logging.info("saving model")
+    for n_dim in tqdm(args.ndim):
+        logging.info(f"Estimating model with {n_dim} dimensions.")
+        svd, _  = run_svd(papers_fields_sparse, n_dim)
+   
+        logging.info("saving model")
 
-    if args.dry_run:
-        model_url += "_dry"
-    
-    with open(model_url + "_" + str(args.ndim) + ".pkl", "wb") as f:
-        dump(svd, f, protocol=5)
+        if args.dry_run:
+            model_url += "_dry"
+        
+        with open(model_url + "_" + str(n_dim) + ".pkl", "wb") as f:
+            dump(svd, f, protocol=5)
     
     logging.info("Done.")
 
