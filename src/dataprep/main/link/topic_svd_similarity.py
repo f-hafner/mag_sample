@@ -167,9 +167,9 @@ def get_svd_similarities(data):
     logging.info("making dict to be written")
 
     write_dict = {
-        "own_svd": d_similarity_prepost,
-        "inst_svd": d_similarity_to_institutions,
-        "closest_collaborator_ids_svd": d_most_similar_collaborator.drop(columns=['Field0'])
+        "own": d_similarity_prepost,
+        "inst": d_similarity_to_institutions,
+        "closest_collaborator_ids": d_most_similar_collaborator.drop(columns=['Field0'])
     }
 
     logging.info("writing dict")
