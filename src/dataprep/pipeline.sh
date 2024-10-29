@@ -197,6 +197,12 @@ python -m $script_path.link.topic_svd_similarity \
                 --window_size 5 \
 &> $logfile_path/topic_svd_similarity.log
 
+python -m  $script_path.link.read_topic_similarity \
+    --read_dir similarities_svd_temp/ \
+    --use_svd \
+    &> $logfile_path/read_topic_similarity_svd.log
+
+
 # ## 5. Link NSF grants to MAG advisors
 bash $script_path/link/grants.sh $logfile_path
 
