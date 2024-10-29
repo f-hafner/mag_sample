@@ -108,6 +108,12 @@ bash $script_path/institutions/clean_link_institutions.sh $logfile_path
 python -m $script_path.load_proquest.proquest_to_db &> \
     $logfile_path/proquest_to_db.log
 
+python -m $script_path.load_proquest.proquest_attributes_read &> \
+    $logfile_path/proquest_attributes_read.log
+python -m $script_path.load_proquest.proquest_attributes_todb &> \
+    $logfile_path/proquest_attributes_todb.log
+
+
 python -m $script_path.load_proquest.correspond_fieldofstudy &> \
     $logfile_path/correspond_fieldofstudy.log
 
@@ -196,7 +202,6 @@ done
 python -m  $script_path.link.read_topic_similarity \
     --read_dir similarities_temp/ \
     &> $logfile_path/read_topic_similarity.log
-
 
 
 # ## 5. Link NSF grants to MAG advisors
