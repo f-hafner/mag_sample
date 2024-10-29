@@ -189,7 +189,7 @@ for max_level in {2..5}; do
         --window_size 5 \
         --ncores 12 \
         --max_level $max_level \
-	--parallel \
+	    --parallel \
         &> "$logfile_path/topic_similarity_max_level_${max_level}.log"
 done
 
@@ -197,6 +197,25 @@ python -m  $script_path.link.read_topic_similarity \
     --read_dir similarities_temp/ \
     &> $logfile_path/read_topic_similarity.log
 
+# ### Calculate reduced-dimension paper concepts
+python -m $script_path.link.fit_svd_model \
+    --start 1980 \
+    --end 2022 \
+    --ndim 16 32 64 128 256 512 1024 \
+    --max-level 2 \
+    &> $logfile_path/fit_svd_model.log
+
+python -m $script_path.link.topic_svd_similarity \
+                --max-level 2 \
+                --model-path "/mnt/ssd/AcademicGraph/svd_model_512.pkl" \
+                --top_n_authors 200 \
+                --window_size 5 \
+&> $logfile_path/topic_svd_similarity.log
+
+python -m  $script_path.link.read_topic_similarity \
+    --read_dir similarities_svd_temp/ \
+    --use_svd \
+    &> $logfile_path/read_topic_similarity_svd.log
 
 
 # ## 5. Link NSF grants to MAG advisors
