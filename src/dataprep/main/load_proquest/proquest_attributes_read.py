@@ -13,6 +13,15 @@ import pandas as pd
 from helpers.variables import datapath
 import xml.etree.ElementTree as ET
 
+def clean_title(title):
+    if title:
+        # Keep only alphanumeric characters, spaces, and basic punctuation
+        # This will keep: a-z, A-Z, 0-9, space, period, comma, hyphen, apostrophe
+        import re
+        title = re.sub(r'[^a-zA-Z0-9\s.,\-\']', ' ', title)
+        # Collapse multiple spaces into single space
+        title = ' '.join(title.split())
+    return title
 
 def parse_xml(file_path):
     # Parse the XML file
@@ -28,7 +37,7 @@ def parse_xml(file_path):
     # Extract title from the Title tag within TitleAtt
     title = root.find('.//TitleAtt/Title').text
 
-    return abswordcount, goid, title
+    return abswordcount, goid, clean_title(title)
 
 def load_xml_data(directory_path, test=False):
     data = []
@@ -40,7 +49,7 @@ def load_xml_data(directory_path, test=False):
         if filename.endswith('.xml'):
             file_path = os.path.join(directory_path, filename)
             abswordcount, goid, title = parse_xml(file_path)
-            data.append({'goid': goid, 'abswordcount': abswordcount, 
+            data.append({'goid': goid, 'abswordcount': abswordcount,
 'title': title})
 
     return pd.DataFrame(data)
@@ -49,7 +58,7 @@ def load_xml_data(directory_path, test=False):
 if __name__ == "__main__":
     path_proquest = "metadata_mar/"
     df = load_xml_data(datapath+path_proquest, test=False)
-    df = df.drop_duplicates()      
+    df = df.drop_duplicates()
     has_duplicates = df['goid'].duplicated().any()
     print("df has duplicated goid: " + str(has_duplicates))
-    df.to_csv(datapath+"pq_attributes.csv",index=False)
+    df.to_csv(datapath+"pq_attributes.tsv", sep='\t', index=False)

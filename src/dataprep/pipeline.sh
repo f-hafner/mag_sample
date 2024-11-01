@@ -113,9 +113,16 @@ python -m $script_path.load_proquest.proquest_attributes_read &> \
 python -m $script_path.load_proquest.proquest_attributes_todb &> \
     $logfile_path/proquest_attributes_todb.log
 
+# this script loads the titles field of study. These are constructed by running /mnt/ssd/MAG_LanguageApp/title_magfos.sh, which requires /mnt/ssd/metadata_mar to exist.  
+bash ./main/load_proquest/titles_magfos_todb.sh
+
+# create a pq_magfos_abs_title table that uses the field of study prediction from the abstract if it has enough words and switches to the field of study based o title otherwise
+bash ./main/load_proquest/combined_title_abstract_magfos.sh
 
 python -m $script_path.load_proquest.correspond_fieldofstudy &> \
     $logfile_path/correspond_fieldofstudy.log
+
+
 
 # moved this down because we need the output from `clean_link_institutions` here
 python3 -m $script_path.prep_mag.author_info_linking \

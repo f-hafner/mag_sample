@@ -18,8 +18,8 @@ from helpers.functions import analyze_db
 con = sqlite.connect(database=db_file, isolation_level=None)
 
  
-# Create temporary CSV for sqlite import
-filename = datapath + "pq_attributes.csv"
+# Use TSV file for sqlite import
+filename = datapath + "pq_attributes.tsv"
 # Create and populate table
 con.execute("DROP TABLE IF EXISTS pq_attributes")
 con.execute("""
@@ -33,8 +33,8 @@ con.execute("""
 # Import data
 subprocess.run(
     ["sqlite3", db_file,
-    ".mode csv",
-    f".import --csv --skip 1 {filename} pq_attributes"]
+    ".mode tabs",
+    f".import {filename} pq_attributes"]
 )
 
 # Create index
