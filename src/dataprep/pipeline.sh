@@ -195,7 +195,8 @@ python -m $script_path.link.prep_linked_data \
 
 # ### Calculate topic overlap between linked graduates and 
     # possible new employers & colleagues
-for max_level in {2..5}; do
+for max_level in {1..3}; 
+do
     python -m $script_path.link.topic_similarity \
         --top_n_authors 200 \
         --write_dir similarities_temp/ \

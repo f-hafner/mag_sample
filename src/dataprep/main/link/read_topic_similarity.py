@@ -12,17 +12,17 @@ Read the files, outputted in topic_similarity.py, into the database with the fol
 
 
 import sqlite3 as sqlite
-import time 
+import time
 import argparse
 import subprocess
-import time 
-import os 
+import time
+import os
 import shutil
-import logging 
+import logging
 from tqdm import tqdm
 
 from helpers.functions import analyze_db
-from helpers.variables import db_file 
+from helpers.variables import db_file
 
 logging.basicConfig(level=logging.INFO)
 
@@ -42,14 +42,14 @@ file_map = {
     "inst": {
         "fn_full": "sim_to_institutions_full.csv",
         "tbl": "graduates_similarity_to_institutions",
-        "schema": """(AuthorId INT 
-            , AffiliationId INT 
+        "schema": """(AuthorId INT
+            , AffiliationId INT
             , period TEXT
             , similarity_faculty_overall REAL
             , similarity_closest_collaborator REAL
             , max_level INT)""",
         "idx": [
-            """CREATE UNIQUE INDEX idx_gsi_AuthorAffilPeriod
+            """CREATE UNIQUE INDEX idx_gsim_AuthorAffilPeriod
                 ON graduates_similarity_to_institutions (AuthorId ASC, AffiliationId, period, max_level ASC)"""
         ]
         },
@@ -58,33 +58,34 @@ file_map = {
         "tbl": "graduates_similarity_to_self",
         "schema": "(AuthorId INTEGER, similarity REAL, max_level INT)",
         "idx": [
-            "CREATE UNIQUE INDEX idx_gss_Author ON graduates_similarity_to_self (AuthorId ASC, max_level ASC)"
+            "CREATE UNIQUE INDEX idx_gssim_Author ON graduates_similarity_to_self (AuthorId ASC, max_level ASC)"
         ]
     },
     "closest_collaborator_ids": {
         "fn_full": "sim_closest_collaborator_full.csv",
         "tbl": "graduates_closest_collaborators",
-        "schema": """(AuthorId INT 
+        "schema": """(AuthorId INT
             , AffiliationId INT
             , CoAuthorId INT
             , period TEXT
             , similarity REAL
             , max_level INT)""",
         "idx": [
-            """CREATE UNIQUE INDEX idx_gcc_AuthorAffilCoAuthorPeriod 
+            """CREATE UNIQUE INDEX idx_gccsim_AuthorAffilCoAuthorPeriod
                 ON graduates_closest_collaborators(AuthorId ASC, AffiliationId ASC, CoAuthorId ASC, period, max_level)"""
-            , """CREATE INDEX idx_gcc_AuthorCoAuthor 
+            , """CREATE INDEX idx_gccsim_AuthorCoAuthor
                 ON graduates_closest_collaborators (AuthorId ASC, CoAuthorId ASC, max_level ASC)"""
             ]
-    } 
+    }
 }
 
 
 for name, params in tqdm(file_map.items()):
     subprocess.run(f"tail -n +2 -q {args.read_dir}/maxlevel-*/{name}-part-*.csv >> {params['fn_full']}", shell=True)
     with con as c:
-         c.execute(f"DROP TABLE IF EXISTS {params['tbl']}")
-         c.execute(f"CREATE TABLE {params['tbl']} {params['schema']}")
+        c.execute(f"DROP TABLE IF EXISTS {params['tbl']}")
+        c.execute(f"CREATE TABLE {params['tbl']} {params['schema']}")
+
     subprocess.run(
         ["sqlite3", db_file,
         ".mode csv",
@@ -98,7 +99,7 @@ for name, params in tqdm(file_map.items()):
 
 
 
-# shutil.rmtree(args.read_dir) 
+# shutil.rmtree(args.read_dir)
 
 
 # ## Run ANALYZE, finish

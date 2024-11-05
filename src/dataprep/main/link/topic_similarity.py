@@ -162,7 +162,7 @@ def get_similarities(data):
     )
 
     # ## Make one df for similarity to institutions
-    logging.info("making d_similarity_institutions")
+    logging.info("making d_similarity_to_institutions")
 
     idx_vars = ["AuthorId", "AffiliationId", "period", "Field0"]
     d_similarity_to_institutions = (
@@ -202,8 +202,8 @@ def main():
         print(f"Using max available, which is {mp.cpu_count()}.")
         args.n_cores = mp.cpu_count()
 
-    if os.path.isdir(args.write_dir):
-        sys.exit("You specified an existing directory: " + args.write_dir)
+    if os.path.isdir(write_url):
+        sys.exit("You specified an existing directory: " + str(write_url))
 
     # ## Setup
     start_time = time.time()    

@@ -92,7 +92,7 @@ class QueryBuilder():
     def query_topics_dissertation(self):
         q = f"""
             SELECT AuthorId, FieldOfStudyId, score AS Score
-            FROM pq_magfos 
+            FROM pq_magfos_abs_title 
             INNER JOIN (
                 {self.query_graduates()}
             ) USING(goid)
@@ -205,17 +205,17 @@ class QueryBuilder():
         return q 
     
     def query_affiliation_topics(self):
-
+        yearquery_with_alias = self.year_restriction.replace("Year", "af.Year")                                               
         q = f"""
-            SELECT a.AffiliationId
-                , a.Field0
-                , a.Year
-                , a.FieldOfStudyId
-                , a.Score / c.PaperCount AS Score
-            FROM affiliation_fields a
+            SELECT af.AffiliationId
+                , af.Field0
+                , af.Year AS Year
+                , af.FieldOfStudyId
+                , af.Score / c.PaperCount AS Score
+            FROM affiliation_fields af
             INNER JOIN (
                 {self.query_affiliations()}
-            ) b USING(AffiliationId)
+            ) aff_cng USING(AffiliationId)
             INNER JOIN (
                 SELECT AffiliationId
                     , Field0
@@ -223,11 +223,12 @@ class QueryBuilder():
                     , PaperCount
                 FROM affiliation_outcomes
             ) c
-            ON a.AffiliationId = c.AffiliationId
-                AND a.Year = c.Year
-                AND a.Field0 = c.Field0
-                {self.year_restriction}
-                AND a.Field0 = {self.field_to_query}
+            ON af.AffiliationId = c.AffiliationId
+                AND af.Year = c.Year
+                AND af.Field0 = c.Field0
+            {yearquery_with_alias}
+                AND af.Field0 = {self.field_to_query}
+
         """
         return q 
 
@@ -248,12 +249,12 @@ def compute_similarity(df_A, df_B, unit_A, unit_B, groupvars, fill_A_units = Fal
     d_AA = (df_A 
         .assign(AA=lambda x: x.A**2)
         .groupby(sim_helpers.unique(unit_A + groupvars))
-        .agg({"AA": np.sum})
+        .agg({"AA": "sum"})
     )
     d_BB = (df_B 
         .assign(BB=lambda x: x.B**2)
         .groupby(sim_helpers.unique(unit_B + groupvars))
-        .agg({"BB": np.sum})
+        .agg({"BB": "sum"})
         )
     d_AB = (df_B
         .set_index(sim_helpers.unique(groupvars + ["FieldOfStudyId"]))
@@ -265,7 +266,7 @@ def compute_similarity(df_A, df_B, unit_A, unit_B, groupvars, fill_A_units = Fal
     d_AB = (d_AB
         .assign(AB=lambda x: x.A * x.B)
         .groupby(sim_helpers.unique(unit_A + unit_B + groupvars))
-        .agg({"AB": np.sum})
+        .agg({"AB": "sum"})
         .reset_index()
         .set_index(list(d_AA.index.names))
         .join(d_AA)
@@ -372,7 +373,7 @@ def get_student_data(con, queries):
 
     topics_postphd = (topics_postphd
                         .groupby(["AuthorId", "FieldOfStudyId"])
-                        .agg({"Score": np.sum})
+                        .agg({"Score": "sum"})
                         .reset_index(["FieldOfStudyId"])
                         .join(n_papers_postphd)
                         .reset_index()
@@ -461,7 +462,7 @@ def similarity_to_faculty(
 
     affiliation_topics = (df_fields
         .groupby(["AffiliationId", "Field0", "FieldOfStudyId", "period"])
-        .agg({"Score": np.sum})
+        .agg({"Score": "sum"})
         .reset_index()
         )
 
@@ -593,7 +594,7 @@ def similarity_to_closest_collaborator(
     )
     topics_collaborators = (topics_collaborators
         .groupby(["AuthorId", "Field0", "period", "FieldOfStudyId"])
-        .agg({"Score": np.sum})
+        .agg({"Score": "sum"})
         .reset_index()
         .rename(columns={"AuthorId": "CoAuthorId"})
         )
