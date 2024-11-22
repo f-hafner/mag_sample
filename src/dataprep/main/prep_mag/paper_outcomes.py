@@ -98,13 +98,43 @@ con.execute(tablequery2)
 con.execute("CREATE UNIQUE INDEX id_paper_cite5 on citationcount5 (PaperId ASC)")
 
 
+## Now repeat the same for 2 years.
+
+tablequery="""CREATE TEMPORARY TABLE citationtemp AS
+    SELECT a.PaperReferenceId AS PaperId,
+           SUM(a.CitationCount) AS CitationCount_y2,
+        b.Year as YearPub
+    FROM Papers b
+    LEFT JOIN paper_citations a ON b.PaperId = a.PaperReferenceId
+        WHERE ReferencingDocType IS NOT NULL 
+        AND ReferencingDocType IN ("Journal", "Book", "BookChapter", "Conference", "Thesis")
+        AND  a.Year-b.Year <= 2
+    GROUP BY a.PaperReferenceId
+"""
+
+tablequery2="""CREATE TEMPORARY TABLE citationcount2 AS 
+    SELECT a.PaperId, 
+        CASE WHEN b.CitationCount_y2 IS NULL THEN 0 ELSE b.CitationCount_y2 END
+        AS CitationCount_y2
+    FROM Papers a  
+    LEFT JOIN citationtemp b USING(PaperId)
+ """
+con.execute("""DROP TABLE IF EXISTS citationtemp""")
+con.execute(tablequery)
+con.execute("CREATE UNIQUE INDEX id_paper_citetemp on citationtemp (PaperId ASC)")
+
+con.execute("""DROP TABLE IF EXISTS citationcount2""")
+con.execute(tablequery2)
+con.execute("CREATE UNIQUE INDEX id_paper_cite2 on citationcount2 (PaperId ASC)")
+
 
 # ## Final table 
 con.execute("DROP TABLE IF EXISTS paper_outcomes")
 con.execute("""CREATE TABLE paper_outcomes AS 
-            SELECT a.PaperId, a.CitationCount_y10, b.CitationCount_y5, c.AuthorCount
+            SELECT a.PaperId, a.CitationCount_y10, b5.CitationCount_y5, b2.CitationCount_y2, c.AuthorCount
             FROM citationcount10 a
-            INNER JOIN citationcount5 b USING (PaperId)
+            INNER JOIN citationcount5 b5 USING (PaperId)
+            INNER JOIN citationcount2 b2 USING (PaperId)
             INNER JOIN paper_teamsize c USING (PaperId)
 """)
 

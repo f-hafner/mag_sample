@@ -84,7 +84,7 @@ python3 -m $script_path.prep_mag.read_quantiles_papercites \
     quantiles_lvl1_temp quantiles_lvl0_temp \
     &> $logfile_path/read_quantiles_papercites.log
 
-python3 $script_path/prep_mag/paper_outcomes.py &> $logfile_path/paper_outcomes.log
+python3 -m $script_path.prep_mag.paper_outcomes &> $logfile_path/paper_outcomes.log
 
 # TODO: add here venue_citations
 
