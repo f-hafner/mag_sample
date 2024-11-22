@@ -19,12 +19,18 @@ import time
 import os 
 import shutil
 import logging 
+import sys
 from tqdm import tqdm
 
 from helpers.functions import analyze_db
 from helpers.variables import db_file 
 
-logging.basicConfig(level=logging.INFO)
+class FlushHandler(logging.StreamHandler):
+    def emit(self, record):
+        super().emit(record)
+        self.flush()
+
+logging.basicConfig(level=logging.INFO, handlers=[FlushHandler(sys.stdout)])
 
 parser = argparse.ArgumentParser(description = 'Inputs for read_topic_similarity')
 parser.add_argument("--read_dir", dest="read_dir", default = "similarities_temp/")
@@ -81,20 +87,31 @@ file_map = {
 
 
 for name, params in tqdm(file_map.items()):
+    logging.info("processing " + str(name))
     subprocess.run(f"tail -n +2 -q {args.read_dir}/maxlevel-*/{name}-part-*.csv >> {params['fn_full']}", shell=True)
+    logging.info("csv created for " + str(name))
+
     with con as c:
          c.execute(f"DROP TABLE IF EXISTS {params['tbl']}")
          c.execute(f"CREATE TABLE {params['tbl']} {params['schema']}")
+ 
+    logging.info("dropped and created table" + str(params['tbl']))
+
     subprocess.run(
         ["sqlite3", db_file,
         ".mode csv",
         f".import {params['fn_full']} {params['tbl']}"]
     )
+
+    logging.info("imported table: " + str(params['tbl']))
+
     os.remove(params['fn_full'])
+
+    logging.info("deleted csv for table: " + str(params['fn_full']))
     with con as c:
         for idx in params["idx"]:
             c.execute(idx)
-
+            logging.info("indices created: " + str(params["idx"]))
 
 
 
