@@ -69,10 +69,15 @@ if args.filter_trainname_graduates is not None:
     where_stmt_iterations_graduates = f"""
     WHERE train_name like '%{args.filter_trainname_graduates}%'
     """
+else:
+    where_stmt_iterations_graduates = ""
+
 if args.filter_trainname_advisors is not None:
     where_stmt_iterations_advisors = f"""
     WHERE train_name like '%{args.filter_trainname_advisors}%'
     """
+else:
+    where_stmt_iterations_advisors = ""
 
 
 print(f"{where_stmt_iterations_graduates=}", flush=True)
@@ -239,7 +244,7 @@ INNER JOIN (
         DocType IN ({insert_questionmark_doctypes}) 
         AND 
         DocType IS NOT NULL 
-) c USING(PaperId)
+) c ON a.PaperId = c.PaperId
 INNER JOIN (
     SELECT AuthorId
     FROM current_authors
@@ -257,6 +262,27 @@ print_elapsed_time(start_time)
 
 
 
+def explain_and_execute(con, label, create_sql, params=None):
+    """Print EXPLAIN QUERY PLAN for a CREATE TABLE ... AS SELECT, then execute it."""
+    print(f"\n--- {label} ---", flush=True)
+    # Extract the SELECT part after "AS"
+    idx = create_sql.upper().find(" AS")
+    if idx != -1:
+        # Find the actual SELECT after AS
+        rest = create_sql[idx+3:].lstrip()
+        select_sql = rest
+    else:
+        select_sql = create_sql
+    print(f"Query plan:", flush=True)
+    rows = con.execute("EXPLAIN QUERY PLAN " + select_sql, params or []).fetchall()
+    for row in rows:
+        print(f"  {row}", flush=True)
+    print(f"Executing...", flush=True)
+    con.execute(create_sql, params or [])
+    print(f"Done: {label}", flush=True)
+    print_elapsed_time(start_time)
+
+
 # ## (5) author_output
 print("Making author_output... \n", flush = True)
 
@@ -268,52 +294,33 @@ con.execute("""
 """)
 con.execute("CREATE UNIQUE INDEX idx_mfp_PaperId ON main_family_papers (PaperId)")
 
-con.execute(f"""
-    CREATE TEMP TABLE author_output_total AS 
-    SELECT  a.AuthorId,
-            d.Year,
-            COUNT(a.PaperId) AS PaperCount,  -- ## DISTINCT not necessary when summarising a at the author level
-            SUM(b.AuthorCount) AS TotalAuthorCount,
-            SUM(b.CitationCount_y10) AS TotalForwardCitations, -- ## this measures the impact of the paper at publication
-            SUM(c.new_word) AS new_word,
-            SUM(c.new_word_reuse) AS new_word_reuse,
-            SUM(c.new_bigram) AS new_bigram,
-            SUM(c.new_bigram_reuse) AS new_bigram_reuse,
-            SUM(c.new_trigram) AS new_trigram,
-            SUM(c.new_trigram_reuse) AS new_trigram_reuse,
-            SUM(c.new_word_comb) AS new_word_comb,
-            SUM(c.new_word_comb_reuse) AS new_word_comb_reuse,
-            MAX(c.cosine_max) AS cosine_max,
-            AVG(c.cosine_max) AS avg_cosine_max,
-            AVG(c.cosine_avg) AS avg_cosine_avg,
-            SUM(c.n_words) AS n_words,
-            SUM(c.n_bigrams) AS n_bigrams,
-            SUM(c.n_trigrams) AS n_trigrams    
+# Pre-compute papers of current_authors filtered by DocType.
+# This small table drives all author_output queries, avoiding repeated
+# expensive joins through PaperAuthorUnique ⋈ Papers ⋈ current_authors.
+explain_and_execute(con, "current_author_papers", f"""
+    CREATE TEMP TABLE current_author_papers AS
+    SELECT a.AuthorId, a.PaperId, d.Year
     FROM PaperAuthorUnique a
-    INNER JOIN (
-        SELECT AuthorId
-        FROM current_authors
-    ) USING(AuthorId)
+    INNER JOIN current_authors USING(AuthorId)
     INNER JOIN (
         SELECT PaperId, Year
-        FROM Papers 
-        WHERE 
-            DocType IN ({insert_questionmark_doctypes}) 
-            AND 
-            DocType IS NOT NULL 
+        FROM Papers
+        WHERE
+            DocType IN ({insert_questionmark_doctypes})
+            AND
+            DocType IS NOT NULL
     ) d USING (PaperId)
-    INNER JOIN paper_outcomes b USING(PaperId) 
-    LEFT JOIN novelty_reuse c USING(PaperId)
-    GROUP BY a.AuthorId, d.Year
 """,
 keep_doctypes
 )
+con.execute("CREATE INDEX idx_cap_PaperId ON current_author_papers (PaperId)")
+con.execute("CREATE INDEX idx_cap_AuthorIdYear ON current_author_papers (AuthorId ASC, Year)")
 
-con.execute(f"""
-    CREATE TEMP TABLE author_output_mainpaper AS 
-    SELECT  a.AuthorId,
-            d.Year,
-            COUNT(a.PaperId) AS PaperCount,
+explain_and_execute(con, "author_output_total", """
+    CREATE TEMP TABLE author_output_total AS
+    SELECT  cap.AuthorId,
+            cap.Year,
+            COUNT(cap.PaperId) AS PaperCount,
             SUM(b.AuthorCount) AS TotalAuthorCount,
             SUM(b.CitationCount_y10) AS TotalForwardCitations,
             SUM(c.new_word) AS new_word,
@@ -329,37 +336,50 @@ con.execute(f"""
             AVG(c.cosine_avg) AS avg_cosine_avg,
             SUM(c.n_words) AS n_words,
             SUM(c.n_bigrams) AS n_bigrams,
-            SUM(c.n_trigrams) AS n_trigrams    
-    FROM PaperAuthorUnique a
-    INNER JOIN (
-        SELECT AuthorId
-        FROM current_authors
-    ) USING(AuthorId)
-    INNER JOIN (
-        SELECT PaperId, Year
-        FROM Papers 
-        WHERE 
-            DocType IN ({insert_questionmark_doctypes}) 
-            AND 
-            DocType IS NOT NULL 
-    ) d USING (PaperId)
-    INNER JOIN main_family_papers e USING(PaperId)
-    INNER JOIN paper_outcomes b USING(PaperId) 
+            SUM(c.n_trigrams) AS n_trigrams
+    FROM current_author_papers cap
+    INNER JOIN paper_outcomes b USING(PaperId)
     LEFT JOIN novelty_reuse c USING(PaperId)
-    GROUP BY a.AuthorId, d.Year
-""",
-keep_doctypes
-)
+    GROUP BY cap.AuthorId, cap.Year
+""")
+
+con.execute("CREATE UNIQUE INDEX idx_aot_AuthorIdYear on author_output_total (AuthorId ASC, Year)")
+
+explain_and_execute(con, "author_output_mainpaper", """
+    CREATE TEMP TABLE author_output_mainpaper AS
+    SELECT  cap.AuthorId,
+            cap.Year,
+            COUNT(cap.PaperId) AS PaperCount,
+            SUM(b.AuthorCount) AS TotalAuthorCount,
+            SUM(b.CitationCount_y10) AS TotalForwardCitations,
+            SUM(c.new_word) AS new_word,
+            SUM(c.new_word_reuse) AS new_word_reuse,
+            SUM(c.new_bigram) AS new_bigram,
+            SUM(c.new_bigram_reuse) AS new_bigram_reuse,
+            SUM(c.new_trigram) AS new_trigram,
+            SUM(c.new_trigram_reuse) AS new_trigram_reuse,
+            SUM(c.new_word_comb) AS new_word_comb,
+            SUM(c.new_word_comb_reuse) AS new_word_comb_reuse,
+            MAX(c.cosine_max) AS cosine_max,
+            AVG(c.cosine_max) AS avg_cosine_max,
+            AVG(c.cosine_avg) AS avg_cosine_avg,
+            SUM(c.n_words) AS n_words,
+            SUM(c.n_bigrams) AS n_bigrams,
+            SUM(c.n_trigrams) AS n_trigrams
+    FROM current_author_papers cap
+    INNER JOIN main_family_papers e USING(PaperId)
+    INNER JOIN paper_outcomes b USING(PaperId)
+    LEFT JOIN novelty_reuse c USING(PaperId)
+    GROUP BY cap.AuthorId, cap.Year
+""")
 
 con.execute("CREATE UNIQUE INDEX idx_aomp_AuthorIdYear on author_output_mainpaper (AuthorId ASC, Year)")
 
-print("Making author_output for English papers... \n", flush = True)
-
-con.execute(f"""
-    CREATE TEMP TABLE author_output_total_english AS 
-    SELECT  a.AuthorId,
-            d.Year,
-            COUNT(a.PaperId) AS PaperCount_english,
+explain_and_execute(con, "author_output_total_english", """
+    CREATE TEMP TABLE author_output_total_english AS
+    SELECT  cap.AuthorId,
+            cap.Year,
+            COUNT(cap.PaperId) AS PaperCount_english,
             SUM(b.AuthorCount) AS TotalAuthorCount_english,
             SUM(b.CitationCount_y10) AS TotalForwardCitations_english,
             SUM(c.new_word) AS new_word_english,
@@ -375,85 +395,22 @@ con.execute(f"""
             AVG(c.cosine_avg) AS avg_cosine_avg_english,
             SUM(c.n_words) AS n_words_english,
             SUM(c.n_bigrams) AS n_bigrams_english,
-            SUM(c.n_trigrams) AS n_trigrams_english    
-    FROM PaperAuthorUnique a
-    INNER JOIN (
-        SELECT AuthorId
-        FROM current_authors
-    ) USING(AuthorId)
-    INNER JOIN (
-        SELECT PaperId, Year
-        FROM Papers 
-        WHERE 
-            DocType IN ({insert_questionmark_doctypes}) 
-            AND 
-            DocType IS NOT NULL 
-    ) d USING (PaperId)
-    INNER JOIN paper_language e ON a.PaperId = e.PaperId AND e.language = 'en'
-    INNER JOIN paper_outcomes b USING(PaperId) 
+            SUM(c.n_trigrams) AS n_trigrams_english
+    FROM current_author_papers cap
+    INNER JOIN main_family_papers mfp USING(PaperId)
+    INNER JOIN paper_language pl ON cap.PaperId = pl.PaperId AND pl.language = 'en'
+    INNER JOIN paper_outcomes b USING(PaperId)
     LEFT JOIN novelty_reuse c USING(PaperId)
-    GROUP BY a.AuthorId, d.Year
-""",
-keep_doctypes
-)
-# join with novelty and reuse measure here. and add to author_output_total table and to author_first_author table
+    GROUP BY cap.AuthorId, cap.Year
+""")
 
-con.execute("CREATE UNIQUE INDEX idx_aot_AuthorIdYear on author_output_total (AuthorId ASC, Year)")
-#con.execute("CREATE INDEX idx_ao_DocType on author_output (DocType) ")
+con.execute("CREATE UNIQUE INDEX idx_aote_AuthorIdYear on author_output_total_english (AuthorId ASC, Year)")
 
-con.execute(f"""
-    CREATE TEMP TABLE author_output_firstauthor AS 
-    SELECT  a.AuthorId,
-            d.Year,
-            COUNT(a.PaperId) AS PaperCount,  -- ## DISTINCT not necessary when summarising a at the author level
-            SUM(b.AuthorCount) AS TotalAuthorCount,
-            SUM(b.CitationCount_y10) AS TotalForwardCitations, -- ## this measures the impact of the paper at publication
-            SUM(c.new_word) AS new_word,
-            SUM(c.new_word_reuse) AS new_word_reuse,
-            SUM(c.new_bigram) AS new_bigram,
-            SUM(c.new_bigram_reuse) AS new_bigram_reuse,
-            SUM(c.new_trigram) AS new_trigram,
-            SUM(c.new_trigram_reuse) AS new_trigram_reuse,
-            SUM(c.new_word_comb) AS new_word_comb,
-            SUM(c.new_word_comb_reuse) AS new_word_comb_reuse,
-            MAX(c.cosine_max) AS cosine_max,
-            AVG(c.cosine_max) AS avg_cosine_max,
-            AVG(c.cosine_avg) AS avg_cosine_avg,
-            SUM(c.n_words) AS n_words,
-            SUM(c.n_bigrams) AS n_bigrams,
-            SUM(c.n_trigrams) AS n_trigrams 
-    FROM PaperAuthorUnique a
-    INNER JOIN (
-        SELECT AuthorId
-        FROM current_authors
-    ) USING(AuthorId)
-    INNER JOIN (
-        SELECT AuthorId, PaperId
-        FROM PaperAuthorAffiliations
-        WHERE AuthorSequenceNumber = 1
-    ) USING(AuthorId, PaperId)
-    INNER JOIN (
-        SELECT PaperId, Year
-        FROM Papers 
-        WHERE 
-            DocType IN ({insert_questionmark_doctypes}) 
-            AND 
-            DocType IS NOT NULL 
-    ) d USING (PaperId)
-    INNER JOIN paper_outcomes b USING(PaperId) 
-    LEFT JOIN novelty_reuse c USING(PaperId)
-    GROUP BY a.AuthorId, d.Year
-""",
-keep_doctypes
-)
-
-con.execute("CREATE UNIQUE INDEX idx_aof_AuthorIdYear on author_output_firstauthor (AuthorId ASC, Year)")
-
-con.execute(f"""
-    CREATE TEMP TABLE author_output_lastauthor AS 
-    SELECT  a.AuthorId,
-            d.Year,
-            COUNT(a.PaperId) AS PaperCount,
+explain_and_execute(con, "author_output_firstauthor", """
+    CREATE TEMP TABLE author_output_firstauthor AS
+    SELECT  cap.AuthorId,
+            cap.Year,
+            COUNT(cap.PaperId) AS PaperCount,
             SUM(b.AuthorCount) AS TotalAuthorCount,
             SUM(b.CitationCount_y10) AS TotalForwardCitations,
             SUM(c.new_word) AS new_word,
@@ -469,51 +426,70 @@ con.execute(f"""
             AVG(c.cosine_avg) AS avg_cosine_avg,
             SUM(c.n_words) AS n_words,
             SUM(c.n_bigrams) AS n_bigrams,
-            SUM(c.n_trigrams) AS n_trigrams 
-    FROM PaperAuthorUnique a
+            SUM(c.n_trigrams) AS n_trigrams
+    FROM current_author_papers cap
+    INNER JOIN PaperAuthorAffiliations paa
+        ON cap.PaperId = paa.PaperId AND cap.AuthorId = paa.AuthorId
+        AND paa.AuthorSequenceNumber = 1
+    INNER JOIN paper_outcomes b ON cap.PaperId = b.PaperId
+    LEFT JOIN novelty_reuse c ON cap.PaperId = c.PaperId
+    GROUP BY cap.AuthorId, cap.Year
+""")
+
+con.execute("CREATE UNIQUE INDEX idx_aof_AuthorIdYear on author_output_firstauthor (AuthorId ASC, Year)")
+
+explain_and_execute(con, "author_output_lastauthor", """
+    CREATE TEMP TABLE author_output_lastauthor AS
+    SELECT  cap.AuthorId,
+            cap.Year,
+            COUNT(cap.PaperId) AS PaperCount,
+            SUM(b.AuthorCount) AS TotalAuthorCount,
+            SUM(b.CitationCount_y10) AS TotalForwardCitations,
+            SUM(c.new_word) AS new_word,
+            SUM(c.new_word_reuse) AS new_word_reuse,
+            SUM(c.new_bigram) AS new_bigram,
+            SUM(c.new_bigram_reuse) AS new_bigram_reuse,
+            SUM(c.new_trigram) AS new_trigram,
+            SUM(c.new_trigram_reuse) AS new_trigram_reuse,
+            SUM(c.new_word_comb) AS new_word_comb,
+            SUM(c.new_word_comb_reuse) AS new_word_comb_reuse,
+            MAX(c.cosine_max) AS cosine_max,
+            AVG(c.cosine_max) AS avg_cosine_max,
+            AVG(c.cosine_avg) AS avg_cosine_avg,
+            SUM(c.n_words) AS n_words,
+            SUM(c.n_bigrams) AS n_bigrams,
+            SUM(c.n_trigrams) AS n_trigrams
+    FROM current_author_papers cap
+    INNER JOIN PaperAuthorAffiliations paa
+        ON cap.PaperId = paa.PaperId AND cap.AuthorId = paa.AuthorId
     INNER JOIN (
-        SELECT AuthorId
-        FROM current_authors
-    ) USING(AuthorId)
-    INNER JOIN (
-        SELECT PaperId, AuthorId
-        FROM (
-            SELECT PaperId, AuthorId, AuthorSequenceNumber,
-                   ROW_NUMBER() OVER (PARTITION BY PaperId ORDER BY AuthorSequenceNumber DESC) as rn
-            FROM PaperAuthorAffiliations
-        ) ranked
-        WHERE rn = 1
-    ) e USING(AuthorId, PaperId)
-    INNER JOIN (
-        SELECT PaperId, Year
-        FROM Papers 
-        WHERE 
-            DocType IN ({insert_questionmark_doctypes}) 
-            AND 
-            DocType IS NOT NULL 
-    ) d USING (PaperId)
-    INNER JOIN paper_outcomes b USING(PaperId) 
-    LEFT JOIN novelty_reuse c USING(PaperId)
-    GROUP BY a.AuthorId, d.Year
-""",
-keep_doctypes
-)
+        SELECT PaperId, MAX(AuthorSequenceNumber) AS max_seq
+        FROM PaperAuthorAffiliations
+        WHERE PaperId IN (SELECT PaperId FROM current_author_papers)
+        GROUP BY PaperId
+    ) last ON cap.PaperId = last.PaperId AND paa.AuthorSequenceNumber = last.max_seq
+    INNER JOIN paper_outcomes b ON cap.PaperId = b.PaperId
+    LEFT JOIN novelty_reuse c ON cap.PaperId = c.PaperId
+    GROUP BY cap.AuthorId, cap.Year
+""")
 
 con.execute("CREATE UNIQUE INDEX idx_aol_AuthorIdYear on author_output_lastauthor (AuthorId ASC, Year)")
 
+print("\n--- Joining into author_output ---", flush=True)
+print_elapsed_time(start_time)
 con.execute("""
-    CREATE TABLE author_output AS 
+    CREATE TABLE author_output AS
     SELECT a.AuthorId, a.Year
-        , a.PaperCount 
+        , a.PaperCount
         , a.TotalAuthorCount
         , a.TotalForwardCitations
         , b.PaperCount AS PaperCount_firstauthor
         , b.TotalAuthorCount AS TotalAuthorCount_firstauthor
         , b.TotalForwardCitations AS TotalForwardCitations_firstauthor
-        , c.PaperCount AS PaperCount_lastauthor
-        , c.TotalAuthorCount AS TotalAuthorCount_lastauthor
-        , c.TotalForwardCitations AS TotalForwardCitations_lastauthor
-        , a.new_word 
+        , la.PaperCount AS PaperCount_lastauthor
+        , la.TotalAuthorCount AS TotalAuthorCount_lastauthor
+        , la.TotalForwardCitations AS TotalForwardCitations_lastauthor
+        , a.new_word
         , a.new_word_reuse
         , a.new_bigram
         , a.new_bigram_reuse
@@ -527,7 +503,7 @@ con.execute("""
         , a.n_words
         , a.n_bigrams
         , a.n_trigrams
-        , b.new_word AS new_word_firstauthor 
+        , b.new_word AS new_word_firstauthor
         , b.new_word_reuse AS new_word_reuse_firstauthor
         , b.new_bigram AS new_bigram_firstauthor
         , b.new_bigram_reuse AS new_bigram_reuse_firstauthor
@@ -578,11 +554,13 @@ con.execute("""
     FROM author_output_total AS a
     LEFT JOIN author_output_firstauthor AS b
     USING(AuthorId, Year)
+    LEFT JOIN author_output_lastauthor AS la
+    USING(AuthorId, Year)
     LEFT JOIN author_output_total_english AS c
     USING(AuthorId, Year)
     LEFT JOIN author_output_mainpaper AS d
     USING(AuthorId, Year)
-    """) # LEFT JOIN because there is years without first authorship, but any year with first authorship must be a year with any authorship.
+    """) # LEFT JOIN because there are years without first/last authorship, but any year with first authorship must be a year with any authorship.
 
 con.execute("CREATE UNIQUE INDEX idx_ao_AuthorIdYear on author_output (AuthorId ASC, Year)")
 

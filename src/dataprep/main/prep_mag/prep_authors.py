@@ -54,7 +54,8 @@ con.execute("""CREATE TABLE PaperAuthorUnique AS
             ) USING (PaperId)
             """)
 con.execute("CREATE UNIQUE INDEX idx_pau_PaperAuthorId ON PaperAuthorUnique (PaperId ASC, AuthorId ASC)")
-con.execute("CREATE INDEX idx_pau_AuthorId ON PaperAuthorUnique (AuthorId)") 
+con.execute("CREATE INDEX idx_pau_AuthorId ON PaperAuthorUnique (AuthorId)")
+con.execute("CREATE INDEX idx_pau_PaperId ON PaperAuthorUnique (PaperId)")
 
 # ## author_sample   
 print_elapsed_time(start_time)
