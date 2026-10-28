@@ -1,5 +1,7 @@
 # mag-proquest-processor
 
+[![DOI](https://zenodo.org/badge/472869250.svg)](https://doi.org/10.5281/zenodo.23733552)
+
 The present repository is an extract from a project that uses data from Microsoft Academic Graph (MAG) and ProQuest. The programs work on a remote computer that has the data stored outside of the repository. The path to the data is defined in `src/analysis/setup.R` and `src/dataprep/helpers/variables.py`. 
 
 
